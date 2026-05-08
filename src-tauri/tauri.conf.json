@@ -50,7 +50,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE4Rjc0OERCMUJEMUUxNzIKUldSeTRkRWIyMGozR0RjZVk2V0ZLeEFoUWR6V2dmUGxPeG4xLzdIMWFlaXVTZWt0UnpuTGp0cGQK",
       "endpoints": [
-        "https://github.com/sfwwslm/fluxterm/releases/latest/download/latest.json"
+        "https://github.com/fluxterm/fluxterm/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

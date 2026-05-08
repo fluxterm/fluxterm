@@ -1,6 +1,6 @@
 # ![FluxTerm Logo](./src-tauri/icons/32x32.png) FluxTerm
 
-![Preview](https://github.com/sfwwslm/fluxterm/blob/main/docs/assets/preview.png)
+![Preview](https://github.com/fluxterm/fluxterm/blob/main/docs/assets/preview.png)
 
 **FluxTerm** 是一个基于 `Tauri + Rust + React` 构建的现代桌面终端，统一提供 SSH、本地 Shell、SFTP、RDP 远程桌面与终端 AI 协作能力。
 
