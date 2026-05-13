@@ -11,7 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import type { Locale, Translate } from "@/i18n";
-import type { LogEntry, SftpProgress } from "@/types";
+import type { AppEvent, SftpProgress } from "@/types";
 import { formatBytes, formatTime } from "@/utils/format";
 import Button from "@/components/ui/button";
 import "./Transferswidget.css";
@@ -19,25 +19,40 @@ import "./Transferswidget.css";
 type TransfersWidgetProps = {
   progress: SftpProgress | null;
   busyMessage: string | null;
-  entries: LogEntry[];
+  events: AppEvent[];
   onCancel: () => Promise<void>;
   locale: Locale;
   t: Translate;
 };
 
-const isTransferKey = (key: string) =>
-  key.includes("upload") || key.includes("download");
+function isTransferEvent(event: AppEvent) {
+  return (
+    event.scope === "sftp" &&
+    (event.type.startsWith("sftp.upload.") ||
+      event.type.startsWith("sftp.download."))
+  );
+}
+
+function normalizeEventVars(event: AppEvent) {
+  if (!event.vars) return undefined;
+  return Object.fromEntries(
+    Object.entries(event.vars).filter(
+      (entry): entry is [string, string | number] =>
+        typeof entry[1] === "string" || typeof entry[1] === "number",
+    ),
+  );
+}
 
 /** 传输进度与记录面板。 */
 export default function TransfersWidget({
   progress,
   busyMessage,
-  entries,
+  events,
   onCancel,
   locale,
   t,
 }: TransfersWidgetProps) {
-  const transferEntries = entries.filter((entry) => isTransferKey(entry.key));
+  const transferEvents = events.filter(isTransferEvent);
   const [progressStartedAt, setProgressStartedAt] = useState<number | null>(
     null,
   );
@@ -177,19 +192,18 @@ export default function TransfersWidget({
           </div>
         </div>
       )}
-      {!!transferEntries.length && (
+      {!!transferEvents.length && (
         <div className="log-list">
           <div className="log-list-header">{t("log.history")}</div>
           <div className="log-list-body">
-            {transferEntries.map((entry) => (
-              <div
-                key={entry.id}
-                className={`log-item ${entry.level ?? "info"}`}
-              >
+            {transferEvents.map((event) => (
+              <div key={event.id} className={`log-item ${event.level}`}>
                 <span className="log-time">
-                  {formatLogTime(entry.timestamp)}
+                  {formatLogTime(event.timestamp)}
                 </span>
-                <span className="log-message">{t(entry.key, entry.vars)}</span>
+                <span className="log-message">
+                  {t(event.titleKey, normalizeEventVars(event))}
+                </span>
               </div>
             ))}
           </div>

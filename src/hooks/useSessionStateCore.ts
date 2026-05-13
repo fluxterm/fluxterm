@@ -3,16 +3,19 @@
  * 职责：维护会话状态机、连接生命周期、日志与事件处理。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createAppEvent,
+  type CreateAppEventInput,
+} from "@/features/events/core/appEvents";
 import { error as logError, info as logInfo } from "@/shared/logging/telemetry";
-import type { Translate, TranslationKey } from "@/i18n";
+import type { Translate } from "@/i18n";
 import type {
+  AppEvent,
   DisconnectReason,
   HostProfile,
   LocalShellConfig,
   LocalSessionMeta,
   LocalShellProfile,
-  LogEntry,
-  LogLevel,
   Session,
   SessionInput,
   SessionStateUi,
@@ -41,8 +44,8 @@ import {
   reconnectLocalShellCommand,
 } from "@/features/session/core/commands";
 
-const logStorageKey = "fluxterm.logs";
-const maxLogEntries = 10;
+const appEventStorageKey = "fluxterm.appEvents";
+const maxAppEvents = 10;
 const TERMINAL_EOF_EXIT_GRACE_MS = 1500;
 
 type TerminalSize = { cols: number; rows: number };
@@ -92,7 +95,7 @@ type UseSessionStateResult = {
   sessionReasons: Record<string, DisconnectReason>;
   localSessionMeta: Record<string, LocalSessionMeta>;
   reconnectInfoBySession: Record<string, { attempt: number; delayMs: number }>;
-  logEntries: LogEntry[];
+  appEvents: AppEvent[];
   busyMessage: string | null;
   activeSession: Session | null;
   activeSessionState: SessionStateUi | null;
@@ -110,11 +113,7 @@ type UseSessionStateResult = {
   localSessionMetaRef: React.RefObject<Record<string, LocalSessionMeta>>;
   localSessionIdsRef: React.RefObject<Set<string>>;
   activeSessionIdRef: React.RefObject<string | null>;
-  appendLog: (
-    key: TranslationKey,
-    vars?: Record<string, string | number>,
-    level?: LogLevel,
-  ) => void;
+  appendAppEvent: (event: CreateAppEventInput) => void;
   setBusyMessage: React.Dispatch<React.SetStateAction<string | null>>;
   isLocalSession: (sessionId: string | null) => boolean;
   setLastCommand: (sessionId: string, command: string) => void;
@@ -164,6 +163,19 @@ type UseSessionStateResult = {
   closeAllSessionsInPane: (paneId: string) => Promise<void>;
 };
 
+function isAppEvent(value: unknown): value is AppEvent {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as AppEvent).id === "string" &&
+    typeof (value as AppEvent).timestamp === "number" &&
+    typeof (value as AppEvent).scope === "string" &&
+    typeof (value as AppEvent).type === "string" &&
+    typeof (value as AppEvent).level === "string" &&
+    typeof (value as AppEvent).titleKey === "string"
+  );
+}
+
 /** 会话与连接状态管理。 */
 export default function useSessionState({
   profiles,
@@ -191,22 +203,13 @@ export default function useSessionState({
   const [reconnectInfoBySession, setReconnectInfoBySession] = useState<
     Record<string, { attempt: number; delayMs: number }>
   >({});
-  const [logEntries, setLogEntries] = useState<LogEntry[]>(() => {
-    const raw = localStorage.getItem(logStorageKey);
+  const [appEvents, setAppEvents] = useState<AppEvent[]>(() => {
+    const raw = localStorage.getItem(appEventStorageKey);
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return [];
-      return parsed
-        .filter(
-          (item): item is LogEntry =>
-            typeof item === "object" &&
-            item !== null &&
-            typeof (item as LogEntry).id === "string" &&
-            typeof (item as LogEntry).timestamp === "number" &&
-            typeof (item as LogEntry).key === "string",
-        )
-        .slice(0, maxLogEntries);
+      return parsed.filter(isAppEvent).slice(0, maxAppEvents);
     } catch {
       return [];
     }
@@ -313,19 +316,9 @@ export default function useSessionState({
     activeSessionState !== "connecting" &&
     activeSessionState !== "reconnecting";
 
-  function appendLog(
-    key: TranslationKey,
-    vars?: Record<string, string | number>,
-    level: LogLevel = "info",
-  ) {
-    const entry: LogEntry = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      timestamp: Date.now(),
-      key,
-      vars,
-      level,
-    };
-    setLogEntries((prev) => [entry, ...prev].slice(0, maxLogEntries));
+  function appendAppEvent(input: CreateAppEventInput) {
+    const event = createAppEvent(input);
+    setAppEvents((prev) => [event, ...prev].slice(0, maxAppEvents));
   }
 
   function isLocalSession(sessionId: string | null) {
@@ -565,17 +558,23 @@ export default function useSessionState({
       ...prev,
       [sessionId]: shouldAutoReconnect ? "reconnecting" : "disconnected",
     }));
-    appendLog(
-      "log.event.disconnected",
-      { name: resolveSessionLabel(sessionId) },
-      "error",
-    );
+    appendAppEvent({
+      scope: "session",
+      type: "session.disconnected",
+      level: "error",
+      status: "failed",
+      sessionId,
+      profileId: session.profileId,
+      titleKey: "log.event.disconnected",
+      vars: { name: resolveSessionLabel(sessionId) },
+      details: { reason },
+    });
     if (shouldAutoReconnect) {
       scheduleReconnect(sessionId, reason);
     }
   }
 
-  // 监听器本身只注册一次，但里面执行的逻辑需要始终拿到最新的 t/openDialog/appendLog 等闭包。
+  // 监听器本身只注册一次，但里面执行的逻辑需要始终拿到最新的 t/openDialog/appendAppEvent 等闭包。
   // 因此每次渲染后都把最新处理函数写回 ref，事件到达时再间接转发给它。
   useEffect(() => {
     sessionEventHandlersRef.current = {
@@ -598,14 +597,23 @@ export default function useSessionState({
             ...prev,
             [payload.sessionId]: "network",
           }));
-          appendLog(
-            "log.event.error",
-            {
+          appendAppEvent({
+            scope: "session",
+            type: "session.error",
+            level: "error",
+            status: "failed",
+            sessionId: payload.sessionId,
+            profileId:
+              sessionsRef.current.find(
+                (item) => item.sessionId === payload.sessionId,
+              )?.profileId ?? null,
+            titleKey: "log.event.error",
+            vars: {
               name: label,
               detail: payload.error?.message ?? t("log.unknownError"),
             },
-            "error",
-          );
+            details: payload.error ? { ...payload.error } : undefined,
+          });
           void logError(
             JSON.stringify({
               event: "ssh.session.error",
@@ -626,7 +634,19 @@ export default function useSessionState({
           }
         }
         if (payload.state === "connected") {
-          appendLog("log.event.connected", { name: label }, "success");
+          appendAppEvent({
+            scope: "session",
+            type: "session.connected",
+            level: "success",
+            status: "success",
+            sessionId: payload.sessionId,
+            profileId:
+              sessionsRef.current.find(
+                (item) => item.sessionId === payload.sessionId,
+              )?.profileId ?? null,
+            titleKey: "log.event.connected",
+            vars: { name: label },
+          });
           void logInfo(
             JSON.stringify({
               event: "ssh.session.connected",
@@ -747,8 +767,19 @@ export default function useSessionState({
     clearPendingHostKeyForProfile(profile.id);
     // “正在连接”在发起连接时就记录，避免状态事件先到、会话元数据尚未写入前端时，
     // 日志对象退化成默认的“会话”占位文案。
-    appendLog("log.event.connecting", {
-      name: resolveProfileLabel(profile),
+    appendAppEvent({
+      scope: "session",
+      type: "session.connecting",
+      level: "info",
+      status: "started",
+      profileId: profile.id,
+      titleKey: "log.event.connecting",
+      vars: { name: resolveProfileLabel(profile) },
+      details: {
+        host: profile.host,
+        port: profile.port,
+        authType: profile.authType,
+      },
     });
     await connectProfileCommand({
       profile,
@@ -991,11 +1022,11 @@ export default function useSessionState({
 
   useEffect(() => {
     try {
-      localStorage.setItem(logStorageKey, JSON.stringify(logEntries));
+      localStorage.setItem(appEventStorageKey, JSON.stringify(appEvents));
     } catch {
       // Ignore localStorage write errors.
     }
-  }, [logEntries]);
+  }, [appEvents]);
 
   useEffect(() => {
     sessionRef.current = activeSession;
@@ -1079,7 +1110,7 @@ export default function useSessionState({
     sessionReasons,
     localSessionMeta,
     reconnectInfoBySession,
-    logEntries,
+    appEvents,
     busyMessage,
     activeSession,
     activeSessionState,
@@ -1097,7 +1128,7 @@ export default function useSessionState({
     localSessionMetaRef,
     localSessionIdsRef,
     activeSessionIdRef,
-    appendLog,
+    appendAppEvent,
     setBusyMessage,
     isLocalSession,
     setLastCommand,

@@ -786,6 +786,7 @@ export const zhCnTranslations = {
   "log.reconnectAttempt": "第 {attempt} 次，{delay}s 后重试",
   "log.idle": "空闲",
   "log.history": "最近记录",
+  "log.noEvents": "暂无事件",
   "log.upload": "上传",
   "log.download": "下载",
   "log.itemsCount": "{count} 项",

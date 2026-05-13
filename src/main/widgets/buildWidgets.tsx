@@ -20,7 +20,7 @@ import type {
   DisconnectReason,
   HostProfile,
   LocalShellProfile,
-  LogEntry,
+  AppEvent,
   RdpProfile,
   SshConnectStateMap,
   WidgetKey,
@@ -50,7 +50,7 @@ type buildWidgetsProps = {
   isRemoteConnected: boolean;
   transferProgress: SftpProgress | null;
   busyMessage: string | null;
-  logEntries: LogEntry[];
+  appEvents: AppEvent[];
   historyLoaded: boolean;
   hasActiveSession: boolean;
   historyLiveCapture: CommandHistoryLiveCapture | null;
@@ -154,7 +154,7 @@ export function buildWidgets(
     isRemoteConnected,
     transferProgress,
     busyMessage,
-    logEntries,
+    appEvents,
     historyLoaded,
     hasActiveSession,
     historyLiveCapture,
@@ -276,7 +276,7 @@ export function buildWidgets(
       <TransfersWidget
         progress={transferProgress}
         busyMessage={busyMessage}
-        entries={logEntries}
+        events={appEvents}
         onCancel={onCancelTransfer}
         locale={locale}
         t={t}
@@ -324,7 +324,7 @@ export function buildWidgets(
         sessionState={activeSessionState ?? "disconnected"}
         sessionReason={activeSessionReason}
         reconnectInfo={activeReconnectInfo}
-        entries={logEntries}
+        events={appEvents}
         locale={locale}
         t={t}
       />

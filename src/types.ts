@@ -1,3 +1,5 @@
+import type { TranslationKey } from "./i18n";
+
 /** 认证方式。 */
 export type AuthType = "password" | "privateKey" | "agent";
 
@@ -425,16 +427,46 @@ export type SessionResourceSnapshot = {
   memory?: ResourceMemorySnapshot | null;
 };
 
-/** 日志级别。 */
-export type LogLevel = "info" | "success" | "error";
+/** 应用事件来源模块。 */
+export type AppEventScope =
+  | "session"
+  | "sftp"
+  | "tunnel"
+  | "proxy"
+  | "remote-edit"
+  | "rdp"
+  | "ai"
+  | "security"
+  | "system";
 
-/** 日志条目。 */
-export type LogEntry = {
+/** 应用事件展示级别。 */
+export type AppEventLevel = "info" | "success" | "warning" | "error";
+
+/** 应用事件生命周期状态。 */
+export type AppEventStatus =
+  | "started"
+  | "running"
+  | "success"
+  | "partial_success"
+  | "failed"
+  | "cancelled"
+  | "state_changed";
+
+/** 全局事件中心使用的结构化事件。 */
+export type AppEvent = {
   id: string;
   timestamp: number;
-  key: import("./i18n").TranslationKey;
-  vars?: Record<string, string | number>;
-  level?: LogLevel;
+  scope: AppEventScope;
+  type: string;
+  level: AppEventLevel;
+  status?: AppEventStatus;
+  sessionId?: string | null;
+  profileId?: string | null;
+  resourceId?: string | null;
+  titleKey: TranslationKey;
+  messageKey?: TranslationKey;
+  vars?: Record<string, string | number | boolean | null>;
+  details?: Record<string, unknown>;
 };
 
 /** 历史命令来源。 */

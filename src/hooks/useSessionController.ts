@@ -30,7 +30,7 @@ export default function useSessionController(
       isRemoteSession: raw.isRemoteSession,
       isRemoteConnected: raw.isRemoteConnected,
       canReconnect: raw.canReconnect,
-      logEntries: raw.logEntries,
+      appEvents: raw.appEvents,
       busyMessage: raw.busyMessage,
     },
     sessionRefs: {
@@ -44,7 +44,7 @@ export default function useSessionController(
       activeSessionIdRef: raw.activeSessionIdRef,
     },
     sessionActions: {
-      appendLog: raw.appendLog,
+      appendAppEvent: raw.appendAppEvent,
       setBusyMessage: raw.setBusyMessage,
       isLocalSession: raw.isLocalSession,
       setLastCommand: raw.setLastCommand,

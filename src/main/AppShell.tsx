@@ -1688,7 +1688,7 @@ export default function AppShell() {
     activeSessionState: sessionState.activeSessionState,
     sessionStatesRef: sessionRefs.sessionStatesRef,
     isLocalSession: sessionActions.isLocalSession,
-    appendLog: sessionActions.appendLog,
+    appendAppEvent: sessionActions.appendAppEvent,
     setBusyMessage: sessionActions.setBusyMessage,
     t,
   });
@@ -2250,7 +2250,7 @@ export default function AppShell() {
           ? (sftpState.progressBySession[activeSessionId] ?? null)
           : null,
         busyMessage: sessionState.busyMessage,
-        entries: sessionState.logEntries,
+        events: sessionState.appEvents,
       };
       channel.postMessage({
         type: "transfers:snapshot",
@@ -2267,7 +2267,7 @@ export default function AppShell() {
               ? (sftpState.progressBySession[activeSessionId] ?? null)
               : null,
             busyMessage: sessionState.busyMessage,
-            entries: sessionState.logEntries,
+            events: sessionState.appEvents,
           };
           channel.postMessage({
             type: "transfers:snapshot",
@@ -2295,8 +2295,8 @@ export default function AppShell() {
     deps: [
       cancelTransfer,
       sessionState.activeSessionId,
+      sessionState.appEvents,
       sessionState.busyMessage,
-      sessionState.logEntries,
       sftpState.progressBySession,
     ],
   });
@@ -2310,7 +2310,7 @@ export default function AppShell() {
         sessionState: sessionState.activeSessionState ?? "disconnected",
         sessionReason: sessionState.activeSessionReason,
         reconnectInfo: sessionState.activeReconnectInfo,
-        entries: sessionState.logEntries,
+        events: sessionState.appEvents,
       };
       channel.postMessage({
         type: "events:snapshot",
@@ -2324,7 +2324,7 @@ export default function AppShell() {
             sessionState: sessionState.activeSessionState ?? "disconnected",
             sessionReason: sessionState.activeSessionReason,
             reconnectInfo: sessionState.activeReconnectInfo,
-            entries: sessionState.logEntries,
+            events: sessionState.appEvents,
           };
           channel.postMessage({
             type: "events:snapshot",
@@ -2350,7 +2350,7 @@ export default function AppShell() {
       sessionState.activeSessionState,
       sessionState.activeSessionReason,
       sessionState.activeReconnectInfo,
-      sessionState.logEntries,
+      sessionState.appEvents,
     ],
   });
 
@@ -2972,7 +2972,7 @@ export default function AppShell() {
         ? {
             progress: floatingTransfersSnapshot?.progress ?? null,
             busyMessage: floatingTransfersSnapshot?.busyMessage ?? null,
-            entries: floatingTransfersSnapshot?.entries ?? [],
+            events: floatingTransfersSnapshot?.events ?? [],
           }
         : {
             progress: sessionState.activeSessionId
@@ -2980,14 +2980,14 @@ export default function AppShell() {
                 null)
               : null,
             busyMessage: sessionState.busyMessage,
-            entries: sessionState.logEntries,
+            events: sessionState.appEvents,
           },
     [
       floatingTransfersSnapshot,
       isFloatingTransfersWidget,
       sessionState.activeSessionId,
+      sessionState.appEvents,
       sessionState.busyMessage,
-      sessionState.logEntries,
       sftpState.progressBySession,
     ],
   );
@@ -3109,13 +3109,13 @@ export default function AppShell() {
               floatingEventsSnapshot?.sessionState ?? "disconnected",
             sessionReason: floatingEventsSnapshot?.sessionReason ?? null,
             reconnectInfo: floatingEventsSnapshot?.reconnectInfo ?? null,
-            entries: floatingEventsSnapshot?.entries ?? [],
+            events: floatingEventsSnapshot?.events ?? [],
           }
         : {
             sessionState: sessionState.activeSessionState ?? "disconnected",
             sessionReason: sessionState.activeSessionReason,
             reconnectInfo: sessionState.activeReconnectInfo,
-            entries: sessionState.logEntries,
+            events: sessionState.appEvents,
           },
     [
       floatingEventsSnapshot,
@@ -3123,7 +3123,7 @@ export default function AppShell() {
       sessionState.activeReconnectInfo,
       sessionState.activeSessionReason,
       sessionState.activeSessionState,
-      sessionState.logEntries,
+      sessionState.appEvents,
     ],
   );
 
@@ -3336,7 +3336,9 @@ export default function AppShell() {
         isRemoteConnected: filesWidgetState.isRemoteConnected,
         transferProgress: TransfersWidgetState.progress,
         busyMessage: TransfersWidgetState.busyMessage,
-        logEntries: EventsWidgetState.entries,
+        appEvents: isFloatingTransfersWidget
+          ? TransfersWidgetState.events
+          : EventsWidgetState.events,
         historyLoaded: historyWidgetState.loaded,
         hasActiveSession: historyWidgetState.hasActiveSession,
         historyLiveCapture: historyWidgetState.liveCapture,
@@ -3436,6 +3438,7 @@ export default function AppShell() {
       AiWidgetActions,
       AiWidgetState,
       isFloatingAiWidget,
+      isFloatingTransfersWidget,
       EventsWidgetState,
       filesWidgetState.isRemoteSession,
       filesWidgetState.isRemoteConnected,

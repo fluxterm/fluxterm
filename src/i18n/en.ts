@@ -840,6 +840,7 @@ export const enUsTranslations = {
   "log.reconnectAttempt": "Attempt {attempt}, retry in {delay}s",
   "log.idle": "Idle",
   "log.history": "Recent activity",
+  "log.noEvents": "No events yet",
   "log.upload": "Upload",
   "log.download": "Download",
   "log.itemsCount": "{count} items",

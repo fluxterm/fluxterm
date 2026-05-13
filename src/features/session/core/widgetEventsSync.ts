@@ -2,7 +2,7 @@
  * 浮动事件面板同步协议。
  * 职责：定义主窗口与浮动事件面板之间共享的最小状态快照。
  */
-import type { DisconnectReason, LogEntry, SessionStateUi } from "@/types";
+import type { AppEvent, DisconnectReason, SessionStateUi } from "@/types";
 
 /** 浮动事件面板与主窗口之间共享的 BroadcastChannel 名称。 */
 export const WIDGET_EVENTS_CHANNEL = "fluxterm-events-sync";
@@ -12,7 +12,7 @@ export type FloatingEventsSnapshot = {
   sessionState: SessionStateUi;
   sessionReason: DisconnectReason | null;
   reconnectInfo: { attempt: number; delayMs: number } | null;
-  entries: LogEntry[];
+  events: AppEvent[];
 };
 
 /** 浮动事件面板发往主窗口的动作消息。 */

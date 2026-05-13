@@ -2,7 +2,7 @@
  * 浮动传输面板同步协议。
  * 职责：定义主窗口与浮动传输面板之间共享的最小状态快照与动作消息。
  */
-import type { LogEntry, SftpProgress } from "@/types";
+import type { AppEvent, SftpProgress } from "@/types";
 
 /** 浮动传输面板与主窗口之间共享的 BroadcastChannel 名称。 */
 export const WIDGET_TRANSFERS_CHANNEL = "fluxterm-transfers-sync";
@@ -12,7 +12,7 @@ export type FloatingTransfersSnapshot = {
   activeSessionId: string | null;
   progress: SftpProgress | null;
   busyMessage: string | null;
-  entries: LogEntry[];
+  events: AppEvent[];
 };
 
 /** 浮动传输面板发往主窗口的动作消息。 */

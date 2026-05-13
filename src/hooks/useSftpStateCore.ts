@@ -4,11 +4,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { CreateAppEventInput } from "@/features/events/core/appEvents";
 import { info } from "@/shared/logging/telemetry";
 import type { Translate, TranslationKey } from "@/i18n";
 import type {
   HostProfile,
-  LogLevel,
   SftpAvailability,
   SftpEntry,
   SftpProgress,
@@ -42,11 +42,7 @@ type UseSftpStateProps = {
   activeSessionState: SessionStateUi | null;
   sessionStatesRef: React.RefObject<Record<string, SessionStateUi>>;
   isLocalSession: (sessionId: string | null) => boolean;
-  appendLog: (
-    key: TranslationKey,
-    vars?: Record<string, string | number>,
-    level?: LogLevel,
-  ) => void;
+  appendAppEvent: (event: CreateAppEventInput) => void;
   setBusyMessage: React.Dispatch<React.SetStateAction<string | null>>;
   t: Translate;
 };
@@ -77,7 +73,7 @@ export default function useSftpState({
   activeSessionState,
   sessionStatesRef,
   isLocalSession,
-  appendLog,
+  appendAppEvent,
   setBusyMessage,
   t,
 }: UseSftpStateProps): UseSftpStateResult {
@@ -118,6 +114,34 @@ export default function useSftpState({
       return `${normalizedDirectory}${name}`;
     }
     return `${normalizedDirectory}\\${name}`;
+  }
+
+  function appendTransferEvent(input: {
+    op: "upload" | "download";
+    state: "started" | "success" | "partial_success" | "failed" | "cancelled";
+    titleKey: TranslationKey;
+    name: string;
+    failed?: number;
+  }) {
+    const isFailure =
+      input.state === "failed" || input.state === "partial_success";
+    appendAppEvent({
+      scope: "sftp",
+      type: `sftp.${input.op}.${input.state}`,
+      level: isFailure
+        ? "error"
+        : input.state === "success"
+          ? "success"
+          : "info",
+      status: input.state,
+      sessionId: activeSession?.sessionId ?? activeSessionId,
+      profileId: activeSessionProfile?.id ?? null,
+      titleKey: input.titleKey,
+      vars:
+        input.failed === undefined
+          ? { name: input.name }
+          : { name: input.name, failed: input.failed },
+    });
   }
 
   function updateFileView(
@@ -176,7 +200,20 @@ export default function useSftpState({
     // 后续直接保持 unsupported 状态，避免自动初始化反复刷日志。
     if (!unsupportedLoggedRef.current[sessionId]) {
       unsupportedLoggedRef.current[sessionId] = true;
-      appendLog("log.event.sftpUnsupported");
+      appendAppEvent({
+        scope: "sftp",
+        type: "sftp.unsupported",
+        level: "error",
+        status: "failed",
+        sessionId,
+        profileId: activeSessionProfile?.id ?? null,
+        titleKey: "log.event.sftpUnsupported",
+        details: {
+          host: activeSessionProfile?.host ?? null,
+          port: activeSessionProfile?.port ?? null,
+          message: extractErrorMessage(error),
+        },
+      });
       info(
         JSON.stringify({
           event: "sftp:unsupported",
@@ -327,7 +364,12 @@ export default function useSftpState({
     const file = await open({ multiple: false });
     if (!file || Array.isArray(file)) return;
     const fileName = file.split(/[\\/]/).pop() ?? "upload.bin";
-    appendLog("log.event.uploadStart", { name: fileName });
+    appendTransferEvent({
+      op: "upload",
+      state: "started",
+      titleKey: "log.event.uploadStart",
+      name: fileName,
+    });
     setBusyMessage(t("messages.uploading"));
     try {
       await sftpUploadBatch(activeSession.sessionId, [file], currentPath);
@@ -336,13 +378,28 @@ export default function useSftpState({
       const latestProgress =
         progressBySessionRef.current[activeSession.sessionId] ?? null;
       if (latestProgress?.status === "cancelled") {
-        appendLog("log.event.uploadCancelled", { name: fileName });
+        appendTransferEvent({
+          op: "upload",
+          state: "cancelled",
+          titleKey: "log.event.uploadCancelled",
+          name: fileName,
+        });
       } else {
-        appendLog("log.event.uploadDone", { name: fileName }, "success");
+        appendTransferEvent({
+          op: "upload",
+          state: "success",
+          titleKey: "log.event.uploadDone",
+          name: fileName,
+        });
       }
     } catch {
       setBusyMessage("上传失败");
-      appendLog("log.event.uploadFailed", { name: fileName }, "error");
+      appendTransferEvent({
+        op: "upload",
+        state: "failed",
+        titleKey: "log.event.uploadFailed",
+        name: fileName,
+      });
     }
   }
 
@@ -355,7 +412,12 @@ export default function useSftpState({
       normalizedPaths.length > 1
         ? t("log.itemsCount", { count: normalizedPaths.length })
         : (normalizedPaths[0]?.split(/[\\/]/).pop() ?? "upload.bin");
-    appendLog("log.event.uploadStart", { name: uploadLabel });
+    appendTransferEvent({
+      op: "upload",
+      state: "started",
+      titleKey: "log.event.uploadStart",
+      name: uploadLabel,
+    });
     setBusyMessage(t("messages.uploading"));
     try {
       await sftpUploadBatch(
@@ -368,15 +430,35 @@ export default function useSftpState({
       const latestProgress =
         progressBySessionRef.current[activeSession.sessionId] ?? null;
       if (latestProgress?.status === "cancelled") {
-        appendLog("log.event.uploadCancelled", { name: uploadLabel });
+        appendTransferEvent({
+          op: "upload",
+          state: "cancelled",
+          titleKey: "log.event.uploadCancelled",
+          name: uploadLabel,
+        });
       } else if (latestProgress?.status === "partial_success") {
-        appendLog("log.event.uploadFailed", { name: uploadLabel }, "error");
+        appendTransferEvent({
+          op: "upload",
+          state: "partial_success",
+          titleKey: "log.event.uploadFailed",
+          name: uploadLabel,
+        });
       } else {
-        appendLog("log.event.uploadDone", { name: uploadLabel }, "success");
+        appendTransferEvent({
+          op: "upload",
+          state: "success",
+          titleKey: "log.event.uploadDone",
+          name: uploadLabel,
+        });
       }
     } catch {
       setBusyMessage("上传失败");
-      appendLog("log.event.uploadFailed", { name: uploadLabel }, "error");
+      appendTransferEvent({
+        op: "upload",
+        state: "failed",
+        titleKey: "log.event.uploadFailed",
+        name: uploadLabel,
+      });
     }
   }
 
@@ -391,7 +473,12 @@ export default function useSftpState({
     if (!enabled && !isLocalSession(activeSession.sessionId)) return;
     const target = await open({ directory: true, multiple: false });
     if (!target) return;
-    appendLog("log.event.downloadStart", { name: entry.name });
+    appendTransferEvent({
+      op: "download",
+      state: "started",
+      titleKey: "log.event.downloadStart",
+      name: entry.name,
+    });
     setBusyMessage(t("messages.downloading"));
     try {
       if (entry.kind === "dir") {
@@ -409,39 +496,45 @@ export default function useSftpState({
       const latestProgress =
         progressBySessionRef.current[activeSession.sessionId] ?? null;
       if (latestProgress?.status === "cancelled") {
-        appendLog("log.event.downloadCancelled", {
+        appendTransferEvent({
+          op: "download",
+          state: "cancelled",
+          titleKey: "log.event.downloadCancelled",
           name:
             latestProgress.totalItems && latestProgress.totalItems > 1
               ? t("log.itemsCount", { count: latestProgress.totalItems })
               : entry.name,
         });
       } else if (latestProgress?.status === "partial_success") {
-        appendLog(
-          "log.event.downloadPartial",
-          {
-            name:
-              latestProgress.totalItems && latestProgress.totalItems > 1
-                ? t("log.itemsCount", { count: latestProgress.totalItems })
-                : entry.name,
-            failed: latestProgress.failedItems,
-          },
-          "error",
-        );
+        appendTransferEvent({
+          op: "download",
+          state: "partial_success",
+          titleKey: "log.event.downloadPartial",
+          name:
+            latestProgress.totalItems && latestProgress.totalItems > 1
+              ? t("log.itemsCount", { count: latestProgress.totalItems })
+              : entry.name,
+          failed: latestProgress.failedItems,
+        });
       } else {
-        appendLog(
-          "log.event.downloadDone",
-          {
-            name:
-              latestProgress?.totalItems && latestProgress.totalItems > 1
-                ? t("log.itemsCount", { count: latestProgress.totalItems })
-                : entry.name,
-          },
-          "success",
-        );
+        appendTransferEvent({
+          op: "download",
+          state: "success",
+          titleKey: "log.event.downloadDone",
+          name:
+            latestProgress?.totalItems && latestProgress.totalItems > 1
+              ? t("log.itemsCount", { count: latestProgress.totalItems })
+              : entry.name,
+        });
       }
     } catch {
       setBusyMessage("下载失败");
-      appendLog("log.event.downloadFailed", { name: entry.name }, "error");
+      appendTransferEvent({
+        op: "download",
+        state: "failed",
+        titleKey: "log.event.downloadFailed",
+        name: entry.name,
+      });
     }
   }
 

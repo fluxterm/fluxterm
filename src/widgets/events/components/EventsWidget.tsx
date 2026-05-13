@@ -1,25 +1,36 @@
 import type { Locale, Translate } from "@/i18n";
-import type { DisconnectReason, LogEntry, SessionStateUi } from "@/types";
+import type { AppEvent, DisconnectReason, SessionStateUi } from "@/types";
 import { formatDateTimeMs } from "@/utils/format";
 
 type EventsWidgetProps = {
   sessionState: SessionStateUi;
   sessionReason: DisconnectReason | null;
   reconnectInfo: { attempt: number; delayMs: number } | null;
-  entries: LogEntry[];
+  events: AppEvent[];
   locale: Locale;
   t: Translate;
 };
 
-const isTransferKey = (key: string) =>
-  key.includes("upload") || key.includes("download");
+function isVisibleActivityEvent(event: AppEvent) {
+  return event.scope === "session" || event.type === "sftp.unsupported";
+}
 
-/** 事件与连接状态面板。 */
+function normalizeEventVars(event: AppEvent) {
+  if (!event.vars) return undefined;
+  return Object.fromEntries(
+    Object.entries(event.vars).filter(
+      (entry): entry is [string, string | number] =>
+        typeof entry[1] === "string" || typeof entry[1] === "number",
+    ),
+  );
+}
+
+/** 全局事件中心 V1 面板。 */
 export default function EventsWidget({
   sessionState,
   sessionReason,
   reconnectInfo,
-  entries,
+  events,
   locale,
   t,
 }: EventsWidgetProps) {
@@ -42,7 +53,7 @@ export default function EventsWidget({
     ? reasonLabelMap[sessionReason]
     : t("session.reason.unknown");
 
-  const eventEntries = entries.filter((entry) => !isTransferKey(entry.key));
+  const activityEvents = events.filter(isVisibleActivityEvent);
 
   return (
     <div className="log-widget">
@@ -67,24 +78,27 @@ export default function EventsWidget({
           </strong>
         </div>
       )}
-      {!!eventEntries.length && (
-        <div className="log-list">
-          <div className="log-list-header">{t("log.history")}</div>
-          <div className="log-list-body">
-            {eventEntries.map((entry) => (
-              <div
-                key={entry.id}
-                className={`log-item ${entry.level ?? "info"}`}
-              >
+      <div className="log-list">
+        <div className="log-list-header">{t("log.history")}</div>
+        <div className="log-list-body">
+          {activityEvents.length ? (
+            activityEvents.map((event) => (
+              <div key={event.id} className={`log-item ${event.level}`}>
                 <span className="log-time">
-                  {formatDateTimeMs(entry.timestamp, locale)}
+                  {formatDateTimeMs(event.timestamp, locale)}
                 </span>
-                <span className="log-message">{t(entry.key, entry.vars)}</span>
+                <span className="log-message">
+                  {t(event.titleKey, normalizeEventVars(event))}
+                </span>
               </div>
-            ))}
-          </div>
+            ))
+          ) : (
+            <div className="log-item">
+              <span className="log-message">{t("log.noEvents")}</span>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

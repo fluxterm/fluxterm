@@ -26,6 +26,7 @@
 ## 日志与可观测性
 
 - [Telemetry / 埋点日志规范](./telemetry-logging-spec.md)
+- [全局事件中心 V1 设计](./global-event-center-v1-design.md)
 
 ## 性能与专题
 
