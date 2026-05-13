@@ -17,7 +17,6 @@ import type {
   CommandHistoryItem,
   CommandHistoryLiveCapture,
   ConnectingProfileMap,
-  DisconnectReason,
   HostProfile,
   LocalShellProfile,
   AppEvent,
@@ -43,9 +42,6 @@ type buildWidgetsProps = {
   rdpConnectingProfiles: ConnectingProfileMap;
   availableShells: LocalShellProfile[];
   activeSessionId: string | null;
-  activeSessionState: SessionStateUi | null;
-  activeSessionReason: DisconnectReason | null;
-  activeReconnectInfo: { attempt: number; delayMs: number } | null;
   isRemoteSession: boolean;
   isRemoteConnected: boolean;
   transferProgress: SftpProgress | null;
@@ -147,9 +143,6 @@ export function buildWidgets(
     rdpConnectingProfiles,
     availableShells,
     activeSessionId,
-    activeSessionState,
-    activeSessionReason,
-    activeReconnectInfo,
     isRemoteSession,
     isRemoteConnected,
     transferProgress,
@@ -319,16 +312,7 @@ export function buildWidgets(
         t={t}
       />
     ),
-    events: (
-      <EventsWidget
-        sessionState={activeSessionState ?? "disconnected"}
-        sessionReason={activeSessionReason}
-        reconnectInfo={activeReconnectInfo}
-        events={appEvents}
-        locale={locale}
-        t={t}
-      />
-    ),
+    events: <EventsWidget events={appEvents} locale={locale} t={t} />,
     history: (
       <CommandHistoryWidget
         loaded={historyLoaded}
