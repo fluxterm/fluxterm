@@ -3442,7 +3442,7 @@ dependencies = [
 [[package]]
 name = "ironrdp"
 version = "0.14.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-connector",
  "ironrdp-core",
@@ -3458,7 +3458,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-async"
 version = "0.8.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bytes",
  "ironrdp-connector",
@@ -3470,12 +3470,12 @@ dependencies = [
 [[package]]
 name = "ironrdp-bulk"
 version = "0.1.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 
 [[package]]
 name = "ironrdp-cliprdr"
 version = "0.5.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bitflags 2.11.0",
  "ironrdp-core",
@@ -3487,7 +3487,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-connector"
 version = "0.8.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-core",
  "ironrdp-error",
@@ -3505,7 +3505,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-core"
 version = "0.1.5"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-error",
 ]
@@ -3513,7 +3513,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-displaycontrol"
 version = "0.5.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-core",
  "ironrdp-dvc",
@@ -3525,7 +3525,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-dvc"
 version = "0.5.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-core",
  "ironrdp-pdu",
@@ -3537,12 +3537,12 @@ dependencies = [
 [[package]]
 name = "ironrdp-error"
 version = "0.1.3"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 
 [[package]]
 name = "ironrdp-graphics"
 version = "0.7.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bit_field",
  "bitflags 2.11.0",
@@ -3558,7 +3558,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-input"
 version = "0.5.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bitvec",
  "ironrdp-pdu",
@@ -3568,7 +3568,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-pdu"
 version = "0.7.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bit_field",
  "bitflags 2.11.0",
@@ -3591,7 +3591,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-session"
 version = "0.8.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-bulk",
  "ironrdp-connector",
@@ -3608,7 +3608,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-svc"
 version = "0.6.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "bitflags 2.11.0",
  "ironrdp-core",
@@ -3618,7 +3618,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-tls"
 version = "0.2.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "tokio",
  "tokio-rustls",
@@ -3628,7 +3628,7 @@ dependencies = [
 [[package]]
 name = "ironrdp-tokio"
 version = "0.8.0"
-source = "git+https://github.com/sfwwslm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
+source = "git+https://github.com/fluxterm/IronRDP?branch=fluxterm-runtime#7ca00db09eb49c5e7d226ed766035ed7c0d5734f"
 dependencies = [
  "ironrdp-async",
  "ironrdp-connector",
