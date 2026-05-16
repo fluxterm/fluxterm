@@ -1,8 +1,31 @@
 # Changelog
 
-本文档记录 FluxTerm 各版本已发布的用户可见更新。
-
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
+
+## [0.3.0] - 2026-05-17
+
+本次更新聚焦于 AI Provider 管理、SFTP 事件可见性、全局事件中心基础能力，以及 macOS 中文输入法和若干界面交互细节修复。
+
+### Added
+
+- **AI Provider 可编辑管理**: 支持在应用内新增、编辑和管理 AI Provider，配置多个模型服务更灵活。
+- **SFTP 事件中心接入**: SFTP 操作事件与传输状态接入应用事件中心，文件操作反馈更集中、更易追踪。
+- **全局应用事件基础能力**: 新增应用事件中心基础设施，为后续统一展示连接、传输和系统事件提供支撑。
+
+### Changed
+
+- **AI Provider 交互简化**: 优化 Provider 列表、启用状态和移除确认文案，管理流程更清晰。
+- **Quickbar 操作体验优化**: 新增快捷命令后自动聚焦输入，并精简复制按钮文案。
+- **界面滚动条统一**: 统一组件设置菜单与共享滚动条样式，界面细节更一致。
+- **依赖与发布配置更新**: 升级 Tauri 及相关依赖，更新 Rust 工具链配置，并整理发布配置与许可证信息。
+
+### Fixed
+
+- **macOS 中文输入法 CapsLock 提交异常**: 修复 macOS 中文输入法下通过 `CapsLock` 切换输入状态时，组合输入内容可能被提交为空格分隔字符的问题。
+- **macOS 中文输入重复字符**: 继续收敛 `CapsLock` 触发的异常输入事件处理，避免 IME 内容重复提交。
+- **弹窗误关闭**: 修复点击弹窗遮罩可能意外关闭对话框的问题。
+- **垂直分屏布局间距**: 修复会话垂直分屏后多余边距导致的布局不紧凑问题。
+- **仓库与 RDP 依赖链接**: 修正项目仓库链接和 IronRDP 来源链接，避免跳转到错误地址。
 
 ## [0.2.0] - 2026-04-25
 
@@ -531,6 +554,7 @@
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
 
+[0.3.0]: https://github.com/fluxterm/fluxterm/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/fluxterm/fluxterm/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/fluxterm/fluxterm/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.13...0.1.0
