@@ -2616,11 +2616,9 @@ fn now_epoch_millis() -> u128 {
 
 /// 记录 SFTP 传输性能埋点日志，便于横向对比不同实现版本的吞吐表现。
 fn log_sftp_perf(stats: SftpPerfStats) {
-    let throughput_bps = if stats.elapsed_ms == 0 {
-        stats.transferred_bytes
-    } else {
-        ((stats.transferred_bytes as u128 * 1000) / stats.elapsed_ms) as u64
-    };
+    let throughput_bps = (stats.transferred_bytes as u128 * 1000)
+        .checked_div(stats.elapsed_ms)
+        .unwrap_or(stats.transferred_bytes as u128) as u64;
     log_telemetry(
         TelemetryLevel::Debug,
         "sftp.perf.update",
@@ -2648,11 +2646,9 @@ fn log_sftp_perf(stats: SftpPerfStats) {
 
 /// 记录 SFTP 传输成功日志。
 fn log_sftp_success(action: &str, context: &TransferLogContext<'_>) {
-    let speed_bytes_per_sec = if context.elapsed_ms == 0 {
-        context.transferred_bytes
-    } else {
-        ((context.transferred_bytes as u128 * 1000) / context.elapsed_ms) as u64
-    };
+    let speed_bytes_per_sec = (context.transferred_bytes as u128 * 1000)
+        .checked_div(context.elapsed_ms)
+        .unwrap_or(context.transferred_bytes as u128) as u64;
     log_telemetry(
         TelemetryLevel::Debug,
         &action.replace('_', "."),
