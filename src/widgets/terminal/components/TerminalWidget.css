@@ -83,6 +83,11 @@
   background: var(--chrome-session-tab-bg);
   border: 1px solid var(--tab-border);
   color: var(--text-secondary);
+  transition:
+    transform 0.16s ease,
+    opacity 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
 button.session-tab {

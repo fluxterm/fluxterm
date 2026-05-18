@@ -5,6 +5,7 @@
  * 2. 为每个区域输出工作区栏和会话容器。
  * 3. 处理区域内会话拖拽排序与 split resize 交互。
  */
+import { useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
 import type { MouseEvent } from "react";
 import { FiBell, FiX } from "react-icons/fi";
@@ -172,6 +173,125 @@ function PaneNodeView({
     );
   }
 
+  return (
+    <LeafPaneView
+      node={node}
+      activePaneId={activePaneId}
+      getTerminalContainerRef={getTerminalContainerRef}
+      isTerminalReady={isTerminalReady}
+      getSessionLabel={getSessionLabel}
+      getSessionState={getSessionState}
+      bellPendingBySession={bellPendingBySession}
+      getSessionBanner={getSessionBanner}
+      onFocusPane={onFocusPane}
+      onSwitchSession={onSwitchSession}
+      onReorderPaneSessions={onReorderPaneSessions}
+      onOpenSessionMenu={onOpenSessionMenu}
+      onClosePaneSession={onClosePaneSession}
+      onPaneMouseDown={onPaneMouseDown}
+      onPaneContextMenu={onPaneContextMenu}
+      autocomplete={autocomplete}
+      autocompleteAnchor={autocompleteAnchor}
+      onApplyAutocompleteSuggestion={onApplyAutocompleteSuggestion}
+      hasSplitPanes={hasSplitPanes}
+    />
+  );
+}
+
+type LeafPaneViewProps = Omit<
+  PaneNodeViewProps,
+  "node" | "getSessionReason" | "onResizePaneSplit"
+> & {
+  node: Extract<SessionPaneNode, { kind: "leaf" }>;
+};
+
+type TabDragPreview = {
+  sourceSessionId: string;
+  targetSessionId: string | null;
+  sessionIds: string[];
+};
+
+function LeafPaneView({
+  node,
+  activePaneId,
+  getTerminalContainerRef,
+  isTerminalReady,
+  getSessionLabel,
+  getSessionState,
+  bellPendingBySession,
+  getSessionBanner,
+  onFocusPane,
+  onSwitchSession,
+  onReorderPaneSessions,
+  onOpenSessionMenu,
+  onClosePaneSession,
+  onPaneMouseDown,
+  onPaneContextMenu,
+  autocomplete,
+  autocompleteAnchor,
+  onApplyAutocompleteSuggestion,
+  hasSplitPanes,
+}: LeafPaneViewProps) {
+  const [dragPreview, setDragPreview] = useState<TabDragPreview | null>(null);
+  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const previousTabRectsRef = useRef<Map<string, DOMRect>>(new Map());
+  const orderedSessionIds = dragPreview?.sessionIds ?? node.sessionIds;
+
+  useLayoutEffect(() => {
+    const previousRects = previousTabRectsRef.current;
+    if (!previousRects.size) return;
+    previousTabRectsRef.current = new Map();
+    orderedSessionIds.forEach((sessionId) => {
+      const element = tabRefs.current[sessionId];
+      const previousRect = previousRects.get(sessionId);
+      if (!element || !previousRect || element.classList.contains("dragging")) {
+        return;
+      }
+      const nextRect = element.getBoundingClientRect();
+      const deltaX = previousRect.left - nextRect.left;
+      const deltaY = previousRect.top - nextRect.top;
+      if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return;
+      element.animate(
+        [
+          { transform: `translate(${deltaX}px, ${deltaY}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        {
+          duration: 160,
+          easing: "ease",
+        },
+      );
+    });
+  }, [orderedSessionIds]);
+
+  function captureTabRects() {
+    const rects = new Map<string, DOMRect>();
+    Object.entries(tabRefs.current).forEach(([sessionId, element]) => {
+      if (element) {
+        rects.set(sessionId, element.getBoundingClientRect());
+      }
+    });
+    previousTabRectsRef.current = rects;
+  }
+
+  function updateDragPreview(
+    sourceSessionId: string,
+    targetSessionId: string | null,
+  ) {
+    setDragPreview({
+      sourceSessionId,
+      targetSessionId,
+      sessionIds: targetSessionId
+        ? reorderSessionIds(node.sessionIds, sourceSessionId, targetSessionId)
+        : node.sessionIds,
+    });
+  }
+
+  function clearDragPreview() {
+    setDragPreview(null);
+    previousTabRectsRef.current = new Map();
+  }
+
   // 单工作区时外层 terminal-widget 已有边框，pane 内层不再重复显示激活边框；
   // 只有拆分出多个工作区后，才用 pane 激活边框表达当前聚焦区域。
   const activePane = hasSplitPanes && node.paneId === activePaneId;
@@ -193,29 +313,45 @@ function PaneNodeView({
     >
       <div className="terminal-header">
         <div className="session-tabs">
-          {node.sessionIds.map((sessionId, index) => {
+          {orderedSessionIds.map((sessionId, index) => {
             const sessionActive = sessionId === paneActiveSessionId;
             const disconnected = getSessionState(sessionId) === "disconnected";
             const showBell =
               !sessionActive && !!bellPendingBySession[sessionId];
             const showCloseButton = sessionActive;
+            const dragging = dragPreview?.sourceSessionId === sessionId;
+            const dropTarget = dragPreview?.targetSessionId === sessionId;
             // 标签序号按当前 pane 内顺序独立计算，分屏后各区域都从 1 开始。
             const sessionLabel = `${index + 1}. ${getSessionLabel(sessionId)}`;
             return (
               <div
                 key={sessionId}
+                ref={(element) => {
+                  tabRefs.current[sessionId] = element;
+                  if (!element) {
+                    delete tabRefs.current[sessionId];
+                  }
+                }}
                 data-pane-session-id={sessionId}
                 className={`session-tab session-tab-trigger-inline ${
                   sessionActive ? "active" : ""
                 } ${disconnected ? "disconnected" : ""} ${
                   showCloseButton ? "show-close" : ""
+                } ${dragging ? "dragging" : ""} ${
+                  dropTarget ? "drop-target" : ""
                 }`}
                 onPointerDown={(event) =>
                   handleSessionPointerDown(
                     event,
                     node.paneId,
                     sessionId,
+                    node.sessionIds,
                     onReorderPaneSessions,
+                    {
+                      onCaptureLayout: captureTabRects,
+                      onPreviewChange: updateDragPreview,
+                      onPreviewClear: clearDragPreview,
+                    },
                   )
                 }
                 onContextMenu={(event) => {
@@ -370,19 +506,50 @@ function handleSessionPointerDown(
   event: React.PointerEvent<HTMLElement>,
   paneId: string,
   sessionId: string,
+  sessionIds: string[],
   onReorderPaneSessions: (
     paneId: string,
     sourceSessionId: string,
     targetSessionId: string,
   ) => void,
+  previewHandlers: {
+    onCaptureLayout: () => void;
+    onPreviewChange: (
+      sourceSessionId: string,
+      targetSessionId: string | null,
+    ) => void;
+    onPreviewClear: () => void;
+  },
 ) {
   if (event.button !== 0) return;
   const sourceElement = event.currentTarget;
+  const tabList = sourceElement.closest(".session-tabs");
+  if (!tabList) return;
   const startX = event.clientX;
   const startY = event.clientY;
   let moved = false;
-  let highlightedTarget: HTMLElement | null = null;
-  sourceElement.classList.add("dragging");
+  let lastTargetSessionId: string | null = null;
+  previewHandlers.onPreviewChange(sessionId, null);
+
+  function resolveTargetSessionId(clientX: number, clientY: number) {
+    const target = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLElement>("[data-pane-session-id]");
+    if (!target || target === sourceElement) return null;
+    if (target.closest(".session-tabs") !== tabList) return null;
+    const targetSessionId = target.dataset.paneSessionId ?? null;
+    if (!targetSessionId || !sessionIds.includes(targetSessionId)) return null;
+    return targetSessionId;
+  }
+
+  function cleanup() {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", onPointerCancel);
+    window.removeEventListener("blur", onPointerCancel);
+    previewHandlers.onPreviewClear();
+  }
+
   const onPointerMove = (moveEvent: PointerEvent) => {
     if (
       Math.abs(moveEvent.clientX - startX) > 4 ||
@@ -390,33 +557,55 @@ function handleSessionPointerDown(
     ) {
       moved = true;
     }
-    const nextTarget = document
-      .elementFromPoint(moveEvent.clientX, moveEvent.clientY)
-      ?.closest<HTMLElement>("[data-pane-session-id]");
-    if (highlightedTarget && highlightedTarget !== nextTarget) {
-      highlightedTarget.classList.remove("drop-target");
-      highlightedTarget = null;
-    }
-    if (nextTarget && nextTarget !== sourceElement) {
-      nextTarget.classList.add("drop-target");
-      highlightedTarget = nextTarget;
-    }
+    if (!moved) return;
+    const nextTargetSessionId = resolveTargetSessionId(
+      moveEvent.clientX,
+      moveEvent.clientY,
+    );
+    if (!nextTargetSessionId) return;
+    if (nextTargetSessionId === lastTargetSessionId) return;
+    previewHandlers.onCaptureLayout();
+    lastTargetSessionId = nextTargetSessionId;
+    previewHandlers.onPreviewChange(sessionId, nextTargetSessionId);
   };
   const onPointerUp = (upEvent: PointerEvent) => {
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    sourceElement.classList.remove("dragging");
-    highlightedTarget?.classList.remove("drop-target");
-    if (!moved) return;
-    const target = document
-      .elementFromPoint(upEvent.clientX, upEvent.clientY)
-      ?.closest<HTMLElement>("[data-pane-session-id]");
-    const targetSessionId = target?.dataset.paneSessionId;
-    if (!targetSessionId || targetSessionId === sessionId) return;
+    const targetSessionId =
+      resolveTargetSessionId(upEvent.clientX, upEvent.clientY) ??
+      lastTargetSessionId;
+    cleanup();
+    if (!moved || !targetSessionId || targetSessionId === sessionId) return;
+    const reordered = reorderSessionIds(sessionIds, sessionId, targetSessionId);
+    if (arraysEqual(reordered, sessionIds)) return;
     onReorderPaneSessions(paneId, sessionId, targetSessionId);
   };
+  const onPointerCancel = () => cleanup();
   window.addEventListener("pointermove", onPointerMove);
   window.addEventListener("pointerup", onPointerUp, { once: true });
+  window.addEventListener("pointercancel", onPointerCancel, { once: true });
+  window.addEventListener("blur", onPointerCancel, { once: true });
+}
+
+function reorderSessionIds(
+  sessionIds: string[],
+  sourceSessionId: string,
+  targetSessionId: string,
+) {
+  const sourceIndex = sessionIds.indexOf(sourceSessionId);
+  const targetIndex = sessionIds.indexOf(targetSessionId);
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    return sessionIds;
+  }
+  const next = sessionIds.slice();
+  const [moved] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, moved);
+  return next;
+}
+
+function arraysEqual(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => item === right[index])
+  );
 }
 
 function findFirstLeafPaneId(node: SessionPaneNode): string | null {
