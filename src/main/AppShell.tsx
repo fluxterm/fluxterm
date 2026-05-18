@@ -3598,6 +3598,7 @@ export default function AppShell() {
                   terminalActions.registerTerminalContainer
                 }
                 isTerminalReady={terminalQuery.isTerminalReady}
+                getTerminalTitle={terminalQuery.getTerminalTitle}
                 activeLinkMenu={terminalQuery.getActiveLinkMenu()}
                 hasFocusedLine={terminalQuery.hasFocusedLine}
                 onFocusLineAtPoint={terminalActions.focusTerminalLineAtPoint}

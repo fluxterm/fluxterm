@@ -18,6 +18,7 @@ export default function useTerminalController(
       isTerminalReady: raw.isTerminalReady,
       getTerminalSize: raw.getTerminalSize,
       getActiveTerminalStats: raw.getActiveTerminalStats,
+      getTerminalTitle: raw.getTerminalTitle,
       getSessionBufferText: raw.getSessionBufferText,
       getActiveSearchStats: raw.getActiveSearchStats,
       getActiveLinkMenu: raw.getActiveLinkMenu,

@@ -10,6 +10,7 @@ import type React from "react";
 import type { MouseEvent } from "react";
 import { FiBell, FiX } from "react-icons/fi";
 import type { DisconnectReason, SessionPaneNode } from "@/types";
+import Tooltip from "@/components/ui/menu/Tooltip";
 
 type TerminalPaneTreeProps = {
   root: SessionPaneNode;
@@ -18,6 +19,7 @@ type TerminalPaneTreeProps = {
     sessionId: string,
   ) => (element: HTMLDivElement | null) => void;
   isTerminalReady: (sessionId: string) => boolean;
+  getTerminalTitle: (sessionId: string) => string | null;
   getSessionLabel: (sessionId: string) => string;
   getSessionState: (sessionId: string) => string;
   getSessionReason: (sessionId: string) => DisconnectReason | null;
@@ -88,6 +90,7 @@ function PaneNodeView({
   activePaneId,
   getTerminalContainerRef,
   isTerminalReady,
+  getTerminalTitle,
   getSessionLabel,
   getSessionState,
   getSessionReason,
@@ -117,6 +120,7 @@ function PaneNodeView({
             activePaneId={activePaneId}
             getTerminalContainerRef={getTerminalContainerRef}
             isTerminalReady={isTerminalReady}
+            getTerminalTitle={getTerminalTitle}
             getSessionLabel={getSessionLabel}
             getSessionState={getSessionState}
             getSessionReason={getSessionReason}
@@ -150,6 +154,7 @@ function PaneNodeView({
             activePaneId={activePaneId}
             getTerminalContainerRef={getTerminalContainerRef}
             isTerminalReady={isTerminalReady}
+            getTerminalTitle={getTerminalTitle}
             getSessionLabel={getSessionLabel}
             getSessionState={getSessionState}
             getSessionReason={getSessionReason}
@@ -179,6 +184,7 @@ function PaneNodeView({
       activePaneId={activePaneId}
       getTerminalContainerRef={getTerminalContainerRef}
       isTerminalReady={isTerminalReady}
+      getTerminalTitle={getTerminalTitle}
       getSessionLabel={getSessionLabel}
       getSessionState={getSessionState}
       bellPendingBySession={bellPendingBySession}
@@ -216,6 +222,7 @@ function LeafPaneView({
   activePaneId,
   getTerminalContainerRef,
   isTerminalReady,
+  getTerminalTitle,
   getSessionLabel,
   getSessionState,
   bellPendingBySession,
@@ -321,82 +328,96 @@ function LeafPaneView({
             const showCloseButton = sessionActive;
             const dragging = dragPreview?.sourceSessionId === sessionId;
             const dropTarget = dragPreview?.targetSessionId === sessionId;
+            const terminalTitle = getTerminalTitle(sessionId);
             // 标签序号按当前 pane 内顺序独立计算，分屏后各区域都从 1 开始。
             const sessionLabel = `${index + 1}. ${getSessionLabel(sessionId)}`;
             return (
-              <div
+              <Tooltip
                 key={sessionId}
-                ref={(element) => {
-                  tabRefs.current[sessionId] = element;
-                  if (!element) {
-                    delete tabRefs.current[sessionId];
-                  }
-                }}
-                data-pane-session-id={sessionId}
-                className={`session-tab session-tab-trigger-inline ${
-                  sessionActive ? "active" : ""
-                } ${disconnected ? "disconnected" : ""} ${
-                  showCloseButton ? "show-close" : ""
-                } ${dragging ? "dragging" : ""} ${
-                  dropTarget ? "drop-target" : ""
-                }`}
-                onPointerDown={(event) =>
-                  handleSessionPointerDown(
-                    event,
-                    node.paneId,
-                    sessionId,
-                    node.sessionIds,
-                    onReorderPaneSessions,
-                    {
-                      onCaptureLayout: captureTabRects,
-                      onPreviewChange: updateDragPreview,
-                      onPreviewClear: clearDragPreview,
-                    },
-                  )
+                content={
+                  terminalTitle ? (
+                    <span className="terminal-title-tooltip">
+                      {terminalTitle}
+                    </span>
+                  ) : null
                 }
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onFocusPane(node.paneId);
-                  onSwitchSession(sessionId);
-                  onOpenSessionMenu({
-                    x: event.clientX,
-                    y: event.clientY,
-                    paneId: node.paneId,
-                    sessionId,
-                  });
-                }}
+                disabled={!terminalTitle}
+                bubbleClassName="terminal-title-tooltip-bubble"
+                delayMs={180}
               >
-                <button
-                  type="button"
-                  className="session-tab-trigger"
-                  onClick={(event) => {
+                <div
+                  ref={(element) => {
+                    tabRefs.current[sessionId] = element;
+                    if (!element) {
+                      delete tabRefs.current[sessionId];
+                    }
+                  }}
+                  data-pane-session-id={sessionId}
+                  className={`session-tab session-tab-trigger-inline ${
+                    sessionActive ? "active" : ""
+                  } ${disconnected ? "disconnected" : ""} ${
+                    showCloseButton ? "show-close" : ""
+                  } ${dragging ? "dragging" : ""} ${
+                    dropTarget ? "drop-target" : ""
+                  }`}
+                  onPointerDown={(event) =>
+                    handleSessionPointerDown(
+                      event,
+                      node.paneId,
+                      sessionId,
+                      node.sessionIds,
+                      onReorderPaneSessions,
+                      {
+                        onCaptureLayout: captureTabRects,
+                        onPreviewChange: updateDragPreview,
+                        onPreviewClear: clearDragPreview,
+                      },
+                    )
+                  }
+                  onContextMenu={(event) => {
+                    event.preventDefault();
                     event.stopPropagation();
                     onFocusPane(node.paneId);
                     onSwitchSession(sessionId);
+                    onOpenSessionMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      paneId: node.paneId,
+                      sessionId,
+                    });
                   }}
                 >
-                  {sessionLabel}
-                </button>
-                {showBell ? (
-                  <span className="session-tab-bell" aria-hidden="true">
-                    <FiBell />
-                  </span>
-                ) : null}
-                {showCloseButton && (
                   <button
                     type="button"
-                    className="close"
-                    aria-label="close-pane-session"
+                    className="session-tab-trigger"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onClosePaneSession(node.paneId, sessionId);
+                      onFocusPane(node.paneId);
+                      onSwitchSession(sessionId);
                     }}
                   >
-                    <FiX />
+                    {sessionLabel}
                   </button>
-                )}
-              </div>
+                  {showBell ? (
+                    <span className="session-tab-bell" aria-hidden="true">
+                      <FiBell />
+                    </span>
+                  ) : null}
+                  {showCloseButton && (
+                    <button
+                      type="button"
+                      className="close"
+                      aria-label="close-pane-session"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onClosePaneSession(node.paneId, sessionId);
+                      }}
+                    >
+                      <FiX />
+                    </button>
+                  )}
+                </div>
+              </Tooltip>
             );
           })}
         </div>

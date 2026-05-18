@@ -26,6 +26,8 @@ type TooltipProps = {
   delayMs?: number;
   /** 是否禁用 Tooltip。 */
   disabled?: boolean;
+  /** 追加到气泡上的样式类。 */
+  bubbleClassName?: string;
 };
 
 const TOOLTIP_VIEWPORT_GAP = 12;
@@ -48,6 +50,7 @@ export default function Tooltip({
   offset = 8,
   delayMs = 240,
   disabled = false,
+  bubbleClassName,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<TooltipPosition>({
@@ -55,7 +58,7 @@ export default function Tooltip({
     top: 0,
     placement,
   });
-  const targetRef = useRef<HTMLSpanElement | null>(null);
+  const targetRef = useRef<HTMLDivElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
   const openTimerRef = useRef<number | null>(null);
   const tooltipId = useId();
@@ -191,7 +194,7 @@ export default function Tooltip({
 
   return (
     <>
-      <span
+      <div
         className="tooltip-target"
         ref={targetRef}
         onMouseEnter={handleShow}
@@ -201,13 +204,13 @@ export default function Tooltip({
         aria-describedby={open ? tooltipId : undefined}
       >
         {children}
-      </span>
+      </div>
       {open &&
         createPortal(
           <div className="tooltip-layer">
             <div
               ref={bubbleRef}
-              className="tooltip-bubble"
+              className={`tooltip-bubble ${bubbleClassName ?? ""}`.trim()}
               data-placement={position.placement}
               style={{ left: position.left, top: position.top }}
               role="tooltip"

@@ -131,6 +131,7 @@ type TerminalRuntime = {
     windowCols: number;
     bufferLines: number;
   };
+  getTerminalTitle: (sessionId: string) => string | null;
   getSessionBufferText: (sessionId: string) => string | null;
   getActiveSearchStats: () => {
     resultIndex: number;
@@ -503,6 +504,9 @@ export default function useTerminalRuntime({
   const [linkMenu, setLinkMenu] = useState<LinkMenuState | null>(null);
   const [terminalReadyBySession, setTerminalReadyBySession] = useState<
     Record<string, boolean>
+  >({});
+  const [terminalTitleBySession, setTerminalTitleBySession] = useState<
+    Record<string, string>
   >({});
   const [activeAutocomplete, setActiveAutocomplete] =
     useState<ActiveAutocompleteState | null>(null);
@@ -1502,6 +1506,19 @@ export default function useTerminalRuntime({
     };
 
     bundle.disposables.push(
+      term.onTitleChange((title) => {
+        const normalizedTitle = title.trim();
+        setTerminalTitleBySession((prev) => {
+          if (!normalizedTitle) {
+            if (!prev[sessionId]) return prev;
+            const next = { ...prev };
+            delete next[sessionId];
+            return next;
+          }
+          if (prev[sessionId] === normalizedTitle) return prev;
+          return { ...prev, [sessionId]: normalizedTitle };
+        });
+      }),
       term.parser.registerOscHandler(7, (data) => {
         publishWorkingDirectoryFromOsc7(sessionId, data);
         return true;
@@ -1867,6 +1884,12 @@ export default function useTerminalRuntime({
       delete next[sessionId];
       return next;
     });
+    setTerminalTitleBySession((prev) => {
+      if (!prev[sessionId]) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
   }
 
   // 依赖的工具函数会在运行时按会话状态重建，这里保持注册回调稳定避免反复重绑容器。
@@ -2047,6 +2070,10 @@ export default function useTerminalRuntime({
       lines.push(line ? line.translateToString(true) : "");
     }
     return lines.join("\n");
+  }
+
+  function getTerminalTitle(sessionId: string) {
+    return terminalTitleBySession[sessionId] ?? null;
   }
 
   /** 获取当前终端的搜索统计信息（仅在开启高亮时可用）。 */
@@ -2393,6 +2420,7 @@ export default function useTerminalRuntime({
     isTerminalReady,
     getTerminalSize,
     getActiveTerminalStats,
+    getTerminalTitle,
     getSessionBufferText,
     getActiveSearchStats,
     getActiveLinkMenu,

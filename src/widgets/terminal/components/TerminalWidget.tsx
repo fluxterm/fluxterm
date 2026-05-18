@@ -57,6 +57,7 @@ type TerminalWidgetProps = {
     element: HTMLDivElement | null,
   ) => void;
   isTerminalReady: (sessionId: string) => boolean;
+  getTerminalTitle: (sessionId: string) => string | null;
   activeLinkMenu: { x: number; y: number; uri: string } | null;
   hasFocusedLine: () => boolean;
   onFocusLineAtPoint: (sessionId: string, clientY: number) => boolean;
@@ -131,6 +132,7 @@ export default function TerminalWidget({
   bellPendingBySession,
   registerTerminalContainer,
   isTerminalReady,
+  getTerminalTitle,
   activeLinkMenu,
   hasFocusedLine,
   onFocusLineAtPoint,
@@ -300,6 +302,7 @@ export default function TerminalWidget({
             activePaneId={workspace.activePaneId}
             getTerminalContainerRef={getTerminalContainerRef}
             isTerminalReady={isTerminalReady}
+            getTerminalTitle={getTerminalTitle}
             getSessionLabel={resolveSessionLabel}
             getSessionState={resolveSessionState}
             getSessionReason={resolveSessionReason}
