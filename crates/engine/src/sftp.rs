@@ -409,7 +409,7 @@ pub async fn sftp_upload(
             EngineError::with_detail("sftp_upload_failed", "无法创建远端文件", err.to_string())
         })?;
     let handle_id = handle.handle.clone();
-    let mut chunk_size = 256 * 1024usize;
+    let mut chunk_size = 128 * 1024usize;
     if let Some(limit) = limits.write_limit {
         chunk_size = chunk_size.min(limit as usize);
     }
@@ -895,7 +895,7 @@ async fn upload_local_file_to_remote(
             EngineError::with_detail("sftp_upload_failed", "无法创建远端文件", err.to_string())
         })?;
     let handle_id = handle.handle.clone();
-    let mut chunk_size = 256 * 1024usize;
+    let mut chunk_size = 128 * 1024usize;
     if let Some(limit) = write_limit {
         chunk_size = chunk_size.min(limit as usize);
     }
