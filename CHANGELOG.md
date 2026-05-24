@@ -2,6 +2,22 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.4.0] - 2026-05-24
+
+本次更新聚焦于终端标签交互体验、连接配置创建流程，以及 SFTP 上传稳定性和会话关闭细节修复。
+
+### Added
+
+- **终端动态标题提示**: 终端标签支持在悬浮时展示动态标题，便于在多会话场景下识别当前连接或任务。
+- **会话标签拖拽预览**: 拖拽会话标签排序时新增位置预览，标签重排反馈更直观。
+- **新配置默认归入当前分组**: 新建 SSH 与 RDP 配置时默认使用当前选中的分组，减少后续手动整理成本。
+
+### Fixed
+
+- **SFTP 上传稳定性**: 降低 SFTP 上传分块大小，改善部分服务端或网络环境下的大文件上传兼容性。
+- **关闭会话横幅闪烁**: 修复通过点击标签关闭会话时断开提示横幅短暂闪现的问题。
+- **TypeScript 构建目标**: 更新 TypeScript target 与 library 到 ES2025，保持前端编译配置与当前运行环境能力一致。
+
 ## [0.3.0] - 2026-05-17
 
 本次更新聚焦于 AI Provider 管理、SFTP 事件可见性、全局事件中心基础能力，以及 macOS 中文输入法和若干界面交互细节修复。
@@ -554,6 +570,7 @@
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
 
+[0.4.0]: https://github.com/fluxterm/fluxterm/compare/0.3.0...0.4.0
 [0.3.0]: https://github.com/fluxterm/fluxterm/compare/0.2.0...0.3.0
 [0.2.0]: https://github.com/fluxterm/fluxterm/compare/0.1.1...0.2.0
 [0.1.1]: https://github.com/fluxterm/fluxterm/compare/0.1.0...0.1.1
