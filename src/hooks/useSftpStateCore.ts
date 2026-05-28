@@ -224,7 +224,7 @@ export default function useSftpState({
       });
       info(
         JSON.stringify({
-          event: "sftp:unsupported",
+          event: "sftp.unsupported",
           sessionId,
           profileId: activeSessionProfile?.id ?? null,
           host: activeSessionProfile?.host ?? null,

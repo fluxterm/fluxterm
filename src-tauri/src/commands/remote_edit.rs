@@ -53,7 +53,7 @@ pub async fn remote_edit_open(
     }
     log_telemetry(
         TelemetryLevel::Info,
-        "remote_edit.open.completed",
+        "remote.edit.open.success",
         None,
         json!({
             "sessionId": snapshot.session_id,
@@ -100,7 +100,7 @@ pub async fn remote_edit_confirm_upload(
         guard.snapshot.last_error = None;
         log_telemetry(
             TelemetryLevel::Info,
-            "remote_edit.upload.started",
+            "remote.edit.upload.started",
             None,
             json!({
                 "sessionId": guard.snapshot.session_id,
@@ -163,7 +163,7 @@ pub async fn remote_edit_confirm_upload(
                 persist_remote_edit_instance(&app, &guard)?;
                 log_telemetry(
                     TelemetryLevel::Info,
-                    "remote_edit.upload.succeeded",
+                    "remote.edit.upload.success",
                     None,
                     json!({
                         "sessionId": guard.snapshot.session_id,
@@ -189,7 +189,7 @@ pub async fn remote_edit_confirm_upload(
                 guard.pending_snapshot = None;
                 log_telemetry(
                     TelemetryLevel::Warn,
-                    "remote_edit.upload.failed",
+                    "remote.edit.upload.failed",
                     None,
                     json!({
                         "sessionId": guard.snapshot.session_id,
@@ -237,7 +237,7 @@ pub async fn remote_edit_dismiss_pending(
         }
         log_telemetry(
             TelemetryLevel::Info,
-            "remote_edit.upload.dismissed",
+            "remote.edit.upload.dismissed",
             None,
             json!({
                 "sessionId": guard.snapshot.session_id,

@@ -248,14 +248,21 @@ export default function useAiSettings(): UseAiSettingsResult {
           ),
         );
         void debug(
-          JSON.stringify({ event: "ai-settings:loaded", payload: settings }),
+          JSON.stringify({
+            event: "ai.settings.loaded",
+            providerCount: settings.providers.length,
+            activeProviderPresent: Boolean(settings.activeProviderId),
+            debugLoggingEnabled: settings.debugLoggingEnabled,
+            selectionMaxChars: settings.selectionMaxChars,
+            sessionRecentOutputMaxChars: settings.sessionRecentOutputMaxChars,
+          }),
         );
       })
       .catch((error) => {
         if (!active) return;
         void warn(
           JSON.stringify({
-            event: "ai-settings:load-failed",
+            event: "ai.settings.load.failed",
             error: extractErrorMessage(error),
           }),
         ).catch(() => {});
@@ -295,7 +302,7 @@ export default function useAiSettings(): UseAiSettingsResult {
 
     void debug(
       JSON.stringify({
-        event: "ai-settings:save-scheduled",
+        event: "ai.settings.save.scheduled",
         debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
       }),
     );
@@ -307,13 +314,13 @@ export default function useAiSettings(): UseAiSettingsResult {
           lastLoadedViewRef.current = saved;
           lastSavedConfigRef.current = configStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "ai-settings:persisted" }));
+          void debug(JSON.stringify({ event: "ai.settings.persisted" }));
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
           void warn(
             JSON.stringify({
-              event: "ai-settings:save-failed",
+              event: "ai.settings.save.failed",
               error: extractErrorMessage(error),
             }),
           );
@@ -342,7 +349,7 @@ export default function useAiSettings(): UseAiSettingsResult {
     lastLoggedActiveProviderIdRef.current = activeProviderId;
     debug(
       JSON.stringify({
-        event: "ai-settings:active-provider-changed",
+        event: "ai.settings.active.provider.changed",
         id: activeProviderId,
       }),
     ).catch(() => {});

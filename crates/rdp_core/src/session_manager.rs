@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex};
 use axum::extract::ws::Message;
 use serde_json::json;
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
 
 use crate::ironrdp_runtime::run_ironrdp_session;
 use crate::protocol::{RuntimeConnectRequest, RuntimeInputEvent, RuntimeSessionSnapshot};
+use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::{RuntimeError, RuntimeResult};
 
 const RGBA_FRAME_HEADER_LEN: usize = 25;
@@ -58,11 +58,13 @@ impl SessionManager {
     pub fn create_session(&self, session_id: String, profile_id: String) -> RuntimeSessionSnapshot {
         let mut inner = self.inner.lock().expect("session manager mutex poisoned");
         if let Some(runtime) = inner.get(&session_id) {
-            info!(
-                event = "rdp.session.create.reused",
-                session_id = %session_id,
-                profile_id = %runtime.snapshot.profile_id,
-                "reusing existing session snapshot"
+            log_telemetry(
+                TelemetryLevel::Info,
+                "rdp.session.create.reused",
+                json!({
+                    "sessionId": &session_id,
+                    "profileId": &runtime.snapshot.profile_id,
+                }),
             );
             return runtime.snapshot.clone();
         }
@@ -83,13 +85,15 @@ impl SessionManager {
                 command_tx: None,
             },
         );
-        info!(
-            event = "rdp.session.create.success",
-            session_id = %snapshot.session_id,
-            profile_id = %snapshot.profile_id,
-            width = snapshot.width,
-            height = snapshot.height,
-            "created in-process RDP session"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.create.success",
+            json!({
+                "sessionId": &snapshot.session_id,
+                "profileId": &snapshot.profile_id,
+                "width": snapshot.width,
+                "height": snapshot.height,
+            }),
         );
         snapshot
     }
@@ -113,13 +117,15 @@ impl SessionManager {
         runtime.snapshot.height = profile.height.max(200);
         runtime.snapshot.ws_url = Some(ws_url);
         runtime.command_tx = Some(command_tx);
-        info!(
-            event = "rdp.session.connect.start",
-            session_id = %session_id,
-            profile_id = %runtime.snapshot.profile_id,
-            width = runtime.snapshot.width,
-            height = runtime.snapshot.height,
-            "starting RDP runtime task"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.connect.start",
+            json!({
+                "sessionId": session_id,
+                "profileId": &runtime.snapshot.profile_id,
+                "width": runtime.snapshot.width,
+                "height": runtime.snapshot.height,
+            }),
         );
         send_state_message(
             &runtime.sender,
@@ -144,10 +150,10 @@ impl SessionManager {
                 .ok_or_else(session_not_found_error)?;
             send_runtime_command(&runtime.command_tx, RuntimeCommand::Disconnect);
             set_runtime_state(runtime, "disconnected");
-            info!(
-                event = "rdp.session.disconnect.success",
-                session_id = %session_id,
-                "disconnect requested and session marked closed"
+            log_telemetry(
+                TelemetryLevel::Info,
+                "rdp.session.disconnect.success",
+                json!({ "sessionId": session_id }),
             );
             send_state_message(&runtime.sender, "disconnected", "session closed");
             runtime.snapshot.clone()
@@ -169,12 +175,14 @@ impl SessionManager {
             .ok_or_else(session_not_found_error)?;
         runtime.snapshot.width = width.max(320);
         runtime.snapshot.height = height.max(200);
-        info!(
-            event = "rdp.session.resize.start",
-            session_id = %session_id,
-            width = runtime.snapshot.width,
-            height = runtime.snapshot.height,
-            "forwarding resize request to runtime"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.resize.start",
+            json!({
+                "sessionId": session_id,
+                "width": runtime.snapshot.width,
+                "height": runtime.snapshot.height,
+            }),
         );
         send_runtime_command(
             &runtime.command_tx,
@@ -213,13 +221,15 @@ impl SessionManager {
     pub fn set_clipboard(&self, session_id: &str, text: String) -> RuntimeResult<()> {
         let inner = self.inner.lock().map_err(lock_error)?;
         let runtime = inner.get(session_id).ok_or_else(session_not_found_error)?;
-        info!(
-            event = "rdp.session.clipboard.forwarded",
-            session_id = %session_id,
-            session_state = %runtime.snapshot.state,
-            command_channel_present = runtime.command_tx.is_some(),
-            text_len = text.chars().count(),
-            "forwarding clipboard text to runtime"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.clipboard.forwarded",
+            json!({
+                "sessionId": session_id,
+                "sessionState": &runtime.snapshot.state,
+                "commandChannelPresent": runtime.command_tx.is_some(),
+                "textLen": text.chars().count(),
+            }),
         );
         send_runtime_command(&runtime.command_tx, RuntimeCommand::Clipboard(text.clone()));
         let _ = runtime.sender.send(json_message(
@@ -242,11 +252,13 @@ impl SessionManager {
         let runtime = inner
             .get_mut(session_id)
             .ok_or_else(session_not_found_error)?;
-        info!(
-            event = "rdp.session.certificate.decision",
-            session_id = %session_id,
-            accept = accept,
-            "received certificate decision from frontend"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.certificate.decision",
+            json!({
+                "sessionId": session_id,
+                "accept": accept,
+            }),
         );
         send_runtime_command(&runtime.command_tx, RuntimeCommand::CertificateDecision);
         set_runtime_state(runtime, if accept { "connecting" } else { "disconnected" });
@@ -274,10 +286,10 @@ impl SessionManager {
     pub fn remove_session(&self, session_id: &str) -> RuntimeResult<()> {
         let mut inner = self.inner.lock().map_err(lock_error)?;
         inner.remove(session_id);
-        info!(
-            event = "rdp.session.remove.success",
-            session_id = %session_id,
-            "removed session from manager"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.session.remove.success",
+            json!({ "sessionId": session_id }),
         );
         Ok(())
     }
@@ -288,10 +300,10 @@ impl SessionManager {
         let count = inner.len();
         inner.clear();
         if count > 0 {
-            info!(
-                event = "rdp.session.clear.success",
-                count = count,
-                "cleared all managed RDP sessions"
+            log_telemetry(
+                TelemetryLevel::Info,
+                "rdp.session.clear.success",
+                json!({ "count": count }),
             );
         }
         Ok(())
@@ -312,11 +324,13 @@ impl SessionManager {
             .get_mut(session_id)
             .ok_or_else(session_not_found_error)?;
         set_runtime_state(runtime, state);
-        info!(
-            event = "rdp.runtime.state.updated",
-            session_id = %session_id,
-            state = %state,
-            "publishing runtime state update"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.runtime.state.updated",
+            json!({
+                "sessionId": session_id,
+                "state": state,
+            }),
         );
         send_state_message(&runtime.sender, state, &message.into());
         Ok(())

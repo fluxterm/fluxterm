@@ -234,27 +234,27 @@ export default function useProxyState() {
 
   const closeAll = useCallback(async () => {
     const traceId = createTraceId();
-    logTelemetry("debug", "proxy.closeAll.start", {
+    logTelemetry("debug", "proxy.close.all.start", {
       traceId,
     }).catch(() => {});
     try {
       await closeAllProxies(traceId);
       pushTimeline({
         level: "info",
-        event: "proxy.closeAll.success",
+        event: "proxy.close.all.success",
         message: "close all",
       });
-      logTelemetry("debug", "proxy.closeAll.success", {
+      logTelemetry("debug", "proxy.close.all.success", {
         traceId,
       }).catch(() => {});
     } catch (error) {
       pushTimeline({
         level: "warn",
-        event: "proxy.closeAll.failed",
+        event: "proxy.close.all.failed",
         message: error instanceof Error ? error.message : String(error),
         code: "proxy_close_all_failed",
       });
-      logTelemetry("warn", "proxy.closeAll.failed", {
+      logTelemetry("warn", "proxy.close.all.failed", {
         traceId,
         error: {
           code: "proxy_close_all_failed",

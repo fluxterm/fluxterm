@@ -103,7 +103,7 @@ export async function loadCommandHistoryStore() {
   } catch (error) {
     void warn(
       JSON.stringify({
-        event: "history:load-failed",
+        event: "history.load.failed",
         error: extractErrorMessage(error),
       }),
     );
@@ -124,7 +124,7 @@ export async function saveCommandHistoryStore(store: CommandHistoryStore) {
   } catch (error) {
     void warn(
       JSON.stringify({
-        event: "history:save-failed",
+        event: "history.save.failed",
         error: extractErrorMessage(error),
       }),
     );

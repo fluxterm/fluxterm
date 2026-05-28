@@ -16,14 +16,15 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
+use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Mutex, broadcast};
-use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::protocol::RuntimeSessionSnapshot;
 use crate::session_manager::{SessionManager, json_message};
+use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::{RuntimeError, RuntimeResult};
 
 /// 内部应用状态。
@@ -92,7 +93,16 @@ impl BridgeServer {
         // 在后台启动服务器任务
         tokio::spawn(async move {
             if let Err(error) = axum::serve(listener, app).await {
-                error!(error = %error, "rdp bridge server stopped with error");
+                log_telemetry(
+                    TelemetryLevel::Error,
+                    "rdp.bridge.server.failed",
+                    json!({
+                        "error": {
+                            "code": "rdp_bridge_server_failed",
+                            "message": error.to_string(),
+                        },
+                    }),
+                );
             }
         });
 
@@ -100,10 +110,10 @@ impl BridgeServer {
             base_url: format!("ws://{}", addr),
             token,
         };
-        info!(
-            event = "rdp.bridge.server.ready",
-            base_url = %info.base_url,
-            "rdp bridge server is listening on loopback"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.bridge.server.ready",
+            json!({ "baseUrl": &info.base_url }),
         );
         *inner = Some(info.clone());
         Ok(info)
@@ -125,10 +135,10 @@ async fn handle_bridge_ws(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     if query.token != state.token {
-        warn!(
-            event = "rdp.bridge.auth.failed",
-            session_id = %session_id,
-            "bridge token mismatch"
+        log_telemetry(
+            TelemetryLevel::Warn,
+            "rdp.bridge.auth.failed",
+            json!({ "sessionId": session_id }),
         );
         return Err((
             StatusCode::UNAUTHORIZED,
@@ -138,22 +148,29 @@ async fn handle_bridge_ws(
     let (snapshot, rx) = match state.sessions.subscribe(&session_id) {
         Ok(result) => result,
         Err(error) => {
-            warn!(
-                event = "rdp.bridge.subscribe.failed",
-                session_id = %session_id,
-                error_code = %error.code,
-                "bridge session subscription failed"
+            log_telemetry(
+                TelemetryLevel::Warn,
+                "rdp.bridge.subscribe.failed",
+                json!({
+                    "sessionId": session_id,
+                    "error": {
+                        "code": &error.code,
+                        "message": &error.message,
+                    },
+                }),
             );
             return Err((StatusCode::NOT_FOUND, error.detail.unwrap_or(error.message)));
         }
     };
     if !can_attach_bridge(&snapshot, &query.token) {
-        warn!(
-            event = "rdp.bridge.attach.rejected",
-            session_id = %session_id,
-            state = %snapshot.state,
-            has_ws_url = snapshot.ws_url.is_some(),
-            "bridge attach rejected for inactive session"
+        log_telemetry(
+            TelemetryLevel::Warn,
+            "rdp.bridge.attach.rejected",
+            json!({
+                "sessionId": &session_id,
+                "state": &snapshot.state,
+                "hasWsUrl": snapshot.ws_url.is_some(),
+            }),
         );
         return Err((
             StatusCode::GONE,
@@ -169,7 +186,14 @@ async fn run_bridge_socket(
     snapshot: RuntimeSessionSnapshot,
     mut rx: broadcast::Receiver<axum::extract::ws::Message>,
 ) {
-    info!(session_id = %snapshot.session_id, state = %snapshot.state, "bridge open");
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.bridge.open",
+        json!({
+            "sessionId": &snapshot.session_id,
+            "state": &snapshot.state,
+        }),
+    );
 
     // 发送初始连接确认
     let _ = socket
@@ -201,17 +225,32 @@ async fn run_bridge_socket(
                 match outbound {
                     Ok(message) => {
                         if socket.send(message).await.is_err() {
-                            warn!(session_id = %snapshot.session_id, "bridge send failed");
+                            log_telemetry(
+                                TelemetryLevel::Warn,
+                                "rdp.bridge.send.failed",
+                                json!({ "sessionId": &snapshot.session_id }),
+                            );
                             break;
                         }
                     }
                     Err(RecvError::Lagged(count)) => {
                         // 客户端消费太慢，跳过过期帧以维持实时性
-                        warn!(session_id = %snapshot.session_id, lagged = count, "bridge receiver lagged, dropping stale frames");
+                        log_telemetry(
+                            TelemetryLevel::Warn,
+                            "rdp.bridge.receiver.lagged",
+                            json!({
+                                "sessionId": &snapshot.session_id,
+                                "lagged": count,
+                            }),
+                        );
                         continue;
                     }
                     Err(RecvError::Closed) => {
-                        warn!(session_id = %snapshot.session_id, "bridge channel closed");
+                        log_telemetry(
+                            TelemetryLevel::Warn,
+                            "rdp.bridge.channel.closed",
+                            json!({ "sessionId": &snapshot.session_id }),
+                        );
                         break;
                     }
                 }
@@ -222,14 +261,28 @@ async fn run_bridge_socket(
                     Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
                     Some(Ok(_)) => {}
                     Some(Err(error)) => {
-                        warn!(session_id = %snapshot.session_id, error = %error, "bridge receive failed");
+                        log_telemetry(
+                            TelemetryLevel::Warn,
+                            "rdp.bridge.receive.failed",
+                            json!({
+                                "sessionId": &snapshot.session_id,
+                                "error": {
+                                    "code": "rdp_bridge_receive_failed",
+                                    "message": error.to_string(),
+                                },
+                            }),
+                        );
                         break;
                     }
                 }
             }
         }
     }
-    info!(session_id = %snapshot.session_id, "bridge closed");
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.bridge.closed",
+        json!({ "sessionId": &snapshot.session_id }),
+    );
 }
 
 /// 判断桥接客户端是否仍允许附着到当前会话。

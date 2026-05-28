@@ -38,10 +38,10 @@ use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
 use ironrdp_tls::extract_tls_server_public_key;
 use ironrdp_tokio::reqwest::ReqwestNetworkClient;
 use ironrdp_tokio::{FramedWrite, TokioFramed, split_tokio_framed};
+use serde_json::json;
 use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::Instant as TokioInstant;
-use tracing::{debug, error, info, warn};
 
 use crate::cliprdr::{CliprdrProxyEvent, FluxCliprdrBackend};
 use crate::keyboard::code_to_scancode;
@@ -50,6 +50,7 @@ use crate::session_manager::SessionManager;
 use crate::session_manager::{
     RuntimeCommand, build_rgba_frame_batch_message, build_rgba_frame_message, json_message,
 };
+use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 const FRAGMENT_COLLAPSE_RECT_THRESHOLD: usize = 4;
 const FRAGMENT_COLLAPSE_MAX_OVERDRAW_NUMERATOR: u64 = 2;
@@ -174,15 +175,20 @@ fn mark_clipboard_channel_failed(
 ) {
     let was_failed = *clipboard_state == ClipboardChannelState::Failed;
     *clipboard_state = ClipboardChannelState::Failed;
-    error!(
-        event = "rdp.cliprdr.channel.failed",
-        session_id = %session_id,
-        activation_generation,
-        operation,
-        text_len,
-        repeated = was_failed,
-        error = %error,
-        "clipboard channel entered failed state"
+    log_telemetry(
+        TelemetryLevel::Error,
+        "rdp.cliprdr.channel.failed",
+        json!({
+            "sessionId": session_id,
+            "activationGeneration": activation_generation,
+            "operation": operation,
+            "textLen": text_len,
+            "repeated": was_failed,
+            "error": {
+                "code": "rdp_cliprdr_channel_failed",
+                "message": error,
+            },
+        }),
     );
 }
 
@@ -203,22 +209,26 @@ pub async fn run_ironrdp_session(
     profile: RuntimeConnectRequest,
     mut command_rx: mpsc::UnboundedReceiver<RuntimeCommand>,
 ) {
-    info!(
-        event = "rdp.runtime.start",
-        session_id = %session_id,
-        host = %profile.host,
-        port = profile.port,
-        username = %profile.username,
-        "runtime start"
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.runtime.start",
+        json!({
+            "sessionId": &session_id,
+            "host": &profile.host,
+            "port": profile.port,
+            "username": &profile.username,
+        }),
     );
     let result = connect_and_run(&sessions, &sender, &session_id, &profile, &mut command_rx).await;
     match result {
         Ok(close_reason) => {
-            info!(
-                event = "rdp.runtime.closed",
-                session_id = %session_id,
-                close_reason = ?close_reason,
-                "runtime closed"
+            log_telemetry(
+                TelemetryLevel::Info,
+                "rdp.runtime.closed",
+                json!({
+                    "sessionId": &session_id,
+                    "closeReason": format!("{close_reason:?}"),
+                }),
             );
             let message = match close_reason {
                 RuntimeCloseReason::UserDisconnected => format!("session {session_id} closed"),
@@ -227,15 +237,20 @@ pub async fn run_ironrdp_session(
             let _ = sessions.publish_runtime_state(&session_id, "disconnected", message);
         }
         Err(error) => {
-            error!(
-                event = "rdp.runtime.failed",
-                session_id = %session_id,
-                error = %error,
-                "runtime error"
+            log_telemetry(
+                TelemetryLevel::Error,
+                "rdp.runtime.failed",
+                json!({
+                    "sessionId": &session_id,
+                    "error": {
+                        "code": "rdp_runtime_failed",
+                        "message": &error,
+                    },
+                }),
             );
             let _ = sender.send(json_message(
                 "error",
-                serde_json::json!({
+                json!({
                     "code": "rdp_runtime_error",
                     "message": error,
                 }),
@@ -263,16 +278,18 @@ async fn connect_and_run(
     let socket = TcpStream::connect((prepared_connection.host.as_str(), prepared_connection.port))
         .await
         .map_err(|error| format!("tcp connect failed: {error}"))?;
-    info!(
-        event = "rdp.runtime.tcp.connected",
-        session_id = %session_id,
-        host = %prepared_connection.host,
-        port = prepared_connection.port,
-        username = %prepared_connection.username,
-        domain = prepared_connection.domain.as_deref().unwrap_or(""),
-        server_name = %prepared_connection.server_name,
-        client_hostname = prepared_connection.client_hostname.as_deref().unwrap_or(""),
-        "tcp connected"
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.runtime.tcp.connected",
+        json!({
+            "sessionId": session_id,
+            "host": &prepared_connection.host,
+            "port": prepared_connection.port,
+            "username": &prepared_connection.username,
+            "domain": prepared_connection.domain.as_deref().unwrap_or(""),
+            "serverName": &prepared_connection.server_name,
+            "clientHostname": prepared_connection.client_hostname.as_deref().unwrap_or(""),
+        }),
     );
     socket
         .set_nodelay(true)
@@ -307,18 +324,20 @@ async fn connect_and_run(
         ironrdp_tls::upgrade(initial_stream, &prepared_connection.host)
             .await
             .map_err(|error| format!("tls upgrade failed: {error}"))?;
-    info!(
-        event = "rdp.runtime.tls.upgraded",
-        session_id = %session_id,
-        host = %prepared_connection.host,
-        "tls upgraded"
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.runtime.tls.upgraded",
+        json!({
+            "sessionId": session_id,
+            "host": &prepared_connection.host,
+        }),
     );
 
     if !prepared_connection.ignore_certificate {
-        warn!(
-            event = "rdp.runtime.certificate.interactive_unsupported",
-            session_id = %session_id,
-            "interactive certificate validation is not implemented yet"
+        log_telemetry(
+            TelemetryLevel::Warn,
+            "rdp.runtime.certificate.interactive.unsupported",
+            json!({ "sessionId": session_id }),
         );
         let _ = sessions.publish_runtime_state(
             session_id,
@@ -360,14 +379,16 @@ async fn connect_and_run(
             prepared_connection.host, prepared_connection.port
         ),
     );
-    info!(
-        event = "rdp.runtime.connected",
-        session_id = %session_id,
-        host = %prepared_connection.host,
-        port = prepared_connection.port,
-        width = connection_result.desktop_size.width,
-        height = connection_result.desktop_size.height,
-        "rdp activated"
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.runtime.connected",
+        json!({
+                "sessionId": session_id,
+                "host": &prepared_connection.host,
+                "port": prepared_connection.port,
+                "width": connection_result.desktop_size.width,
+                "height": connection_result.desktop_size.height,
+        }),
     );
 
     let ctx = ActiveStageContext {
@@ -468,22 +489,26 @@ where
                         if reason == "backend_ready" {
                             clipboard_channel_state = ClipboardChannelState::Ready;
                         }
-                        debug!(
-                            event = "rdp.cliprdr.initial_sync",
-                            session_id = %ctx.session_id,
-                            activation_generation,
-                            reason,
-                            clipboard_channel_state = clipboard_channel_state.as_str(),
-                            local_clipboard_len = current_local_clipboard.chars().count(),
-                            "triggering clipboard format list sync"
+                        log_telemetry(
+                            TelemetryLevel::Debug,
+                            "rdp.cliprdr.initial.sync",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "activationGeneration": activation_generation,
+                                "reason": reason,
+                                "clipboardChannelState": clipboard_channel_state.as_str(),
+                                "localClipboardLen": current_local_clipboard.chars().count(),
+                            }),
                         );
                         if clipboard_channel_state == ClipboardChannelState::Failed {
-                            warn!(
-                                event = "rdp.cliprdr.initial_sync.skipped",
-                                session_id = %ctx.session_id,
-                                activation_generation,
-                                reason,
-                                "skipping clipboard initial sync because channel is failed"
+                            log_telemetry(
+                                TelemetryLevel::Warn,
+                                "rdp.cliprdr.initial.sync.skipped",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "activationGeneration": activation_generation,
+                                    "reason": reason,
+                                }),
                             );
                             Vec::new()
                         } else if let Some(cliprdr) = active_stage.get_svc_processor_mut::<CliprdrClient>() {
@@ -511,12 +536,14 @@ where
                                 vec![ActiveStageOutput::ResponseFrame(frame)]
                             }
                         } else {
-                            warn!(
-                                event = "rdp.cliprdr.initial_sync.unavailable",
-                                session_id = %ctx.session_id,
-                                activation_generation,
-                                reason,
-                                "cliprdr processor unavailable during initial sync"
+                            log_telemetry(
+                                TelemetryLevel::Warn,
+                                "rdp.cliprdr.initial.sync.unavailable",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "activationGeneration": activation_generation,
+                                    "reason": reason,
+                                }),
                             );
                             Vec::new()
                         }
@@ -525,26 +552,30 @@ where
                         // 远端告知其剪贴板已更新。如果包含文本格式，则主动发起同步。
                         let has_unicode_text =
                             formats.iter().any(|f| f.id == ClipboardFormatId::CF_UNICODETEXT);
-                        info!(
-                            event = "rdp.cliprdr.remote_format_list",
-                            session_id = %ctx.session_id,
-                            activation_generation,
-                            reason,
-                            clipboard_channel_state = clipboard_channel_state.as_str(),
-                            format_count = formats.len(),
-                            contains_unicode_text = has_unicode_text,
-                            formats = %cliprdr_formats_summary(&formats),
-                            "received remote clipboard format list"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.cliprdr.remote.format.list",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "activationGeneration": activation_generation,
+                                "reason": reason,
+                                "clipboardChannelState": clipboard_channel_state.as_str(),
+                                "formatCount": formats.len(),
+                                "containsUnicodeText": has_unicode_text,
+                                "formats": cliprdr_formats_summary(&formats),
+                            }),
                         );
                         if has_unicode_text {
                             if let Some(cliprdr) = active_stage.get_svc_processor_mut::<CliprdrClient>() {
-                                info!(
-                                    event = "rdp.cliprdr.paste.request",
-                                    session_id = %ctx.session_id,
-                                    activation_generation,
-                                    clipboard_channel_state = clipboard_channel_state.as_str(),
-                                    format = ?ClipboardFormatId::CF_UNICODETEXT,
-                                    "requesting remote clipboard unicode text"
+                                log_telemetry(
+                                    TelemetryLevel::Info,
+                                    "rdp.cliprdr.paste.request",
+                                    json!({
+                                        "sessionId": ctx.session_id,
+                                        "activationGeneration": activation_generation,
+                                        "clipboardChannelState": clipboard_channel_state.as_str(),
+                                        "format": format!("{:?}", ClipboardFormatId::CF_UNICODETEXT),
+                                    }),
                                 );
                                 let messages = cliprdr.initiate_paste(ClipboardFormatId::CF_UNICODETEXT)
                                     .map_err(|error| format!("cliprdr initiate_paste failed: {error}"))?;
@@ -568,11 +599,13 @@ where
                                     vec![ActiveStageOutput::ResponseFrame(frame)]
                                 }
                             } else {
-                                warn!(
-                                    event = "rdp.cliprdr.paste.request.unavailable",
-                                    session_id = %ctx.session_id,
-                                    activation_generation,
-                                    "cliprdr processor unavailable during paste request"
+                                log_telemetry(
+                                    TelemetryLevel::Warn,
+                                    "rdp.cliprdr.paste.request.unavailable",
+                                    json!({
+                                        "sessionId": ctx.session_id,
+                                        "activationGeneration": activation_generation,
+                                    }),
                                 );
                                 Vec::new()
                             }
@@ -582,15 +615,17 @@ where
                     }
                     CliprdrProxyEvent::DataRequest { reason, request } => {
                         // 远端用户在远端系统中执行了“粘贴”，请求本地提供剪贴板数据。
-                        info!(
-                            event = "rdp.cliprdr.data_request",
-                            session_id = %ctx.session_id,
-                            activation_generation,
-                            reason,
-                            clipboard_channel_state = clipboard_channel_state.as_str(),
-                            format = ?request.format,
-                            local_clipboard_len = current_local_clipboard.chars().count(),
-                            "remote requested local clipboard data"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.cliprdr.data.request",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "activationGeneration": activation_generation,
+                                "reason": reason,
+                                "clipboardChannelState": clipboard_channel_state.as_str(),
+                                "format": format!("{:?}", request.format),
+                                "localClipboardLen": current_local_clipboard.chars().count(),
+                            }),
                         );
                         if request.format == ClipboardFormatId::CF_UNICODETEXT {
                             if let Some(cliprdr) = active_stage.get_svc_processor_mut::<CliprdrClient>() {
@@ -599,13 +634,15 @@ where
                                 utf16.push(0); // Null terminator
                                 let data = utf16.iter().flat_map(|&u| u.to_le_bytes()).collect::<Vec<u8>>();
                                 let response = ironrdp_cliprdr::pdu::FormatDataResponse::new_data(data).into_owned();
-                                info!(
-                                    event = "rdp.cliprdr.data_response.submit",
-                                    session_id = %ctx.session_id,
-                                    activation_generation,
-                                    clipboard_channel_state = clipboard_channel_state.as_str(),
-                                    local_clipboard_len = current_local_clipboard.chars().count(),
-                                    "submitting local clipboard data to remote"
+                                log_telemetry(
+                                    TelemetryLevel::Info,
+                                    "rdp.cliprdr.data.response.submit",
+                                    json!({
+                                        "sessionId": ctx.session_id,
+                                        "activationGeneration": activation_generation,
+                                        "clipboardChannelState": clipboard_channel_state.as_str(),
+                                        "localClipboardLen": current_local_clipboard.chars().count(),
+                                    }),
                                 );
                                 let messages = cliprdr.submit_format_data(response)
                                     .map_err(|error| format!("cliprdr submit_format_data failed: {error}"))?;
@@ -629,11 +666,13 @@ where
                                     vec![ActiveStageOutput::ResponseFrame(frame)]
                                 }
                             } else {
-                                warn!(
-                                    event = "rdp.cliprdr.data_response.unavailable",
-                                    session_id = %ctx.session_id,
-                                    activation_generation,
-                                    "cliprdr processor unavailable during data response submission"
+                                log_telemetry(
+                                    TelemetryLevel::Warn,
+                                    "rdp.cliprdr.data.response.unavailable",
+                                    json!({
+                                        "sessionId": ctx.session_id,
+                                        "activationGeneration": activation_generation,
+                                    }),
                                 );
                                 Vec::new()
                             }
@@ -643,14 +682,16 @@ where
                     }
                     CliprdrProxyEvent::DataResponse { reason, data } => {
                         // 远端返回了粘贴请求的数据内容。
-                        info!(
-                            event = "rdp.cliprdr.data_response.received",
-                            session_id = %ctx.session_id,
-                            activation_generation,
-                            reason,
-                            clipboard_channel_state = clipboard_channel_state.as_str(),
-                            data_len = data.len(),
-                            "received remote clipboard data"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.cliprdr.data.response.received",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "activationGeneration": activation_generation,
+                                "reason": reason,
+                                "clipboardChannelState": clipboard_channel_state.as_str(),
+                                "dataLen": data.len(),
+                            }),
                         );
                         let utf16: Vec<u16> = data.chunks_exact(2)
                             .map(|c| u16::from_le_bytes([c[0], c[1]]))
@@ -687,12 +728,14 @@ where
                     RuntimeCommand::Resize { width, height } => {
                         perf_window.resize_requests += 1;
                         let (width, height) = MonitorLayoutEntry::adjust_display_size(width.max(320), height.max(200));
-                        info!(
-                            event = "rdp.runtime.resize.encoded",
-                            session_id = %ctx.session_id,
-                            width,
-                            height,
-                            "encode resize"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.runtime.resize.encoded",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "width": width,
+                                "height": height,
+                            }),
                         );
                         if let Some(response_frame) = active_stage.encode_resize(width, height, Some(100), None) {
                             vec![ActiveStageOutput::ResponseFrame(
@@ -706,33 +749,39 @@ where
                         // 前端感知到本地剪贴板变化，推送新文本。
                         let text_len = text.chars().count();
                         current_local_clipboard = text;
-                        info!(
-                            event = "rdp.cliprdr.local_clipboard.forwarded",
-                            session_id = %ctx.session_id,
-                            activation_generation,
-                            clipboard_channel_state = clipboard_channel_state.as_str(),
-                            text_len,
-                            "processing local clipboard update for remote sync"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.cliprdr.local.clipboard.forwarded",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "activationGeneration": activation_generation,
+                                "clipboardChannelState": clipboard_channel_state.as_str(),
+                                "textLen": text_len,
+                            }),
                         );
                         if clipboard_channel_state == ClipboardChannelState::Failed {
-                            warn!(
-                                event = "rdp.cliprdr.local_clipboard.skipped",
-                                session_id = %ctx.session_id,
-                                activation_generation,
-                                text_len,
-                                "skipping local clipboard sync because channel is failed"
+                            log_telemetry(
+                                TelemetryLevel::Warn,
+                                "rdp.cliprdr.local.clipboard.skipped",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "activationGeneration": activation_generation,
+                                    "textLen": text_len,
+                                }),
                             );
                             Vec::new()
                         } else if let Some(cliprdr) = active_stage.get_svc_processor_mut::<CliprdrClient>() {
                             // 宣告本地有新的文本内容，触发远端剪贴板状态刷新。
                             let formats = [ClipboardFormat::new(ClipboardFormatId::CF_UNICODETEXT)];
-                            info!(
-                                event = "rdp.cliprdr.local_copy.advertise",
-                                session_id = %ctx.session_id,
-                                activation_generation,
-                                clipboard_channel_state = clipboard_channel_state.as_str(),
-                                text_len,
-                                "advertising local clipboard unicode text format"
+                            log_telemetry(
+                                TelemetryLevel::Info,
+                                "rdp.cliprdr.local.copy.advertise",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "activationGeneration": activation_generation,
+                                    "clipboardChannelState": clipboard_channel_state.as_str(),
+                                    "textLen": text_len,
+                                }),
                             );
                             let messages = cliprdr.initiate_copy(&formats)
                                 .map_err(|error| format!("cliprdr initiate_copy failed: {error}"))?;
@@ -756,21 +805,23 @@ where
                                 vec![ActiveStageOutput::ResponseFrame(frame)]
                             }
                         } else {
-                            warn!(
-                                event = "rdp.cliprdr.local_copy.unavailable",
-                                session_id = %ctx.session_id,
-                                activation_generation,
-                                text_len,
-                                "cliprdr processor unavailable during local clipboard sync"
+                            log_telemetry(
+                                TelemetryLevel::Warn,
+                                "rdp.cliprdr.local.copy.unavailable",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "activationGeneration": activation_generation,
+                                    "textLen": text_len,
+                                }),
                             );
                             Vec::new()
                         }
                     }
                     RuntimeCommand::Disconnect => {
-                        info!(
-                            event = "rdp.runtime.disconnect.requested",
-                            session_id = %ctx.session_id,
-                            "runtime disconnect requested"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.runtime.disconnect.requested",
+                            json!({ "sessionId": ctx.session_id }),
                         );
                         for output in active_stage
                             .graceful_shutdown()
@@ -800,12 +851,14 @@ where
                 ActiveStageOutput::GraphicsUpdate(_) => {
                     if !logged_first_frame {
                         logged_first_frame = true;
-                        info!(
-                            event = "rdp.runtime.first_frame",
-                            session_id = %ctx.session_id,
-                            width = u32::from(image.width()),
-                            height = u32::from(image.height()),
-                            "first graphics frame"
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.runtime.first.frame",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "width": u32::from(image.width()),
+                                "height": u32::from(image.height()),
+                            }),
                         );
                     }
                     graphics_rects.push(extract_update_rect(&output));
@@ -866,12 +919,14 @@ where
                     else {
                         return Err("deactivation-reactivation did not finalize".to_string());
                     };
-                    info!(
-                        event = "rdp.runtime.reactivated",
-                        session_id = %ctx.session_id,
-                        width,
-                        height,
-                        "rdp reactivated"
+                    log_telemetry(
+                        TelemetryLevel::Info,
+                        "rdp.runtime.reactivated",
+                        json!({
+                            "sessionId": ctx.session_id,
+                            "width": width,
+                            "height": height,
+                        }),
                     );
                     image = DecodedImage::new(PixelFormat::RgbA32, width, height);
                     logged_first_frame = false;
@@ -886,12 +941,14 @@ where
                     // 上游 IronRDP 当前仍未提供可直接复用的客户端 UDP multitransport
                     // 完整实现。这里先按协议显式回 E_ABORT，避免静默忽略导致服务端
                     // 长时间等待；后续待上游实现成熟后再切换为真正的 sideband UDP。
-                    warn!(
-                        event = "rdp.runtime.multitransport.declined",
-                        session_id = %ctx.session_id,
-                        request_id = pdu.request_id,
-                        requested_protocol = ?pdu.requested_protocol,
-                        "multitransport request received; responding with E_ABORT because UDP transport is not implemented"
+                    log_telemetry(
+                        TelemetryLevel::Warn,
+                        "rdp.runtime.multitransport.declined",
+                        json!({
+                            "sessionId": ctx.session_id,
+                            "requestId": pdu.request_id,
+                            "requestedProtocol": format!("{:?}", pdu.requested_protocol),
+                        }),
                     );
                     let response = encode_multitransport_abort_response(
                         user_channel_id,
@@ -1179,14 +1236,16 @@ fn maybe_collapse_rects(
     let total_area = rects.iter().map(rect_area).sum::<u64>();
 
     if union_area * max_overdraw_denominator <= total_area * max_overdraw_numerator {
-        debug!(
-            event = RDP_RUNTIME_RECTS_COLLAPSED_EVENT,
-            mode = mode,
-            original_rects = rects.len(),
-            total_area = total_area,
-            union_area = union_area,
-            overdraw_ratio = union_area as f64 / total_area.max(1) as f64,
-            "collapsed fragmented dirty rects into a single bounding rect"
+        log_telemetry(
+            TelemetryLevel::Debug,
+            RDP_RUNTIME_RECTS_COLLAPSED_EVENT,
+            json!({
+                "mode": mode,
+                "originalRects": rects.len(),
+                "totalArea": total_area,
+                "unionArea": union_area,
+                "overdrawRatio": union_area as f64 / total_area.max(1) as f64,
+            }),
         );
         vec![union]
     } else {
@@ -1317,25 +1376,27 @@ fn flush_frame_perf_window(session_id: &str, perf_window: &mut FramePerfWindow) 
         return;
     }
 
-    debug!(
-        event = RDP_RUNTIME_FRAME_PERF_EVENT,
-        session_id = %session_id,
-        window_ms = elapsed.as_millis() as u64,
-        cycles = perf_window.cycles,
-        raw_rects = perf_window.raw_rects,
-        merged_rects = perf_window.merged_rects,
-        single_messages = perf_window.single_messages,
-        batch_messages = perf_window.batch_messages,
-        sent_pixels = perf_window.sent_pixels,
-        resize_requests = perf_window.resize_requests,
-        max_flush_interval_ms = perf_window.max_flush_interval_ms,
-        timeout_flushes = perf_window.timeout_flushes,
-        read_pdu_cpu_us = perf_window.read_pdu_cpu_us,
-        decode_cpu_us = perf_window.decode_cpu_us,
-        copy_rect_cpu_us = perf_window.copy_rect_cpu_us,
-        encode_message_cpu_us = perf_window.encode_message_cpu_us,
-        broadcast_send_cpu_us = perf_window.broadcast_send_cpu_us,
-        "rdp frame pipeline perf snapshot"
+    log_telemetry(
+        TelemetryLevel::Debug,
+        RDP_RUNTIME_FRAME_PERF_EVENT,
+        json!({
+            "sessionId": session_id,
+            "windowMs": elapsed.as_millis() as u64,
+            "cycles": perf_window.cycles,
+            "rawRects": perf_window.raw_rects,
+            "mergedRects": perf_window.merged_rects,
+            "singleMessages": perf_window.single_messages,
+            "batchMessages": perf_window.batch_messages,
+            "sentPixels": perf_window.sent_pixels,
+            "resizeRequests": perf_window.resize_requests,
+            "maxFlushIntervalMs": perf_window.max_flush_interval_ms,
+            "timeoutFlushes": perf_window.timeout_flushes,
+            "readPduCpuUs": perf_window.read_pdu_cpu_us,
+            "decodeCpuUs": perf_window.decode_cpu_us,
+            "copyRectCpuUs": perf_window.copy_rect_cpu_us,
+            "encodeMessageCpuUs": perf_window.encode_message_cpu_us,
+            "broadcastSendCpuUs": perf_window.broadcast_send_cpu_us,
+        }),
     );
     perf_window.reset();
 }

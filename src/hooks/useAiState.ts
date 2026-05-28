@@ -162,7 +162,7 @@ export default function useAiState({
       if (debugLoggingEnabled) {
         void logDebug(
           JSON.stringify({
-            event: "ai.session-chat.error",
+            event: "ai.session.chat.error",
             sessionId: payload.sessionId,
             error: translateAppError(payload.error, t),
           }),
@@ -318,7 +318,7 @@ export default function useAiState({
       if (debugLoggingEnabled) {
         void logDebug(
           JSON.stringify({
-            event: "ai.session-chat.request",
+            event: "ai.session.chat.request",
             sessionId: activeSessionId,
             requestId: nextRequestId,
             responseLanguageStrategy: "follow_user_input",
@@ -338,7 +338,7 @@ export default function useAiState({
       if (debugLoggingEnabled) {
         void logDebug(
           JSON.stringify({
-            event: "ai.session-chat.error",
+            event: "ai.session.chat.error",
             sessionId: activeSessionId,
             requestId: nextRequestId,
             error: translateAppError(error, t),
@@ -397,7 +397,7 @@ export default function useAiState({
             sessionId: activeSessionId,
             responseLanguageStrategy: "follow_ui",
             uiLanguage: locale,
-            selectionText: content,
+            selectionChars: content.length,
           }),
         );
       }
@@ -412,7 +412,8 @@ export default function useAiState({
           JSON.stringify({
             event: "ai.selection.response",
             sessionId: activeSessionId,
-            message: response.message,
+            responseChars: response.message.content.length,
+            responseRole: response.message.role,
           }),
         );
       }

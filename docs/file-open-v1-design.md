@@ -262,14 +262,19 @@
 
 当前链路中包含以下典型事件：
 
-1. `remote_edit.open.prepared`
-2. `remote_edit.open.completed`
-3. `remote_edit.local_change_detected`
-4. `remote_edit.upload.started`
-5. `remote_edit.upload.succeeded`
-6. `remote_edit.upload.failed`
-7. `remote_edit.upload.dismissed`
-8. `remote_edit.cache.cleanup`
+1. `remote.edit.open.prepared`
+2. `remote.edit.open.success`
+3. `remote.edit.local.change.detected`
+4. `remote.edit.upload.started`
+5. `remote.edit.upload.success`
+6. `remote.edit.upload.failed`
+7. `remote.edit.upload.dismissed`
+8. `remote.edit.cache.cleanup`
+9. `remote.edit.upload.auto.confirmed`
+10. `remote.edit.upload.prompted`
+11. `remote.edit.upload.confirmed`
+12. `remote.edit.upload.auto.enabled`
+13. `remote.edit.upload.cancelled`
 
 ## 与文件管理器交互的关系
 

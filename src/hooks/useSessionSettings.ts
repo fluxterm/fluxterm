@@ -191,7 +191,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
       if (!(await exists(path))) {
         void debug(
           JSON.stringify({
-            event: "session-settings:load-skip",
+            event: "session.settings.load.skip",
             reason: "file-not-exists",
           }),
         );
@@ -253,12 +253,17 @@ export default function useSessionSettings(): UseSessionSettingsResult {
         );
       }
       void debug(
-        JSON.stringify({ event: "session-settings:loaded", payload: parsed }),
+        JSON.stringify({
+          event: "session.settings.loaded",
+          keyCount: Object.keys(parsed ?? {}).length,
+          resourceMonitorEnabled: parsed?.resourceMonitorEnabled === true,
+          terminalPathSyncEnabled: parsed?.terminalPathSyncEnabled === true,
+        }),
       );
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "session-settings:load-failed",
+          event: "session.settings.load.failed",
           error: extractErrorMessage(error),
         }),
       );
@@ -327,7 +332,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
 
     void debug(
       JSON.stringify({
-        event: "session-settings:save-scheduled",
+        event: "session.settings.save.scheduled",
         debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
       }),
     );
@@ -338,13 +343,13 @@ export default function useSessionSettings(): UseSessionSettingsResult {
           await saveSessionSettings(currentConfig);
           lastSavedConfigRef.current = configStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "session-settings:persisted" }));
+          void debug(JSON.stringify({ event: "session.settings.persisted" }));
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
           void warn(
             JSON.stringify({
-              event: "session-settings:save-failed",
+              event: "session.settings.save.failed",
               error: extractErrorMessage(error),
             }),
           );

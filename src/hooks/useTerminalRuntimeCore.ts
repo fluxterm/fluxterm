@@ -1127,7 +1127,7 @@ export default function useTerminalRuntime({
     handlersRef.current.onPathSyncSupportChange?.(sessionId, "unsupported");
     void warn(
       JSON.stringify({
-        event: "terminal:cwd-sync-unsupported-prompt",
+        event: "terminal.cwd.sync.unsupported.prompt",
         sessionId,
         reason,
         promptSample: sample.slice(0, 200),
@@ -1811,7 +1811,7 @@ export default function useTerminalRuntime({
           writeText(text).catch((error) => {
             void warn(
               JSON.stringify({
-                event: "terminal:selection-auto-copy-failed",
+                event: "terminal.selection.auto.copy.failed",
                 sessionId,
                 textLength: text.length,
                 error: extractErrorMessage(error),
@@ -2138,7 +2138,7 @@ export default function useTerminalRuntime({
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "terminal:focused-line-copy-failed",
+          event: "terminal.focused.line.copy.failed",
           sessionId,
           textLength: text.length,
           error: extractErrorMessage(error),
@@ -2278,7 +2278,7 @@ export default function useTerminalRuntime({
     if (!bundle.searchAddon) {
       void warn(
         JSON.stringify({
-          event: "terminal:search-addon-missing",
+          event: "terminal.search.addon.missing",
           sessionId,
           direction,
           keywordLength: value.length,
@@ -2294,7 +2294,7 @@ export default function useTerminalRuntime({
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "terminal:search-addon-failed",
+          event: "terminal.search.addon.failed",
           sessionId,
           direction,
           keywordLength: value.length,

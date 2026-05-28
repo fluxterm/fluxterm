@@ -11,8 +11,10 @@ use ironrdp_cliprdr::pdu::{
     ClipboardFormat, ClipboardGeneralCapabilityFlags, FileContentsRequest, FileContentsResponse,
     FormatDataRequest, FormatDataResponse, LockDataId,
 };
+use serde_json::json;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+
+use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 /// FluxTerm 自定义的 RDP 剪贴板后端实现。
 ///
@@ -65,10 +67,7 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_ready(&mut self) {
         // 通道建立后，通知主循环进行初始同步
-        info!(
-            event = "rdp.cliprdr.backend.ready",
-            "clipboard backend ready"
-        );
+        log_telemetry(TelemetryLevel::Info, "rdp.cliprdr.backend.ready", json!({}));
         let _ = self.proxy_tx.send(CliprdrProxyEvent::NeedInitialSync {
             reason: "backend_ready",
         });
@@ -76,9 +75,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_request_format_list(&mut self) {
         // 当服务器主动要求格式列表时，触发同步
-        info!(
-            event = "rdp.cliprdr.backend.request_format_list",
-            "remote requested clipboard format list"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.cliprdr.backend.request.format.list",
+            json!({}),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::NeedInitialSync {
             reason: "remote_requested_format_list",
@@ -89,10 +89,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_remote_copy(&mut self, formats: &[ClipboardFormat]) {
         // 当远端执行复制操作时，转发格式列表以触发后续的粘贴请求
-        debug!(
-            event = "rdp.cliprdr.backend.remote_copy",
-            format_count = formats.len(),
-            "remote clipboard announced available formats"
+        log_telemetry(
+            TelemetryLevel::Debug,
+            "rdp.cliprdr.backend.remote.copy",
+            json!({ "formatCount": formats.len() }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::FormatList {
             reason: "remote_copy",
@@ -102,10 +102,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_format_data_request(&mut self, request: FormatDataRequest) {
         // 当远端执行粘贴操作时，请求本地提供数据
-        info!(
-            event = "rdp.cliprdr.backend.data_request",
-            format = ?request.format,
-            "remote requested clipboard data"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.cliprdr.backend.data.request",
+            json!({ "format": format!("{:?}", request.format) }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::DataRequest {
             reason: "remote_paste_request",
@@ -115,10 +115,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
         // 当本地请求的远端数据到达时，转发给前端
-        info!(
-            event = "rdp.cliprdr.backend.data_response",
-            data_len = response.data().len(),
-            "received clipboard data response from remote"
+        log_telemetry(
+            TelemetryLevel::Info,
+            "rdp.cliprdr.backend.data.response",
+            json!({ "dataLen": response.data().len() }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::DataResponse {
             reason: "remote_data_response",

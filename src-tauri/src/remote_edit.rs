@@ -396,7 +396,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
     })?;
     log_remote_edit_event(
         TelemetryLevel::Info,
-        "remote_edit.cache.cleanup",
+        "remote.edit.cache.cleanup",
         json!({
             "removedPaths": removed_count,
             "prunedIndexEntries": pruned_index_entries,
@@ -887,7 +887,7 @@ pub(crate) fn remote_edit_prepare_open(
     )?;
     log_remote_edit_event(
         TelemetryLevel::Info,
-        "remote_edit.open.prepared",
+        "remote.edit.open.prepared",
         json!({
             "sessionId": session_id,
             "instanceId": snapshot.instance_id,
@@ -996,7 +996,7 @@ pub(crate) async fn spawn_remote_edit_monitor(
                     guard.pending_snapshot = Some(current_snapshot);
                     log_remote_edit_event(
                         TelemetryLevel::Info,
-                        "remote_edit.local_change_detected",
+                        "remote.edit.local.change.detected",
                         json!({
                             "sessionId": guard.snapshot.session_id,
                             "instanceId": guard.snapshot.instance_id,

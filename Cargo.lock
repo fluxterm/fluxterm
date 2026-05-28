@@ -1928,6 +1928,7 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "fluxterm-telemetry",
  "futures-util",
  "log",
  "regex",
@@ -2206,6 +2207,7 @@ dependencies = [
  "base64 0.22.1",
  "dotenvy",
  "engine",
+ "fluxterm-telemetry",
  "futures-util",
  "log",
  "openai",
@@ -2233,6 +2235,13 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+]
+
+[[package]]
+name = "fluxterm-telemetry"
+version = "0.4.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -4652,6 +4661,7 @@ dependencies = [
 name = "openai"
 version = "0.4.0"
 dependencies = [
+ "fluxterm-telemetry",
  "log",
  "reqwest 0.12.28",
  "serde",
@@ -5864,17 +5874,18 @@ version = "0.4.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "fluxterm-telemetry",
  "hostname",
  "ironrdp",
  "ironrdp-cliprdr",
  "ironrdp-tls",
  "ironrdp-tokio",
+ "log",
  "png 0.17.16",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
  "uuid",
 ]
 

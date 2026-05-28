@@ -2412,7 +2412,7 @@ export default function ConfigModal({
                   });
                   void logError(
                     JSON.stringify({
-                      event: "config-directory:open-failed",
+                      event: "config.directory.open.failed",
                       path: configDir,
                       message: extractErrorMessage(error),
                     }),
@@ -2449,7 +2449,7 @@ export default function ConfigModal({
                   });
                   void logError(
                     JSON.stringify({
-                      event: "data-directory:open-failed",
+                      event: "data.directory.open.failed",
                       path: dataDir,
                       message: extractErrorMessage(error),
                     }),

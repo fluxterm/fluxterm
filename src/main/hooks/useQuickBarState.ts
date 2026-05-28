@@ -237,7 +237,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
         loadedRef.current = true;
         void debug(
           JSON.stringify({
-            event: "quickbar:load-skip",
+            event: "quickbar.load.skip",
             reason: "file-not-exists",
           }),
         );
@@ -255,7 +255,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
       setCommands(normalized.commands);
       void debug(
         JSON.stringify({
-          event: "quickbar:loaded",
+          event: "quickbar.loaded",
           groups: normalized.groups.length,
           commands: normalized.commands.length,
         }),
@@ -263,7 +263,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "quickbar:load-failed",
+          event: "quickbar.load.failed",
           error: extractErrorMessage(error),
         }),
       );
@@ -324,7 +324,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
 
     void debug(
       JSON.stringify({
-        event: "quickbar:save-scheduled",
+        event: "quickbar.save.scheduled",
         debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
       }),
     );
@@ -334,11 +334,11 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
         try {
           await saveConfig(currentConfig);
           lastSavedConfigRef.current = configStr;
-          void debug(JSON.stringify({ event: "quickbar:persisted" }));
+          void debug(JSON.stringify({ event: "quickbar.persisted" }));
         } catch (error) {
           void warn(
             JSON.stringify({
-              event: "quickbar:save-failed",
+              event: "quickbar.save.failed",
               error: extractErrorMessage(error),
             }),
           );

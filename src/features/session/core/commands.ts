@@ -72,7 +72,7 @@ export async function connectProfileCommand({
     const existingState = sessionStatesRef.current[result.sessionId];
     logInfo(
       JSON.stringify({
-        event: "ssh.connect.session-created",
+        event: "ssh.connect.session.created",
         profileId: profile.id,
         sessionId: result.sessionId,
       }),
@@ -106,7 +106,7 @@ export async function connectProfileCommand({
     if (code === "ssh_host_key_unknown" || code === "ssh_host_key_mismatch") {
       void logWarn(
         JSON.stringify({
-          event: "ssh.connect.pending-host-key-confirmation",
+          event: "ssh.connect.hostkey.pending",
           profileId: profile.id,
           host: profile.host,
           error: extractErrorMessage(err),
@@ -118,7 +118,7 @@ export async function connectProfileCommand({
       // 锁定是用户主动触发的受控状态，不属于系统异常，按 warning 记录即可。
       void logWarn(
         JSON.stringify({
-          event: "ssh.connect.blocked.security-locked",
+          event: "ssh.connect.security.locked",
           profileId: profile.id,
           host: profile.host,
           error: errorMessage,

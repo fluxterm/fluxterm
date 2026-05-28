@@ -372,7 +372,7 @@ export default function SftpWidget({
                   });
                   void logOpenFailure(
                     JSON.stringify({
-                      event: "sftp:open-in-file-manager-failed",
+                      event: "sftp.open.in.file.manager.failed",
                       path: currentPath,
                       message: errorMessage,
                     }),

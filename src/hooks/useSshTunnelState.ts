@@ -151,7 +151,7 @@ export default function useSshTunnelState(activeSessionId: string | null) {
     if (!activeSessionId) return;
     logInfo(
       JSON.stringify({
-        event: "ssh.tunnel.close-all.start",
+        event: "ssh.tunnel.close.all.start",
         sessionId: activeSessionId,
       }),
     ).catch(() => {});
@@ -162,7 +162,7 @@ export default function useSshTunnelState(activeSessionId: string | null) {
     } catch (error) {
       logWarn(
         JSON.stringify({
-          event: "ssh.tunnel.close-all.failed",
+          event: "ssh.tunnel.close.all.failed",
           sessionId: activeSessionId,
           message: error instanceof Error ? error.message : String(error),
         }),

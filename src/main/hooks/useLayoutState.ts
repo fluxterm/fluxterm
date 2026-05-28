@@ -119,7 +119,7 @@ export default function useLayoutState({
         layoutLoadedRef.current = true;
         void debug(
           JSON.stringify({
-            event: "layout:load-skip",
+            event: "layout.load.skip",
             reason: "empty-or-not-found",
           }),
         );
@@ -151,12 +151,19 @@ export default function useLayoutState({
       setFloatingOrigins(normalized.floating);
       setwidgetSizes(normalized.sizes);
       void debug(
-        JSON.stringify({ event: "layout:loaded", payload: normalized }),
+        JSON.stringify({
+          event: "layout.loaded",
+          collapsedSections: Object.values(normalized.collapsed).filter(Boolean)
+            .length,
+          slotCount: Object.keys(normalized.slots).length,
+          floatingCount: Object.keys(normalized.floating).length,
+          sizeCount: Object.keys(normalized.sizes).length,
+        }),
       );
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "layout:load-failed",
+          event: "layout.load.failed",
           error: extractErrorMessage(error),
         }),
       );
@@ -379,7 +386,7 @@ export default function useLayoutState({
 
     void debug(
       JSON.stringify({
-        event: "layout:save-scheduled",
+        event: "layout.save.scheduled",
         debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
       }),
     );
@@ -389,11 +396,11 @@ export default function useLayoutState({
         try {
           await saveLayoutConfig(currentLayout);
           lastSavedConfigRef.current = layoutStr;
-          void debug(JSON.stringify({ event: "layout:persisted" }));
+          void debug(JSON.stringify({ event: "layout.persisted" }));
         } catch (error) {
           void warn(
             JSON.stringify({
-              event: "layout:save-failed",
+              event: "layout.save.failed",
               error: extractErrorMessage(error),
             }),
           );

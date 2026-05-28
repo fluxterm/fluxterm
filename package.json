@@ -17,8 +17,9 @@
     "prune": "ts-prune",
     "format": "prettier --write src/",
     "format:all": "pnpm format && cargo fmt",
-    "check": "pnpm type-check && pnpm lint",
-    "check:all": "pnpm type-check && pnpm lint && cargo clippy --all-targets --all-features -- -D warnings",
+    "telemetry:check": "node scripts/check-telemetry.mjs",
+    "check": "pnpm type-check && pnpm lint && pnpm telemetry:check",
+    "check:all": "pnpm type-check && pnpm lint && pnpm telemetry:check && cargo clippy --all-targets --all-features -- -D warnings",
     "code:stats": "node --experimental-strip-types scripts/count-code-lines.ts"
   },
   "dependencies": {

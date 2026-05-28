@@ -335,7 +335,7 @@ export default function useMacAppMenu({
       } catch (error) {
         void logError(
           JSON.stringify({
-            event: "mac-app-menu:apply-failed",
+            event: "mac.app.menu.apply.failed",
             message: extractErrorMessage(error),
           }),
         );

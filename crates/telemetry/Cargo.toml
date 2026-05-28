@@ -1,0 +1,10 @@
+[package]
+name = "fluxterm-telemetry"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish = false
+description = "FluxTerm shared telemetry payload helpers"
+
+[dependencies]
+serde_json = { workspace = true }

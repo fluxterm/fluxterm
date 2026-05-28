@@ -9,8 +9,6 @@ export type TelemetryLevel = "debug" | "info" | "warn" | "error";
 
 type TelemetryPayload = {
   event: string;
-  level: TelemetryLevel;
-  traceId: string | null;
 } & Record<string, unknown>;
 
 /** 生成 traceId。 */
@@ -31,14 +29,14 @@ export async function logTelemetry(
   fields?: Record<string, unknown>,
 ) {
   const normalizedEvent = normalizeEventName(event);
+  const { traceId, ...restFields } = fields ?? {};
   const payload: TelemetryPayload = {
     event: normalizedEvent,
-    ts: Date.now(),
-    source: "frontend",
-    level,
-    traceId: typeof fields?.traceId === "string" ? fields.traceId : null,
-    ...(fields ?? {}),
+    ...restFields,
   };
+  if (typeof traceId === "string" && traceId.trim()) {
+    payload.traceId = traceId;
+  }
   const line = JSON.stringify(payload);
   if (level === "debug") return pluginDebug(line);
   if (level === "warn") return pluginWarn(line);
@@ -49,7 +47,7 @@ export async function logTelemetry(
 function normalizeEventName(value: string): string {
   const withDots = value
     .trim()
-    .replace(/[:_]/g, ".")
+    .replace(/[:_-]/g, ".")
     .replace(/([a-z0-9])([A-Z])/g, "$1.$2")
     .replace(/\.+/g, ".")
     .replace(/^\./, "")

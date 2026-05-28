@@ -871,7 +871,7 @@ export default function AppShell() {
         }
         void warn(
           JSON.stringify({
-            event: "settings:background-image-load-failed",
+            event: "settings.background.image.load.failed",
             asset: backgroundImageAsset,
             error: extractErrorMessage(error),
           }),
@@ -1159,7 +1159,7 @@ export default function AppShell() {
         entry,
         fileDefaultEditorPath,
       );
-      void logTelemetry("info", "remote_edit.open.completed", {
+      void logTelemetry("info", "remote.edit.open.success", {
         sessionId,
         instanceId: opened.instanceId,
         remotePath: entry.path,
@@ -1250,7 +1250,7 @@ export default function AppShell() {
       const previous =
         remoteEditSessionsRef.current[payload.instanceId] ?? null;
       if (previous?.status === "uploading" && payload.status === "synced") {
-        void logTelemetry("info", "remote_edit.upload.succeeded", {
+        void logTelemetry("info", "remote.edit.upload.success", {
           sessionId: payload.sessionId,
           instanceId: payload.instanceId,
           remotePath: payload.remotePath,
@@ -1267,7 +1267,7 @@ export default function AppShell() {
         payload.lastError &&
         previous?.lastError !== payload.lastError
       ) {
-        void logTelemetry("warn", "remote_edit.sync_failed", {
+        void logTelemetry("warn", "remote.edit.sync.failed", {
           sessionId: payload.sessionId,
           instanceId: payload.instanceId,
           remotePath: payload.remotePath,
@@ -1298,7 +1298,7 @@ export default function AppShell() {
         return;
       }
       if (remoteEditAutoUploadBySession[payload.sessionId]) {
-        void logTelemetry("info", "remote_edit.upload.auto_confirmed", {
+        void logTelemetry("info", "remote.edit.upload.auto.confirmed", {
           sessionId: payload.sessionId,
           instanceId: payload.instanceId,
           remotePath: payload.remotePath,
@@ -1321,7 +1321,7 @@ export default function AppShell() {
         profile?.name && profile.host
           ? `${profile.name} (${profile.host})`
           : profile?.host || profile?.name || payload.sessionId;
-      void logTelemetry("info", "remote_edit.upload.prompted", {
+      void logTelemetry("info", "remote.edit.upload.prompted", {
         sessionId: payload.sessionId,
         instanceId: payload.instanceId,
         remotePath: payload.remotePath,
@@ -1337,7 +1337,7 @@ export default function AppShell() {
         secondaryLabel: t("sftp.remoteEdit.confirmAllInSession"),
         cancelLabel: t("actions.cancel"),
         onConfirm: () => {
-          void logTelemetry("info", "remote_edit.upload.confirmed", {
+          void logTelemetry("info", "remote.edit.upload.confirmed", {
             sessionId: payload.sessionId,
             instanceId: payload.instanceId,
             remotePath: payload.remotePath,
@@ -1350,7 +1350,7 @@ export default function AppShell() {
           });
         },
         onSecondary: () => {
-          void logTelemetry("info", "remote_edit.upload.auto_enabled", {
+          void logTelemetry("info", "remote.edit.upload.auto.enabled", {
             sessionId: payload.sessionId,
             instanceId: payload.instanceId,
             remotePath: payload.remotePath,
@@ -1367,7 +1367,7 @@ export default function AppShell() {
           });
         },
         onCancel: () => {
-          void logTelemetry("info", "remote_edit.upload.cancelled", {
+          void logTelemetry("info", "remote.edit.upload.cancelled", {
             sessionId: payload.sessionId,
             instanceId: payload.instanceId,
             remotePath: payload.remotePath,
@@ -2015,7 +2015,7 @@ export default function AppShell() {
         });
         void warn(
           JSON.stringify({
-            event: "terminal:cwd-sync-paused-user-mismatch",
+            event: "terminal.cwd.sync.paused.user.mismatch",
             sessionId: activeSessionId,
             loginUsername,
             promptUsername,
@@ -2033,7 +2033,7 @@ export default function AppShell() {
       });
       info(
         JSON.stringify({
-          event: "terminal:cwd-sync-resumed-user-match",
+          event: "terminal.cwd.sync.resumed.user.match",
           sessionId: activeSessionId,
           loginUsername,
           promptUsername,
@@ -2093,7 +2093,7 @@ export default function AppShell() {
     openRemoteDir(effectiveResolvedPath).catch((error) => {
       void warn(
         JSON.stringify({
-          event: "sftp:sync-terminal-path-failed",
+          event: "sftp.sync.terminal.path.failed",
           sessionId: activeSessionId,
           path: effectiveResolvedPath,
           rawPath: trackedPath,

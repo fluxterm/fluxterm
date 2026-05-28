@@ -16,3 +16,4 @@ regex = { version = "1.12.3" }
 futures-util = { version = "0.3.32" }
 base64 = { version = "0.22.1" }
 serde_json = { workspace = true }
+fluxterm-telemetry = { workspace = true }

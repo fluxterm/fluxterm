@@ -11,7 +11,8 @@ axum = { version = "0.8.4", features = ["http1", "json", "tokio", "ws"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
-tracing = "0.1.41"
+log = { workspace = true }
+fluxterm-telemetry = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 thiserror = "2.0.18"
 hostname = "0.4.1"

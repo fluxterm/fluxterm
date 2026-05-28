@@ -9,6 +9,7 @@ mod ironrdp_runtime;
 mod keyboard;
 mod protocol;
 mod session_manager;
+mod telemetry;
 
 use std::sync::Arc;
 

@@ -179,10 +179,6 @@ async fn stream_chat_completion(
         "messages": messages,
         "stream": true
     });
-    let logged_messages = request
-        .get("messages")
-        .cloned()
-        .unwrap_or_else(|| Value::Array(Vec::new()));
 
     if config.debug_logging_enabled {
         log_telemetry(
@@ -192,7 +188,7 @@ async fn stream_chat_completion(
             json!({
                 "requestType": request_type,
                 "model": config.model,
-                "messages": logged_messages,
+                "messageStats": build_message_stats(&messages),
             }),
         );
     }
@@ -272,13 +268,13 @@ fn log_request(config: &OpenAiClientConfig, request_type: &str, messages: &[Chat
         json!({
             "requestType": request_type,
             "model": config.model,
-            "messages": messages,
+            "messageStats": build_message_stats(messages),
         }),
     );
 }
 
 fn log_system_prompt_summary(request_type: &str, messages: &[ChatMessage]) {
-    let Some(summary) = build_system_prompt_summary(messages) else {
+    let Some(stats) = build_system_prompt_stats(messages) else {
         return;
     };
     log_telemetry(
@@ -287,58 +283,66 @@ fn log_system_prompt_summary(request_type: &str, messages: &[ChatMessage]) {
         None,
         json!({
             "requestType": request_type,
-            "systemPromptSummary": summary,
+            "systemPromptChars": stats.system_prompt_chars,
+            "systemPromptHeadLines": stats.system_prompt_head_lines,
+            "recentOutputChars": stats.recent_output_chars,
         }),
     );
 }
 
-fn build_system_prompt_summary(messages: &[ChatMessage]) -> Option<String> {
-    const MAX_HEAD_LINES: usize = 18;
-    const MAX_RECENT_PREVIEW_CHARS: usize = 240;
-
+fn build_system_prompt_stats(messages: &[ChatMessage]) -> Option<SystemPromptStats> {
     let system_prompt = messages
         .iter()
         .find(|message| message.role == "system")
         .map(|message| message.content.as_str())?;
     let normalized = system_prompt.replace("\r\n", "\n").replace('\r', "\n");
-    // 仅摘要化 `Recent output`，保留规则主体的可读性并压缩日志体积。
     let (head, recent_output) = normalized
         .split_once("\nRecent output:\n")
         .unwrap_or((normalized.as_str(), ""));
-
-    let head_lines = head.lines().collect::<Vec<_>>();
-    let preview = head_lines
-        .iter()
-        .take(MAX_HEAD_LINES)
-        .map(|line| line.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let hidden_line_count = head_lines.len().saturating_sub(MAX_HEAD_LINES);
-    let recent_preview = truncate_chars(recent_output.trim(), MAX_RECENT_PREVIEW_CHARS);
-    let mut summary = format!(
-        "head_lines={} total_chars={} recent_output_chars={}\n{}",
-        head_lines.len(),
-        normalized.chars().count(),
-        recent_output.chars().count(),
-        preview
-    );
-    if hidden_line_count > 0 {
-        summary.push_str(&format!("\n...(+{} lines)", hidden_line_count));
-    }
-    if !recent_preview.is_empty() {
-        summary.push_str(&format!("\nRecent output preview:\n{}", recent_preview));
-    }
-    Some(summary)
+    Some(SystemPromptStats {
+        system_prompt_chars: normalized.chars().count(),
+        system_prompt_head_lines: head.lines().count(),
+        recent_output_chars: recent_output.chars().count(),
+    })
 }
 
-fn truncate_chars(input: &str, max_chars: usize) -> String {
-    // 日志摘要截断函数：防止超长会话输出污染调试日志。
-    if input.chars().count() <= max_chars {
-        return input.to_string();
-    }
-    let mut value = input.chars().take(max_chars).collect::<String>();
-    value.push_str("...");
-    value
+#[derive(Debug, PartialEq, Eq)]
+struct SystemPromptStats {
+    system_prompt_chars: usize,
+    system_prompt_head_lines: usize,
+    recent_output_chars: usize,
+}
+
+fn build_message_stats(messages: &[ChatMessage]) -> Value {
+    let roles = messages
+        .iter()
+        .map(|message| message.role.as_str())
+        .collect::<Vec<_>>();
+    let content_chars = messages
+        .iter()
+        .map(|message| message.content.chars().count())
+        .sum::<usize>();
+    let system_prompt_chars = messages
+        .iter()
+        .filter(|message| message.role == "system")
+        .map(|message| message.content.chars().count())
+        .sum::<usize>();
+    let user_content_chars = messages
+        .iter()
+        .filter(|message| message.role == "user")
+        .map(|message| message.content.chars().count())
+        .sum::<usize>();
+    let recent_output_chars = build_system_prompt_stats(messages)
+        .map(|stats| stats.recent_output_chars)
+        .unwrap_or_default();
+    json!({
+        "messageCount": messages.len(),
+        "roles": roles,
+        "contentChars": content_chars,
+        "systemPromptChars": system_prompt_chars,
+        "recentOutputChars": recent_output_chars,
+        "selectionChars": user_content_chars,
+    })
 }
 
 fn log_response(config: &OpenAiClientConfig, request_type: &str, message: &ChatMessage) {
@@ -351,7 +355,8 @@ fn log_response(config: &OpenAiClientConfig, request_type: &str, message: &ChatM
         None,
         json!({
             "requestType": request_type,
-            "message": message,
+            "responseRole": message.role,
+            "responseChars": message.content.chars().count(),
         }),
     );
 }
@@ -591,7 +596,7 @@ data: {"choices":[{"delta":{"content":"world"}}]}"#;
     }
 
     #[test]
-    fn builds_readable_system_prompt_summary_with_recent_output_stats() {
+    fn builds_system_prompt_stats_without_content_preview() {
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -603,10 +608,14 @@ data: {"choices":[{"delta":{"content":"world"}}]}"#;
             },
         ];
 
-        let summary = build_system_prompt_summary(&messages).expect("summary should exist");
-        assert!(summary.contains("head_lines=2"));
-        assert!(summary.contains("recent_output_chars=5"));
-        assert!(summary.contains("line1\nline2"));
-        assert!(summary.contains("Recent output preview:\na\nb\nc"));
+        let stats = build_system_prompt_stats(&messages).expect("stats should exist");
+        assert_eq!(
+            stats,
+            SystemPromptStats {
+                system_prompt_chars: 31,
+                system_prompt_head_lines: 2,
+                recent_output_chars: 5,
+            }
+        );
     }
 }

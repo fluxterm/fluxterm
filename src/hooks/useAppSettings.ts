@@ -196,7 +196,7 @@ export default function useAppSettings({
       if (!(await exists(path))) {
         void debug(
           JSON.stringify({
-            event: "settings:load-skip",
+            event: "settings.load.skip",
             reason: "file-not-exists",
           }),
         );
@@ -269,11 +269,18 @@ export default function useAppSettings({
       if (normalizedThemeId && themeIds.includes(normalizedThemeId)) {
         setThemeId(normalizedThemeId);
       }
-      void debug(JSON.stringify({ event: "settings:loaded", payload: parsed }));
+      void debug(
+        JSON.stringify({
+          event: "settings.loaded",
+          keyCount: Object.keys(parsed ?? {}).length,
+          hasShellId: typeof parsed?.shellId === "string",
+          hasBackgroundMedia: typeof parsed?.backgroundImageAsset === "string",
+        }),
+      );
     } catch (error) {
       void warn(
         JSON.stringify({
-          event: "settings:load-failed",
+          event: "settings.load.failed",
           error: extractErrorMessage(error),
         }),
       );
@@ -294,7 +301,7 @@ export default function useAppSettings({
 
       void debug(
         JSON.stringify({
-          event: "settings:refresh-shell",
+          event: "settings.refresh.shell",
           savedShellId: preferred ?? null,
           availableShellIds: shells.map((shell) => shell.id),
           selectedShellId: selected,
@@ -330,7 +337,7 @@ export default function useAppSettings({
         if (!active) return;
         setAvailableShells([]);
         setShellId(null);
-        void warn(JSON.stringify({ event: "settings:init-shell-failed" }));
+        void warn(JSON.stringify({ event: "settings.init.shell.failed" }));
       } finally {
         if (active) {
           loadedRef.current = true;
@@ -384,7 +391,7 @@ export default function useAppSettings({
 
     void debug(
       JSON.stringify({
-        event: "settings:save-scheduled",
+        event: "settings.save.scheduled",
         debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
       }),
     );
@@ -395,13 +402,13 @@ export default function useAppSettings({
           await saveSettings(currentSettings);
           lastSavedConfigRef.current = settingsStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "settings:persisted" }));
+          void debug(JSON.stringify({ event: "settings.persisted" }));
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
           void warn(
             JSON.stringify({
-              event: "settings:save-failed",
+              event: "settings.save.failed",
               error: extractErrorMessage(error),
             }),
           );

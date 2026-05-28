@@ -13,6 +13,7 @@ authors = ["sfwwslm"]
 [workspace.dependencies]
 engine = { path = "crates/engine" }
 openai = { path = "crates/openai" }
+fluxterm-telemetry = { path = "crates/telemetry" }
 
 log = { version = "0.4.29" }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -308,7 +308,7 @@ export default function SubAppRoot() {
         setSubAppWindowAppearanceReady(true);
         void warn(
           JSON.stringify({
-            event: "subapp:background-image-load-failed",
+            event: "subapp.background.image.load.failed",
             asset: effectiveBackgroundImageAsset,
             error: extractErrorMessage(error),
           }),
