@@ -1260,7 +1260,6 @@ async fn stream_remote_download_tasks(
             .join(relative_path_to_local_path(&next_relative));
         match entry.file_type() {
             russh_sftp::protocol::FileType::Dir => {
-                pipeline_discover_item(ctx.state, ctx.emit_context, Some(0));
                 ctx.tx
                     .send(DownloadPipelineTask::CreateLocalDir {
                         local_path: next_local,
@@ -1436,11 +1435,9 @@ async fn download_pipeline_worker(
                 local_path,
                 display_name,
             } => match tokio::fs::create_dir_all(&local_path).await {
-                Ok(()) => {
-                    pipeline_complete_item(&state, &emit_context, &display_name);
-                }
+                Ok(()) => {}
                 Err(err) => {
-                    pipeline_fail_item(&state, &emit_context, &display_name);
+                    pipeline_discover_failed_item(&state, &emit_context);
                     log_telemetry(
                         TelemetryLevel::Warn,
                         "sftp.download.dir.mkdir.failed",
@@ -1714,7 +1711,7 @@ pub async fn sftp_download(
 /// 递归下载远端目录到本地目录。
 ///
 /// 流程分为两阶段：
-/// 1. 预扫描远端目录树，统计目录/文件项与总字节数。
+/// 1. 预扫描远端目录树，统计文件项与总字节数。
 /// 2. 在本地创建同名根目录后，顺序创建子目录并顺序下载文件。
 ///
 /// 第一版默认允许部分成功：
@@ -1794,7 +1791,6 @@ pub async fn sftp_download_dir(
         .and_then(|value| value.to_str())
         .unwrap_or(root_name.as_str())
         .to_string();
-    pipeline_discover_item(&state, &emit_context, Some(0));
     if let Err(err) = task_tx.send(DownloadPipelineTask::CreateLocalDir {
         local_path: root_path.clone(),
         display_name: root_display_name,
@@ -2462,13 +2458,13 @@ fn emit_pipeline_progress(
         kind: context.kind,
         path: context.path.clone(),
         display_name: context.display_name.clone(),
-        item_label: items_label(Some(state.total_items.max(1))),
+        item_label: items_label(Some(state.total_items)),
         target_name: context.target_name.clone(),
         current_item_name: current_item_name.map(|value| value.to_string()),
         transferred: state.transferred,
         total: state.total_bytes,
         completed_items: state.completed_items,
-        total_items: Some(state.total_items.max(1)),
+        total_items: Some(state.total_items),
         status: state.status,
         failed_items: state.failed_items,
     }));
@@ -3011,10 +3007,12 @@ fn format_permissions(perm: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DownloadReadChunk, DownloadReadFollowUp, drain_contiguous_download_chunks,
-        queue_download_read_chunk,
+        DownloadReadChunk, DownloadReadFollowUp, PipelineEmitContext, PipelineProgressState,
+        drain_contiguous_download_chunks, emit_pipeline_progress, queue_download_read_chunk,
     };
+    use crate::types::{EngineEvent, SftpProgressOp, SftpTransferKind, SftpTransferStatus};
     use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn queue_download_read_chunk_accepts_full_chunk() {
@@ -3149,5 +3147,41 @@ mod tests {
         assert!(chunks.is_empty());
         assert_eq!(expected_offset, 0);
         assert!(!pending.is_empty());
+    }
+
+    #[test]
+    fn emit_pipeline_progress_preserves_zero_total_items() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured_events = Arc::clone(&events);
+        let context = PipelineEmitContext {
+            session_id: "session-1".to_string(),
+            transfer_id: "transfer-1".to_string(),
+            op: SftpProgressOp::Download,
+            kind: SftpTransferKind::Directory,
+            path: "/remote/empty".to_string(),
+            display_name: "empty".to_string(),
+            target_name: None,
+            on_event: Arc::new(move |event| {
+                captured_events.lock().expect("events lock").push(event);
+            }),
+        };
+        let state = PipelineProgressState {
+            transferred: 0,
+            total_bytes: Some(0),
+            completed_items: 0,
+            total_items: 0,
+            failed_items: 0,
+            status: SftpTransferStatus::Running,
+        };
+
+        emit_pipeline_progress(&context, &state, None);
+
+        let events = events.lock().expect("events lock");
+        let Some(EngineEvent::SftpProgress(progress)) = events.last() else {
+            panic!("expected sftp progress event");
+        };
+        assert_eq!(progress.total_items, Some(0));
+        assert_eq!(progress.completed_items, 0);
+        assert_eq!(progress.item_label, "0 items");
     }
 }
