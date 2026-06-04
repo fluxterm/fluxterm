@@ -121,6 +121,20 @@ enum DownloadPipelineTask {
     },
 }
 
+/// 窗口化下载中的一次远端读结果。
+struct DownloadReadChunk {
+    offset: u64,
+    requested_len: u32,
+    data: Vec<u8>,
+}
+
+/// 记录短读后需要继续补读的远端区间。
+#[derive(Debug, PartialEq, Eq)]
+struct DownloadReadFollowUp {
+    offset: u64,
+    len: u32,
+}
+
 /// 批量传输进度聚合状态。
 #[derive(Clone)]
 struct PipelineProgressState {
@@ -2199,6 +2213,11 @@ async fn download_remote_file_to_local_pipelined(
             EngineError::with_detail("sftp_download_failed", "无法打开远端文件", err.to_string())
         })?;
     let handle_id = handle.handle.clone();
+    let expected_size = sftp
+        .fstat(handle_id.clone())
+        .await
+        .ok()
+        .and_then(|attrs| attrs.attrs.size);
     let mut local = tokio::fs::File::create(local_path).await.map_err(|err| {
         EngineError::with_detail("sftp_download_failed", "无法创建本地文件", err.to_string())
     })?;
@@ -2217,9 +2236,36 @@ async fn download_remote_file_to_local_pipelined(
     let mut max_in_flight_seen = 0usize;
     let mut max_pending_chunks_seen = 0usize;
     let mut eof = false;
-    let mut in_flight: JoinSet<Result<(u64, Vec<u8>), EngineError>> = JoinSet::new();
+    let mut in_flight: JoinSet<Result<DownloadReadChunk, EngineError>> = JoinSet::new();
     let mut pending_chunks = BTreeMap::<u64, Vec<u8>>::new();
     let window_size = DOWNLOAD_READ_WINDOW;
+    let spawn_read = |in_flight: &mut JoinSet<Result<DownloadReadChunk, EngineError>>,
+                      read_offset: u64,
+                      read_len: u32| {
+        let session = Arc::clone(sftp);
+        let handle = handle_id.clone();
+        in_flight.spawn(async move {
+            match session.read(handle, read_offset, read_len).await {
+                Ok(data) => Ok(DownloadReadChunk {
+                    offset: read_offset,
+                    requested_len: read_len,
+                    data: data.data.to_vec(),
+                }),
+                Err(SftpClientError::Status(status)) if status.status_code == StatusCode::Eof => {
+                    Ok(DownloadReadChunk {
+                        offset: read_offset,
+                        requested_len: read_len,
+                        data: Vec::new(),
+                    })
+                }
+                Err(err) => Err(EngineError::with_detail(
+                    "sftp_transfer_failed",
+                    "Unable to read file data",
+                    err.to_string(),
+                )),
+            }
+        });
+    };
 
     loop {
         if is_transfer_cancelled(cancel_flag) {
@@ -2229,25 +2275,9 @@ async fn download_remote_file_to_local_pipelined(
             return Err(transfer_cancelled_error());
         }
         while !eof && in_flight.len() < window_size {
-            let session = Arc::clone(sftp);
-            let handle = handle_id.clone();
             let read_offset = next_offset;
             let read_len = chunk_size as u32;
-            in_flight.spawn(async move {
-                match session.read(handle, read_offset, read_len).await {
-                    Ok(data) => Ok((read_offset, data.data.to_vec())),
-                    Err(SftpClientError::Status(status))
-                        if status.status_code == StatusCode::Eof =>
-                    {
-                        Ok((read_offset, Vec::new()))
-                    }
-                    Err(err) => Err(EngineError::with_detail(
-                        "sftp_transfer_failed",
-                        "无法读取文件数据",
-                        err.to_string(),
-                    )),
-                }
-            });
+            spawn_read(&mut in_flight, read_offset, read_len);
             next_offset += chunk_size as u64;
             read_requests += 1;
             max_in_flight_seen = max_in_flight_seen.max(in_flight.len());
@@ -2259,7 +2289,7 @@ async fn download_remote_file_to_local_pipelined(
         let Some(result) = result else {
             break;
         };
-        let (offset, data) = match result {
+        let chunk = match result {
             Ok(Ok(value)) => value,
             Ok(Err(err)) => {
                 in_flight.abort_all();
@@ -2271,30 +2301,56 @@ async fn download_remote_file_to_local_pipelined(
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(EngineError::with_detail(
                     "sftp_transfer_failed",
-                    "无法读取文件数据",
+                    "Unable to read file data",
                     err.to_string(),
                 ));
             }
         };
-        if data.is_empty() {
-            eof = true;
-            eof_responses += 1;
-            continue;
+        let follow_up =
+            queue_download_read_chunk(chunk, &mut pending_chunks, &mut eof, &mut eof_responses);
+        if let Some(follow_up) = follow_up {
+            spawn_read(&mut in_flight, follow_up.offset, follow_up.len);
+            read_requests += 1;
+            max_in_flight_seen = max_in_flight_seen.max(in_flight.len());
         }
-        pending_chunks.insert(offset, data);
         max_pending_chunks_seen = max_pending_chunks_seen.max(pending_chunks.len());
-        while let Some(chunk) = pending_chunks.remove(&expected_write_offset) {
+        for chunk in
+            drain_contiguous_download_chunks(&mut pending_chunks, &mut expected_write_offset)
+        {
             local.write_all(&chunk).await.map_err(|err| {
                 EngineError::with_detail(
                     "sftp_transfer_failed",
-                    "无法写入文件数据",
+                    "Unable to write file data",
                     err.to_string(),
                 )
             })?;
-            expected_write_offset += chunk.len() as u64;
             transferred += chunk.len() as u64;
             on_progress(transferred);
         }
+    }
+
+    if !pending_chunks.is_empty() {
+        let _ = sftp.close(handle_id.clone()).await;
+        let _ = tokio::fs::remove_file(local_path).await;
+        return Err(EngineError::with_detail(
+            "sftp_transfer_failed",
+            "Downloaded file contains non-contiguous data chunks",
+            format!(
+                "expected_offset={expected_write_offset}, pending_offsets={:?}",
+                pending_chunks.keys().copied().collect::<Vec<_>>()
+            ),
+        ));
+    }
+    if let Some(size) = expected_size
+        && transferred != size
+    {
+        let _ = sftp.close(handle_id.clone()).await;
+        let _ = tokio::fs::remove_file(local_path).await;
+        return Err(EngineError::with_detail(
+            "sftp_transfer_failed",
+            "Downloaded file size does not match the remote file size",
+            format!("expected_size={size}, transferred={transferred}"),
+        ));
     }
 
     sftp.close(handle_id).await.map_err(|err| {
@@ -2324,6 +2380,45 @@ async fn download_remote_file_to_local_pipelined(
         max_in_flight: max_in_flight_seen,
         max_pending_chunks: max_pending_chunks_seen,
     })
+}
+
+/// 将一次远端读结果纳入待写队列，并为短读返回补读区间。
+fn queue_download_read_chunk(
+    chunk: DownloadReadChunk,
+    pending_chunks: &mut BTreeMap<u64, Vec<u8>>,
+    eof: &mut bool,
+    eof_responses: &mut u64,
+) -> Option<DownloadReadFollowUp> {
+    if chunk.data.is_empty() {
+        *eof = true;
+        *eof_responses += 1;
+        return None;
+    }
+
+    let actual_len = chunk.data.len();
+    let follow_up = if actual_len < chunk.requested_len as usize {
+        Some(DownloadReadFollowUp {
+            offset: chunk.offset + actual_len as u64,
+            len: chunk.requested_len - actual_len as u32,
+        })
+    } else {
+        None
+    };
+    pending_chunks.insert(chunk.offset, chunk.data);
+    follow_up
+}
+
+/// 从待写队列中取出当前 offset 起连续可写的数据块。
+fn drain_contiguous_download_chunks(
+    pending_chunks: &mut BTreeMap<u64, Vec<u8>>,
+    expected_write_offset: &mut u64,
+) -> Vec<Vec<u8>> {
+    let mut chunks = Vec::new();
+    while let Some(chunk) = pending_chunks.remove(expected_write_offset) {
+        *expected_write_offset += chunk.len() as u64;
+        chunks.push(chunk);
+    }
+    chunks
 }
 
 /// 发出聚合后的 SFTP 传输进度事件。
@@ -2911,4 +3006,148 @@ fn format_permissions(perm: u32) -> String {
         .iter()
         .map(|(flag, ch)| if perm & *flag != 0 { *ch } else { '-' })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DownloadReadChunk, DownloadReadFollowUp, drain_contiguous_download_chunks,
+        queue_download_read_chunk,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn queue_download_read_chunk_accepts_full_chunk() {
+        let mut pending = BTreeMap::new();
+        let mut eof = false;
+        let mut eof_responses = 0;
+
+        let follow_up = queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 0,
+                requested_len: 4,
+                data: b"abcd".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        let mut expected_offset = 0;
+        let chunks = drain_contiguous_download_chunks(&mut pending, &mut expected_offset);
+
+        assert_eq!(follow_up, None);
+        assert!(!eof);
+        assert_eq!(eof_responses, 0);
+        assert_eq!(expected_offset, 4);
+        assert_eq!(chunks.concat(), b"abcd");
+    }
+
+    #[test]
+    fn queue_download_read_chunk_schedules_short_read_follow_up() {
+        let mut pending = BTreeMap::new();
+        let mut eof = false;
+        let mut eof_responses = 0;
+        let mut expected_offset = 0;
+
+        let follow_up = queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 0,
+                requested_len: 4,
+                data: b"ab".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        let first_chunks = drain_contiguous_download_chunks(&mut pending, &mut expected_offset);
+        queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 2,
+                requested_len: 2,
+                data: b"cd".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        let second_chunks = drain_contiguous_download_chunks(&mut pending, &mut expected_offset);
+
+        assert_eq!(follow_up, Some(DownloadReadFollowUp { offset: 2, len: 2 }));
+        assert_eq!(first_chunks.concat(), b"ab");
+        assert_eq!(second_chunks.concat(), b"cd");
+        assert_eq!(expected_offset, 4);
+        assert!(!eof);
+    }
+
+    #[test]
+    fn drain_contiguous_download_chunks_preserves_offset_order() {
+        let mut pending = BTreeMap::new();
+        let mut eof = false;
+        let mut eof_responses = 0;
+        let mut expected_offset = 0;
+
+        queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 4,
+                requested_len: 2,
+                data: b"ef".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        assert!(drain_contiguous_download_chunks(&mut pending, &mut expected_offset).is_empty());
+
+        queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 0,
+                requested_len: 4,
+                data: b"abcd".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        let chunks = drain_contiguous_download_chunks(&mut pending, &mut expected_offset);
+
+        assert_eq!(chunks.concat(), b"abcdef");
+        assert_eq!(expected_offset, 6);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn queue_download_read_chunk_marks_eof_without_hiding_gaps() {
+        let mut pending = BTreeMap::new();
+        let mut eof = false;
+        let mut eof_responses = 0;
+        let mut expected_offset = 0;
+
+        queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 4,
+                requested_len: 2,
+                data: b"ef".to_vec(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        queue_download_read_chunk(
+            DownloadReadChunk {
+                offset: 6,
+                requested_len: 2,
+                data: Vec::new(),
+            },
+            &mut pending,
+            &mut eof,
+            &mut eof_responses,
+        );
+        let chunks = drain_contiguous_download_chunks(&mut pending, &mut expected_offset);
+
+        assert!(eof);
+        assert_eq!(eof_responses, 1);
+        assert!(chunks.is_empty());
+        assert_eq!(expected_offset, 0);
+        assert!(!pending.is_empty());
+    }
 }
