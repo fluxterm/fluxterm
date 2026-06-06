@@ -964,6 +964,16 @@ where
                         "Server requested RDP multitransport, but UDP sideband is not implemented; declined request.",
                     );
                 }
+                ActiveStageOutput::AutoDetect(request) => {
+                    log_telemetry(
+                        TelemetryLevel::Info,
+                        "rdp.runtime.autodetect.reported",
+                        json!({
+                            "sessionId": ctx.session_id,
+                            "request": format!("{request:?}"),
+                        }),
+                    );
+                }
                 ActiveStageOutput::Terminate(_) => return Ok(RuntimeCloseReason::ServerClosed),
             }
         }
@@ -1517,7 +1527,7 @@ impl PreparedConnection {
         let client_hostname = resolve_client_hostname();
         let kerberos_config = client_hostname.clone().map(|hostname| KerberosConfig {
             kdc_proxy_url: None,
-            hostname: Some(hostname),
+            hostname,
         });
 
         Ok(Self {
