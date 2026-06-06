@@ -1827,7 +1827,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2075,7 +2075,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -2114,7 +2114,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-telemetry"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "serde_json",
 ]
@@ -4393,7 +4393,7 @@ dependencies = [
 
 [[package]]
 name = "openai"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "fluxterm-telemetry",
  "log",
@@ -5503,7 +5503,7 @@ checksum = "20675572f6f24e9e76ef639bc5552774ed45f1c30e2951e1e99c59888861c539"
 
 [[package]]
 name = "rdp_core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "axum",
  "base64 0.22.1",

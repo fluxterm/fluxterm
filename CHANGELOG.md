@@ -2,6 +2,26 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.4.1] - 2026-06-06
+
+本次更新聚焦于 SFTP 目录下载可靠性、RDP 依赖栈兼容性、Telemetry 日志一致性，以及开源项目说明完善。
+
+### Changed
+
+- **Telemetry 日志体系收敛**: 统一前端、后端、RDP、OpenAI 与 Engine 模块的 telemetry 记录方式，提升日志结构一致性和后续排障效率。
+- **RDP 依赖栈兼容性更新**: 调整 RDP 相关依赖来源与版本组合，使 RDP 能力链路与新版 SSH 依赖共存，并保持后端检查通过。
+
+### Fixed
+
+- **SFTP 目录下载文件完整性**: 修复目录下载过程中短读场景可能导致本地文件内容损坏的问题。
+- **SFTP 目录下载传输计数**: 修正目录下载任务中的传输项计数，避免进度和结果统计不准确。
+- **RDP 新版协议栈适配**: 适配新版 IronRDP 输出事件和 Kerberos 配置结构，避免 RDP 后端编译失败。
+
+### Documentation
+
+- **英文默认 README**: 将默认 README 调整为英文，并新增中文 README，方便开源用户阅读和中文用户使用。
+- **关键上游依赖说明**: 新增上游依赖与致谢文档，记录关键依赖、当前 fork 分支和后续移除条件。
+
 ## [0.4.0] - 2026-05-24
 
 本次更新聚焦于终端标签交互体验、连接配置创建流程，以及 SFTP 上传稳定性和会话关闭细节修复。
