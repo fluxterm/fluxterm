@@ -11,6 +11,7 @@
 
 ## 能力与设计
 
+- [Upstream Dependencies and Acknowledgements](./upstream-dependencies.md)
 - [文件打开能力设计](./file-open-v1-design.md)
 - [历史命令与命令联想设计](./history-and-autocomplete.md)
 - [终端与 SFTP 路径联动设计](./terminal-sftp-path-sync-design.md)

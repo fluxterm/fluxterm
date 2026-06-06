@@ -1,18 +1,24 @@
 # ![FluxTerm Logo](./src-tauri/icons/32x32.png) FluxTerm
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 ![Preview](https://github.com/fluxterm/fluxterm/blob/main/docs/assets/preview.png)
 
-**FluxTerm** 是一个基于 `Tauri + Rust + React` 构建的现代桌面终端，统一提供 SSH、本地 Shell、SFTP、RDP 远程桌面与终端 AI 协作能力。
+**FluxTerm** is a modern desktop terminal built with `Tauri + Rust + React`. It brings local shells, SSH, SFTP, RDP remote desktop sessions, and terminal AI assistance into one application.
 
-## 设计参考
+## Design Inspiration
 
-**FluxTerm** 在终端交互与设置体验上参考了 [WindTerm](https://github.com/kingToolbox/WindTerm) 对桌面终端工作流的组织方式，重点吸收会话管理、终端工作区、文件侧边能力与设置分层等思路。
+FluxTerm takes inspiration from [WindTerm](https://github.com/kingToolbox/WindTerm), especially its organization of desktop terminal workflows, session management, file-side capabilities, workspace interactions, and settings structure.
 
-项目目标并非复刻既有产品，而是在 `Tauri`、`Rust` 与 `React` 技术栈下，构建具有统一状态模型、明确窗口边界与长期可维护性的桌面终端体验。
+FluxTerm is not intended to clone an existing product. Its goal is to build a maintainable desktop terminal experience on top of `Tauri`, `Rust`, and `React`, with a unified state model and clear window ownership boundaries.
 
-## 贡献
+## Acknowledgements
 
-欢迎通过 `Issue` 与 `Pull Request` 参与改进。提交前建议至少完成以下检查：
+FluxTerm is built on top of many open source projects that provide the foundations for desktop integration, terminal workflows, SSH/SFTP, RDP, and authentication. See [Upstream Dependencies and Acknowledgements](./docs/upstream-dependencies.md) for the key projects and maintenance notes.
+
+## Contributing
+
+Issues and pull requests are welcome. Before submitting changes, please run the relevant checks when possible:
 
 - `pnpm format:all`
 - `pnpm check:all`
