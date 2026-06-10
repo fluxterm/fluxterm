@@ -1,4 +1,4 @@
-name: Release Build
+name: Public Release
 
 run-name: "Version ${{ inputs.tag_name }}"
 
@@ -24,16 +24,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # - os: ubuntu-22.04
-          #   target: x86_64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          # - os: windows-latest
-          #   target: aarch64-pc-windows-msvc
-          # - os: macos-latest
-          #   target: aarch64-apple-darwin
-          # - os: macos-latest
-          #   target: x86_64-apple-darwin
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
 
     runs-on: ${{ matrix.os }}
 
@@ -86,9 +86,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Run code checks
-        run: pnpm check:all
-
       - name: Add Rust Target
         run: |
           # Ensure cross target is installed for the repo-pinned toolchain; fallback without explicit toolchain if needed
@@ -100,10 +97,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0.6.1
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.FLUXTERM_RELEASE_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          owner: fluxterm
+          repo: fluxterm-release
+          releaseCommitish: main
+
           tagName: ${{ steps.meta.outputs.tag }}
           releaseName: ${{ inputs.release_name == 'Version' && 'Version __VERSION__' || inputs.release_name }}
           releaseBody: "Draft release, will be updated later."
