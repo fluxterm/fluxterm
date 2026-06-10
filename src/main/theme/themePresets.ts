@@ -35,7 +35,8 @@ type CatppuccinFlavor = {
 };
 
 const fontFamilyBody = '"IBM Plex Sans", "Segoe UI", sans-serif';
-const fontFamilyMono = '"JetBrains Mono", "Cascadia Mono", monospace';
+const fontFamilyMono =
+  '"Ubuntu Mono", "JetBrains Mono", "Cascadia Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC", "DejaVu Sans Mono", monospace';
 
 const catppuccinLatte: CatppuccinFlavor = {
   rosewater: "#dc8a78",
