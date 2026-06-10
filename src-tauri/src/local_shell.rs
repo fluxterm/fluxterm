@@ -445,13 +445,33 @@ pub fn start_local_shell(
         command.env("COLORTERM", "truecolor");
     }
     #[cfg(not(target_os = "windows"))]
-    if let Some(locale) = launch_config
-        .as_ref()
-        .and_then(|cfg| cfg.charset.as_deref())
-        .and_then(normalize_locale_for_charset)
     {
-        command.env("LC_CTYPE", locale);
-        command.env("LANG", locale);
+        let mut should_set_locale = true;
+        if let Some(cfg) = launch_config.as_ref()
+            && let Some(charset) = cfg.charset.as_deref()
+            && charset.trim().eq_ignore_ascii_case("utf-8")
+        {
+            let env_lang = env::var("LANG").unwrap_or_default().to_ascii_lowercase();
+            let env_lc_ctype = env::var("LC_CTYPE")
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if env_lang.contains("utf-8")
+                || env_lang.contains("utf8")
+                || env_lc_ctype.contains("utf-8")
+                || env_lc_ctype.contains("utf8")
+            {
+                should_set_locale = false;
+            }
+        }
+        if should_set_locale
+            && let Some(locale) = launch_config
+                .as_ref()
+                .and_then(|cfg| cfg.charset.as_deref())
+                .and_then(normalize_locale_for_charset)
+        {
+            command.env("LC_CTYPE", locale);
+            command.env("LANG", locale);
+        }
     }
     for arg in &shell.args {
         command.arg(arg);
