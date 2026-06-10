@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import Button from "@/components/ui/button";
 import type { Translate } from "@/i18n";
 import type { AiChatMessage } from "@/features/ai/types";
-import "./Aiwidget.css";
+import "./AiWidget.css";
 
 /**
  * AI 会话面板视图组件。

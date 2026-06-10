@@ -1,7 +1,7 @@
 import type { Locale, Translate } from "@/i18n";
 import type { CommandHistoryItem, CommandHistoryLiveCapture } from "@/types";
 import { formatDateTimeMs } from "@/utils/format";
-import "./CommandHistorywidget.css";
+import "./CommandHistoryWidget.css";
 
 /** 历史命令面板 props。 */
 type CommandHistoryWidgetProps = {

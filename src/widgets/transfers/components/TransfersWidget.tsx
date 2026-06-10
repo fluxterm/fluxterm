@@ -14,7 +14,7 @@ import type { Locale, Translate } from "@/i18n";
 import type { AppEvent, SftpProgress } from "@/types";
 import { formatBytes, formatTime } from "@/utils/format";
 import Button from "@/components/ui/button";
-import "./Transferswidget.css";
+import "./TransfersWidget.css";
 
 type TransfersWidgetProps = {
   progress: SftpProgress | null;

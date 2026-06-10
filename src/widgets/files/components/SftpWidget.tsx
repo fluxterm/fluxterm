@@ -45,7 +45,7 @@ import {
   FiVideo,
 } from "react-icons/fi";
 import Button from "@/components/ui/button";
-import "./Sftpwidget.css";
+import "./SftpWidget.css";
 
 /** 将 WSL UNC 路径格式化为更符合 Linux 心智的展示形式。 */
 function formatDisplayPath(path: string) {
