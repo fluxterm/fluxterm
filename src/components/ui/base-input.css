@@ -121,3 +121,86 @@ input,
 select {
   color: var(--input-text);
 }
+
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: var(--ui-input-bg);
+  border: 1px solid var(--ui-input-border);
+  box-shadow: var(--ui-input-glow);
+  padding: 0;
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition:
+    background-color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  vertical-align: middle;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 悬停微缩放 */
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: var(--ui-input-border-hover);
+  background-color: var(--ui-input-bg-hover);
+  transform: scale(1.06);
+}
+
+/* 点击按压物理回弹 */
+input[type="checkbox"]:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+/* 选中激活状态 */
+input[type="checkbox"]:checked {
+  background-color: var(--ui-input-bg-hover);
+  border-color: var(--accent);
+  box-shadow:
+    0 0 8px var(--accent-soft),
+    var(--ui-input-glow);
+}
+
+/* 打勾标记绘制与弹性缩放动画 */
+input[type="checkbox"]::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  transform: scale(0);
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background-color: var(--accent);
+  /* 绘制精美、比例完美的打勾矢量图案 */
+  clip-path: polygon(14% 44%, 0 58%, 38% 96%, 100% 17%, 84% 3%, 38% 70%);
+}
+
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+/* 键盘焦点轮廓反馈 */
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 74%, #ffffff 10%);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent-soft) 50%, transparent),
+    var(--ui-input-glow);
+}
+
+/* 禁用状态 */
+input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none !important;
+  background-color: color-mix(in srgb, var(--ui-input-bg) 70%, transparent);
+}
+
+input[type="checkbox"]:disabled:checked {
+  background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: transparent;
+}
