@@ -38,6 +38,7 @@ use crate::ssh_host_keys::{HostKeyMatchStatus, match_host_key};
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 pub const MIN_RESOURCE_MONITOR_INTERVAL_SEC: u64 = 3;
+const INITIAL_RESOURCE_SAMPLE_WINDOW: Duration = Duration::from_secs(1);
 
 struct ResourceMonitorHandle {
     stop_tx: watch::Sender<bool>,
@@ -203,10 +204,27 @@ async fn run_local_resource_monitor(
     let mut system = System::new_all();
     system.refresh_memory();
     system.refresh_cpu_usage();
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    tokio::select! {
+        _ = stop_rx.changed() => {
+            if *stop_rx.borrow() {
+                return;
+            }
+        }
+        _ = tokio::time::sleep(INITIAL_RESOURCE_SAMPLE_WINDOW) => {}
+    }
+    system.refresh_memory();
     system.refresh_cpu_usage();
+    if *stop_rx.borrow() {
+        return;
+    }
+    let _ = app.emit(
+        "session:resource",
+        build_local_resource_snapshot(&session_id, &system),
+    );
 
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_sec));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ticker.tick().await;
 
     loop {
         tokio::select! {
@@ -218,32 +236,38 @@ async fn run_local_resource_monitor(
             _ = ticker.tick() => {
                 system.refresh_memory();
                 system.refresh_cpu_usage();
-                let snapshot = SessionResourceSnapshot {
-                    session_id: session_id.clone(),
-                    sampled_at: now_epoch(),
-                    source: "local".to_string(),
-                    status: ResourceMonitorStatus::Ready,
-                    unsupported_reason: None,
-                    uptime_seconds: Some(System::uptime()),
-                    cpu: Some(ResourceCpuSnapshot {
-                        total_percent: system.global_cpu_usage(),
-                        user_percent: 0.0,
-                        system_percent: 0.0,
-                        idle_percent: 0.0,
-                        iowait_percent: 0.0,
-                        logical_cpu_count: u32::try_from(system.cpus().len()).ok(),
-                    }),
-                    memory: Some(ResourceMemorySnapshot {
-                        total_bytes: system.total_memory(),
-                        used_bytes: system.used_memory(),
-                        free_bytes: system.free_memory(),
-                        available_bytes: system.available_memory(),
-                        cache_bytes: 0,
-                    }),
-                };
-                let _ = app.emit("session:resource", snapshot);
+                let _ = app.emit(
+                    "session:resource",
+                    build_local_resource_snapshot(&session_id, &system),
+                );
             }
         }
+    }
+}
+
+fn build_local_resource_snapshot(session_id: &str, system: &System) -> SessionResourceSnapshot {
+    SessionResourceSnapshot {
+        session_id: session_id.to_string(),
+        sampled_at: now_epoch(),
+        source: "local".to_string(),
+        status: ResourceMonitorStatus::Ready,
+        unsupported_reason: None,
+        uptime_seconds: Some(System::uptime()),
+        cpu: Some(ResourceCpuSnapshot {
+            total_percent: system.global_cpu_usage(),
+            user_percent: 0.0,
+            system_percent: 0.0,
+            idle_percent: 0.0,
+            iowait_percent: 0.0,
+            logical_cpu_count: u32::try_from(system.cpus().len()).ok(),
+        }),
+        memory: Some(ResourceMemorySnapshot {
+            total_bytes: system.total_memory(),
+            used_bytes: system.used_memory(),
+            free_bytes: system.free_memory(),
+            available_bytes: system.available_memory(),
+            cache_bytes: 0,
+        }),
     }
 }
 

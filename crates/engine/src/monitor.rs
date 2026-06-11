@@ -18,6 +18,7 @@ use crate::types::{
 use crate::util::now_epoch;
 
 const REMOTE_RESOURCE_COMMAND: &str = "cat /proc/stat 2>/dev/null; printf '\\n'; cat /proc/meminfo 2>/dev/null; printf '\\n'; cat /proc/uptime 2>/dev/null";
+const INITIAL_RESOURCE_SAMPLE_WINDOW: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy)]
 struct CpuCounters {
@@ -71,8 +72,26 @@ pub async fn run_ssh_resource_monitor(
 
     authenticate(&mut session, &profile, AuthPurpose::ResourceMonitor).await?;
 
-    let mut previous_cpu: Option<CpuCounters> = None;
+    let baseline_output = exec_remote_resource_command(&session).await?;
+    let baseline_cpu = parse_cpu_counters(&baseline_output)?;
+    tokio::select! {
+        _ = stop_rx.changed() => {
+            if *stop_rx.borrow() {
+                return Ok(());
+            }
+        }
+        _ = tokio::time::sleep(INITIAL_RESOURCE_SAMPLE_WINDOW) => {}
+    }
+    let (snapshot, mut previous_cpu) =
+        sample_linux_resource_snapshot(&session_id, &session, baseline_cpu).await?;
+    if *stop_rx.borrow() {
+        return Ok(());
+    }
+    on_event(EngineEvent::SessionResource(snapshot));
+
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_sec.max(3)));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ticker.tick().await;
 
     loop {
         tokio::select! {
@@ -84,7 +103,7 @@ pub async fn run_ssh_resource_monitor(
             _ = ticker.tick() => {
                 match sample_linux_resource_snapshot(&session_id, &session, previous_cpu).await {
                     Ok((snapshot, current_cpu)) => {
-                        previous_cpu = Some(current_cpu);
+                        previous_cpu = current_cpu;
                         on_event(EngineEvent::SessionResource(snapshot));
                     }
                     Err(error) if error.code == "resource_monitor_unsupported" => {
@@ -128,28 +147,14 @@ pub async fn run_ssh_resource_monitor(
 async fn sample_linux_resource_snapshot(
     session_id: &str,
     session: &client::Handle<ClientHandler>,
-    previous_cpu: Option<CpuCounters>,
+    previous_cpu: CpuCounters,
 ) -> Result<(SessionResourceSnapshot, CpuCounters), EngineError> {
-    let first_output = exec_remote_resource_command(session).await?;
-    let first_cpu = parse_cpu_counters(&first_output)?;
-    let logical_cpu_count = parse_logical_cpu_count(&first_output)?;
-    let memory = parse_memory_snapshot(&first_output)?;
-    let uptime_seconds = parse_uptime_seconds(&first_output)?;
-
-    let (cpu_snapshot, current_cpu) = if let Some(previous) = previous_cpu {
-        (
-            calculate_cpu_snapshot(previous, first_cpu, logical_cpu_count),
-            first_cpu,
-        )
-    } else {
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        let second_output = exec_remote_resource_command(session).await?;
-        let second_cpu = parse_cpu_counters(&second_output)?;
-        (
-            calculate_cpu_snapshot(first_cpu, second_cpu, logical_cpu_count),
-            second_cpu,
-        )
-    };
+    let output = exec_remote_resource_command(session).await?;
+    let current_cpu = parse_cpu_counters(&output)?;
+    let logical_cpu_count = parse_logical_cpu_count(&output)?;
+    let memory = parse_memory_snapshot(&output)?;
+    let uptime_seconds = parse_uptime_seconds(&output)?;
+    let cpu_snapshot = calculate_cpu_snapshot(previous_cpu, current_cpu, logical_cpu_count);
 
     Ok((
         SessionResourceSnapshot {
