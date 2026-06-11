@@ -2,24 +2,27 @@
  * 应用编排层。
  * 职责：聚合 settings/profiles/layout/session/terminal/sftp 等领域能力并组装主界面。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import "@xterm/xterm/css/xterm.css";
 import "@/App.css";
 import "@/components/ui/base-input.css";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { translations, type Translate, type TranslationKey } from "@/i18n";
-import ConfigModal from "@/components/layout/ConfigModal";
 import type { ConfigSectionKey } from "@/main/config/configNavigation";
 import TitleBar from "@/components/layout/TitleBar";
 import FloatingShell from "@/main/components/FloatingShell";
 import Workspace from "@/main/components/Workspace";
 import BottomArea from "@/main/components/BottomArea";
 import TerminalWidget from "@/widgets/terminal/components/TerminalWidget";
-import AboutModal from "@/main/components/modals/AboutModal";
-import LocalShellProfileModal from "@/main/components/modals/LocalShellProfileModal";
-import ProfileModal from "@/main/components/modals/ProfileModal";
-import RdpProfileModal from "@/main/components/modals/RdpProfileModal";
 import NoticeHost from "@/components/ui/notice-host";
 import { useNotices } from "@/hooks/useNotices";
 import { useDisableBrowserShortcuts } from "@/hooks/useDisableBrowserShortcuts";
@@ -153,6 +156,17 @@ const widgetLabelKeys: Record<WidgetKey, TranslationKey> = {
   tunnels: "widget.tunnels",
 };
 const BACKGROUND_IMAGE_TERMINAL_CANVAS_ALPHA = 0;
+const ConfigModal = lazy(() => import("@/components/layout/ConfigModal"));
+const AboutModal = lazy(() => import("@/main/components/modals/AboutModal"));
+const ProfileModal = lazy(
+  () => import("@/main/components/modals/ProfileModal"),
+);
+const LocalShellProfileModal = lazy(
+  () => import("@/main/components/modals/LocalShellProfileModal"),
+);
+const RdpProfileModal = lazy(
+  () => import("@/main/components/modals/RdpProfileModal"),
+);
 
 function clampBackgroundImageSurfaceAlpha(value: number) {
   if (!Number.isFinite(value)) return DEFAULT_BACKGROUND_IMAGE_SURFACE_ALPHA;
@@ -2729,180 +2743,196 @@ export default function AppShell() {
             t={t}
           />
 
-          <AboutModal
-            open={aboutOpen}
-            onClose={handleCloseAbout}
-            onOpenDevtools={handleOpenDevtools}
-            onUpdateAction={appUpdater.triggerUpdateAction}
-            updateStatus={appUpdater.status}
-            hasAvailableUpdate={appUpdater.hasAvailableUpdate}
-            updateIndicator={appUpdater.indicator}
-            downloadProgressPercent={appUpdater.downloadProgressPercent}
-            updateBusy={appUpdater.isChecking || appUpdater.isDownloading}
-            t={t}
-          />
+          {aboutOpen ? (
+            <Suspense fallback={null}>
+              <AboutModal
+                open={aboutOpen}
+                onClose={handleCloseAbout}
+                onOpenDevtools={handleOpenDevtools}
+                onUpdateAction={appUpdater.triggerUpdateAction}
+                updateStatus={appUpdater.status}
+                hasAvailableUpdate={appUpdater.hasAvailableUpdate}
+                updateIndicator={appUpdater.indicator}
+                downloadProgressPercent={appUpdater.downloadProgressPercent}
+                updateBusy={appUpdater.isChecking || appUpdater.isDownloading}
+                t={t}
+              />
+            </Suspense>
+          ) : null}
         </div>
       )}
-      <ProfileModal
-        open={profileModalOpen}
-        mode={profileModalMode}
-        draft={profileDraft}
-        sshGroups={sshGroups}
-        onDraftChange={setProfileDraft}
-        onClose={closeProfileModal}
-        onSubmit={() => {
-          void submitProfile();
-        }}
-        t={t}
-      />
-      <LocalShellProfileModal
-        key={`${activeLocalShellProfile?.id ?? "none"}:${localShellProfileModalOpen ? "open" : "closed"}`}
-        open={localShellProfileModalOpen}
-        shell={activeLocalShellProfile}
-        draft={localShellProfileDraft}
-        onDraftChange={setLocalShellProfileDraft}
-        onClose={closeLocalShellProfileModal}
-        onSubmit={submitLocalShellProfile}
-        t={t}
-      />
-      <RdpProfileModal
-        open={rdpProfileModalOpen}
-        mode={rdpProfileModalMode}
-        initialProfile={
-          rdpProfileModalMode === "edit"
-            ? (rdpProfiles.find(
-                (item) => item.id === rdpProfileModalProfileId,
-              ) ?? null)
-            : null
-        }
-        defaultGroup={rdpProfileModalDefaultGroup}
-        groups={rdpGroups}
-        onClose={closeRdpProfileModal}
-        onProfilesChange={() => refreshRdpProfiles().then(() => {})}
-        t={t}
-      />
-      <ConfigModal
-        open={configModalOpen}
-        activeSection={activeConfigSection}
-        sections={configModalNavSections}
-        locale={locale}
-        themeId={themeId}
-        shellId={shellId}
-        availableShells={availableShells}
-        themes={themePresets}
-        sftpEnabled={sftpEnabled}
-        fileDefaultEditorPath={fileDefaultEditorPath}
-        backgroundImageEnabled={backgroundImageEnabled}
-        backgroundImageAsset={backgroundImageAsset}
-        backgroundImageSurfaceAlpha={normalizedBackgroundImageSurfaceAlpha}
-        backgroundMediaType={normalizedBackgroundMediaType}
-        backgroundRenderMode={normalizedBackgroundRenderMode}
-        backgroundVideoReplayMode={normalizedBackgroundVideoReplayMode}
-        backgroundVideoReplayIntervalSec={
-          normalizedBackgroundVideoReplayIntervalSec
-        }
-        aiSelectionMaxChars={aiSelectionMaxChars}
-        aiSessionRecentOutputMaxChars={aiSessionRecentOutputMaxChars}
-        aiRequestTimeoutMs={aiRequestTimeoutMs}
-        aiDebugLoggingEnabled={aiDebugLoggingEnabled}
-        aiActiveProviderId={aiActiveProviderId}
-        aiProviders={aiProviders}
-        securityStatus={securityStatus}
-        securityLoaded={securityLoaded}
-        securityBusy={securityBusy}
-        webLinksEnabled={webLinksEnabled}
-        commandAutocompleteEnabled={commandAutocompleteEnabled}
-        selectionAutoCopyEnabled={selectionAutoCopyEnabled}
-        autoReconnectOnPoweroff={autoReconnectOnPoweroff}
-        autoReconnectOnReboot={autoReconnectOnReboot}
-        cursorStyle={cursorStyle}
-        scrollback={scrollback}
-        terminalPathSyncEnabled={terminalPathSyncEnabled}
-        resourceMonitorEnabled={resourceMonitorEnabled}
-        resourceMonitorIntervalSec={resourceMonitorIntervalSec}
-        hostKeyPolicy={hostKeyPolicy}
-        onSftpEnabledChange={setSftpEnabled}
-        onLocaleChange={setLocale}
-        onThemeChange={setThemeId}
-        onShellChange={setShellId}
-        onFileDefaultEditorPathChange={setFileDefaultEditorPath}
-        onBackgroundImageEnabledChange={setBackgroundImageEnabled}
-        onBackgroundImageAssetChange={setBackgroundImageAsset}
-        onBackgroundImageSurfaceAlphaChange={setBackgroundImageSurfaceAlpha}
-        onBackgroundMediaTypeChange={setBackgroundMediaType}
-        onBackgroundRenderModeChange={setBackgroundRenderMode}
-        onBackgroundVideoReplayModeChange={setBackgroundVideoReplayMode}
-        onBackgroundVideoReplayIntervalSecChange={
-          setBackgroundVideoReplayIntervalSec
-        }
-        onAiSelectionMaxCharsChange={setAiSelectionMaxChars}
-        onAiSessionRecentOutputMaxCharsChange={setAiSessionRecentOutputMaxChars}
-        onAiRequestTimeoutMsChange={setAiRequestTimeoutMs}
-        onAiDebugLoggingEnabledChange={setAiDebugLoggingEnabled}
-        onAiActiveProviderIdChange={setAiActiveProviderId}
-        onAiPresetProviderCreate={addPresetProviderWithConfig}
-        onAiCompatibleProviderCreate={addCompatibleProviderWithConfig}
-        onAiProviderNameChange={updateProviderName}
-        onAiProviderBaseUrlChange={updateProviderBaseUrl}
-        onAiProviderModelChange={updateProviderModel}
-        onAiProviderVendorChange={updateProviderVendor}
-        onAiProviderApiKeyReplace={replaceProviderApiKey}
-        onAiProviderApiKeyClear={clearProviderApiKey}
-        onAiProviderRemove={removeProvider}
-        onAiProviderTest={testProviderConnection}
-        onSecurityUnlock={(password) =>
-          unlockSecurity(password).then(async (nextStatus) => {
-            if (!nextStatus.locked) {
-              await reloadProfiles();
+      <Suspense fallback={null}>
+        {profileModalOpen ? (
+          <ProfileModal
+            open={profileModalOpen}
+            mode={profileModalMode}
+            draft={profileDraft}
+            sshGroups={sshGroups}
+            onDraftChange={setProfileDraft}
+            onClose={closeProfileModal}
+            onSubmit={() => {
+              void submitProfile();
+            }}
+            t={t}
+          />
+        ) : null}
+        {localShellProfileModalOpen ? (
+          <LocalShellProfileModal
+            key={`${activeLocalShellProfile?.id ?? "none"}:${localShellProfileModalOpen ? "open" : "closed"}`}
+            open={localShellProfileModalOpen}
+            shell={activeLocalShellProfile}
+            draft={localShellProfileDraft}
+            onDraftChange={setLocalShellProfileDraft}
+            onClose={closeLocalShellProfileModal}
+            onSubmit={submitLocalShellProfile}
+            t={t}
+          />
+        ) : null}
+        {rdpProfileModalOpen ? (
+          <RdpProfileModal
+            open={rdpProfileModalOpen}
+            mode={rdpProfileModalMode}
+            initialProfile={
+              rdpProfileModalMode === "edit"
+                ? (rdpProfiles.find(
+                    (item) => item.id === rdpProfileModalProfileId,
+                  ) ?? null)
+                : null
             }
-          })
-        }
-        onSecurityLock={() =>
-          lockSecurity().then(async () => {
-            await reloadProfiles();
-          })
-        }
-        onSecurityEnableStrongProtection={(password) =>
-          enableSecurityWithPassword(password).then(async () => {
-            await reloadProfiles();
-          })
-        }
-        onSecurityChangePassword={(currentPassword, nextPassword) =>
-          changeSecurityPassword(currentPassword, nextPassword).then(
-            async () => {
-              await reloadProfiles();
-            },
-          )
-        }
-        onSecurityEnableWeakProtection={() =>
-          enableSecurityWeakProtection().then(async () => {
-            await reloadProfiles();
-          })
-        }
-        onWebLinksEnabledChange={setWebLinksEnabled}
-        onCommandAutocompleteEnabledChange={setCommandAutocompleteEnabled}
-        onSelectionAutoCopyEnabledChange={setSelectionAutoCopyEnabled}
-        onAutoReconnectOnPoweroffChange={setAutoReconnectOnPoweroff}
-        onAutoReconnectOnRebootChange={setAutoReconnectOnReboot}
-        onCursorStyleChange={setCursorStyle}
-        onScrollbackChange={setScrollback}
-        onTerminalPathSyncEnabledChange={setTerminalPathSyncEnabled}
-        onResourceMonitorEnabledChange={setResourceMonitorEnabled}
-        onResourceMonitorIntervalSecChange={setResourceMonitorIntervalSec}
-        onHostKeyPolicyChange={setHostKeyPolicy}
-        appSaveState={appSaveState}
-        appSaveError={appSaveError}
-        onAppSaveRetry={retryAppSave}
-        aiSaveState={aiSaveState}
-        aiSaveError={aiSaveError}
-        onAiSaveRetry={retryAiSave}
-        sessionSaveState={sessionSaveState}
-        sessionSaveError={sessionSaveError}
-        onSessionSaveRetry={retrySessionSave}
-        onClose={() => setConfigModalOpen(false)}
-        onSectionChange={setActiveConfigSection}
-        t={t}
-      />
+            defaultGroup={rdpProfileModalDefaultGroup}
+            groups={rdpGroups}
+            onClose={closeRdpProfileModal}
+            onProfilesChange={() => refreshRdpProfiles().then(() => {})}
+            t={t}
+          />
+        ) : null}
+        {configModalOpen ? (
+          <ConfigModal
+            open={configModalOpen}
+            activeSection={activeConfigSection}
+            sections={configModalNavSections}
+            locale={locale}
+            themeId={themeId}
+            shellId={shellId}
+            availableShells={availableShells}
+            themes={themePresets}
+            sftpEnabled={sftpEnabled}
+            fileDefaultEditorPath={fileDefaultEditorPath}
+            backgroundImageEnabled={backgroundImageEnabled}
+            backgroundImageAsset={backgroundImageAsset}
+            backgroundImageSurfaceAlpha={normalizedBackgroundImageSurfaceAlpha}
+            backgroundMediaType={normalizedBackgroundMediaType}
+            backgroundRenderMode={normalizedBackgroundRenderMode}
+            backgroundVideoReplayMode={normalizedBackgroundVideoReplayMode}
+            backgroundVideoReplayIntervalSec={
+              normalizedBackgroundVideoReplayIntervalSec
+            }
+            aiSelectionMaxChars={aiSelectionMaxChars}
+            aiSessionRecentOutputMaxChars={aiSessionRecentOutputMaxChars}
+            aiRequestTimeoutMs={aiRequestTimeoutMs}
+            aiDebugLoggingEnabled={aiDebugLoggingEnabled}
+            aiActiveProviderId={aiActiveProviderId}
+            aiProviders={aiProviders}
+            securityStatus={securityStatus}
+            securityLoaded={securityLoaded}
+            securityBusy={securityBusy}
+            webLinksEnabled={webLinksEnabled}
+            commandAutocompleteEnabled={commandAutocompleteEnabled}
+            selectionAutoCopyEnabled={selectionAutoCopyEnabled}
+            autoReconnectOnPoweroff={autoReconnectOnPoweroff}
+            autoReconnectOnReboot={autoReconnectOnReboot}
+            cursorStyle={cursorStyle}
+            scrollback={scrollback}
+            terminalPathSyncEnabled={terminalPathSyncEnabled}
+            resourceMonitorEnabled={resourceMonitorEnabled}
+            resourceMonitorIntervalSec={resourceMonitorIntervalSec}
+            hostKeyPolicy={hostKeyPolicy}
+            onSftpEnabledChange={setSftpEnabled}
+            onLocaleChange={setLocale}
+            onThemeChange={setThemeId}
+            onShellChange={setShellId}
+            onFileDefaultEditorPathChange={setFileDefaultEditorPath}
+            onBackgroundImageEnabledChange={setBackgroundImageEnabled}
+            onBackgroundImageAssetChange={setBackgroundImageAsset}
+            onBackgroundImageSurfaceAlphaChange={setBackgroundImageSurfaceAlpha}
+            onBackgroundMediaTypeChange={setBackgroundMediaType}
+            onBackgroundRenderModeChange={setBackgroundRenderMode}
+            onBackgroundVideoReplayModeChange={setBackgroundVideoReplayMode}
+            onBackgroundVideoReplayIntervalSecChange={
+              setBackgroundVideoReplayIntervalSec
+            }
+            onAiSelectionMaxCharsChange={setAiSelectionMaxChars}
+            onAiSessionRecentOutputMaxCharsChange={
+              setAiSessionRecentOutputMaxChars
+            }
+            onAiRequestTimeoutMsChange={setAiRequestTimeoutMs}
+            onAiDebugLoggingEnabledChange={setAiDebugLoggingEnabled}
+            onAiActiveProviderIdChange={setAiActiveProviderId}
+            onAiPresetProviderCreate={addPresetProviderWithConfig}
+            onAiCompatibleProviderCreate={addCompatibleProviderWithConfig}
+            onAiProviderNameChange={updateProviderName}
+            onAiProviderBaseUrlChange={updateProviderBaseUrl}
+            onAiProviderModelChange={updateProviderModel}
+            onAiProviderVendorChange={updateProviderVendor}
+            onAiProviderApiKeyReplace={replaceProviderApiKey}
+            onAiProviderApiKeyClear={clearProviderApiKey}
+            onAiProviderRemove={removeProvider}
+            onAiProviderTest={testProviderConnection}
+            onSecurityUnlock={(password) =>
+              unlockSecurity(password).then(async (nextStatus) => {
+                if (!nextStatus.locked) {
+                  await reloadProfiles();
+                }
+              })
+            }
+            onSecurityLock={() =>
+              lockSecurity().then(async () => {
+                await reloadProfiles();
+              })
+            }
+            onSecurityEnableStrongProtection={(password) =>
+              enableSecurityWithPassword(password).then(async () => {
+                await reloadProfiles();
+              })
+            }
+            onSecurityChangePassword={(currentPassword, nextPassword) =>
+              changeSecurityPassword(currentPassword, nextPassword).then(
+                async () => {
+                  await reloadProfiles();
+                },
+              )
+            }
+            onSecurityEnableWeakProtection={() =>
+              enableSecurityWeakProtection().then(async () => {
+                await reloadProfiles();
+              })
+            }
+            onWebLinksEnabledChange={setWebLinksEnabled}
+            onCommandAutocompleteEnabledChange={setCommandAutocompleteEnabled}
+            onSelectionAutoCopyEnabledChange={setSelectionAutoCopyEnabled}
+            onAutoReconnectOnPoweroffChange={setAutoReconnectOnPoweroff}
+            onAutoReconnectOnRebootChange={setAutoReconnectOnReboot}
+            onCursorStyleChange={setCursorStyle}
+            onScrollbackChange={setScrollback}
+            onTerminalPathSyncEnabledChange={setTerminalPathSyncEnabled}
+            onResourceMonitorEnabledChange={setResourceMonitorEnabled}
+            onResourceMonitorIntervalSecChange={setResourceMonitorIntervalSec}
+            onHostKeyPolicyChange={setHostKeyPolicy}
+            appSaveState={appSaveState}
+            appSaveError={appSaveError}
+            onAppSaveRetry={retryAppSave}
+            aiSaveState={aiSaveState}
+            aiSaveError={aiSaveError}
+            onAiSaveRetry={retryAiSave}
+            sessionSaveState={sessionSaveState}
+            sessionSaveError={sessionSaveError}
+            onSessionSaveRetry={retrySessionSave}
+            onClose={() => setConfigModalOpen(false)}
+            onSectionChange={setActiveConfigSection}
+            t={t}
+          />
+        ) : null}
+      </Suspense>
       <NoticeHost />
     </>
   );

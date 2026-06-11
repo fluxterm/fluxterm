@@ -2,15 +2,18 @@
  * 工作区面板装配模块。
  * 职责：将各领域状态与操作映射为可渲染的面板组件集合。
  */
+import { Suspense } from "react";
 import type React from "react";
-import HostWidget from "@/widgets/profiles/components/HostWidget";
-import TransfersWidget from "@/widgets/transfers/components/TransfersWidget";
-import SftpWidget from "@/widgets/files/components/SftpWidget";
-import EventsWidget from "@/widgets/events/components/EventsWidget";
-import CommandHistoryWidget from "@/widgets/history/components/CommandHistoryWidget";
-import AiWidget from "@/widgets/ai/components/AiWidget";
-import TunnelWidget from "@/widgets/tunnels/components/TunnelWidget";
-import RdpWidget from "@/widgets/rdp/components/RdpWidget";
+import {
+  AiWidget,
+  CommandHistoryWidget,
+  EventsWidget,
+  HostWidget,
+  RdpWidget,
+  SftpWidget,
+  TransfersWidget,
+  TunnelWidget,
+} from "@/main/widgets/lazyWidgets";
 import type { AiChatMessage } from "@/features/ai/types";
 import type { Locale, Translate } from "@/i18n";
 import type {
@@ -220,144 +223,162 @@ export function buildWidgets(
 
   return {
     profiles: (
-      <HostWidget
-        profiles={profiles}
-        sshGroups={sshGroups}
-        activeProfileId={activeProfileId}
-        sshConnectingProfiles={sshConnectingProfiles}
-        onPick={pickProfile}
-        onConnectProfile={(profile) => {
-          void onConnectProfile(profile);
-        }}
-        onCancelSshConnectProfile={(profileId) => {
-          void onCancelSshConnectProfile(profileId);
-        }}
-        onOpenNewProfile={onOpenNewProfile}
-        onImportOpenSshConfig={onImportOpenSshConfig}
-        onOpenEditProfile={onOpenEditProfile}
-        onRemoveProfile={onRemoveProfile}
-        onAddGroup={onAddGroup}
-        onRenameGroup={onRenameGroup}
-        onRemoveGroup={onRemoveGroup}
-        onMoveProfileToGroup={onMoveProfileToGroup}
-        localShells={availableShells}
-        onConnectLocalShell={onConnectLocalShell}
-        onOpenLocalShellProfile={onOpenLocalShellProfile}
-        onRefreshLocalShells={onRefreshLocalShells}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <HostWidget
+          profiles={profiles}
+          sshGroups={sshGroups}
+          activeProfileId={activeProfileId}
+          sshConnectingProfiles={sshConnectingProfiles}
+          onPick={pickProfile}
+          onConnectProfile={(profile) => {
+            void onConnectProfile(profile);
+          }}
+          onCancelSshConnectProfile={(profileId) => {
+            void onCancelSshConnectProfile(profileId);
+          }}
+          onOpenNewProfile={onOpenNewProfile}
+          onImportOpenSshConfig={onImportOpenSshConfig}
+          onOpenEditProfile={onOpenEditProfile}
+          onRemoveProfile={onRemoveProfile}
+          onAddGroup={onAddGroup}
+          onRenameGroup={onRenameGroup}
+          onRemoveGroup={onRemoveGroup}
+          onMoveProfileToGroup={onMoveProfileToGroup}
+          localShells={availableShells}
+          onConnectLocalShell={onConnectLocalShell}
+          onOpenLocalShellProfile={onOpenLocalShellProfile}
+          onRefreshLocalShells={onRefreshLocalShells}
+          t={t}
+        />
+      </Suspense>
     ),
     rdp: (
-      <RdpWidget
-        profiles={rdpProfiles}
-        groups={rdpGroups}
-        activeProfileId={activeRdpProfileId}
-        connectingProfiles={rdpConnectingProfiles}
-        onPick={pickRdpProfile}
-        onConnectProfile={onConnectRdpProfile}
-        onOpenNewProfile={onOpenNewRdpProfile}
-        onOpenEditProfile={onOpenEditRdpProfile}
-        onRemoveProfile={onRemoveRdpProfile}
-        onAddGroup={onAddRdpGroup}
-        onRenameGroup={onRenameRdpGroup}
-        onRemoveGroup={onRemoveRdpGroup}
-        onMoveProfileToGroup={onMoveRdpProfileToGroup}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <RdpWidget
+          profiles={rdpProfiles}
+          groups={rdpGroups}
+          activeProfileId={activeRdpProfileId}
+          connectingProfiles={rdpConnectingProfiles}
+          onPick={pickRdpProfile}
+          onConnectProfile={onConnectRdpProfile}
+          onOpenNewProfile={onOpenNewRdpProfile}
+          onOpenEditProfile={onOpenEditRdpProfile}
+          onRemoveProfile={onRemoveRdpProfile}
+          onAddGroup={onAddRdpGroup}
+          onRenameGroup={onRenameRdpGroup}
+          onRemoveGroup={onRemoveRdpGroup}
+          onMoveProfileToGroup={onMoveRdpProfileToGroup}
+          t={t}
+        />
+      </Suspense>
     ),
     transfers: (
-      <TransfersWidget
-        progress={transferProgress}
-        busyMessage={busyMessage}
-        events={appEvents}
-        onCancel={onCancelTransfer}
-        locale={locale}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <TransfersWidget
+          progress={transferProgress}
+          busyMessage={busyMessage}
+          events={appEvents}
+          onCancel={onCancelTransfer}
+          locale={locale}
+          t={t}
+        />
+      </Suspense>
     ),
     files: (
-      <SftpWidget
-        isRemote={isRemoteConnected}
-        isRemoteSession={isRemoteSession}
-        currentPath={currentPath}
-        sftpAvailability={sftpAvailability}
-        terminalPathSyncStatus={terminalPathSyncStatus}
-        entries={entries}
-        onRefresh={(path) => {
-          void onRefreshList(path);
-        }}
-        onOpen={(path) => {
-          void onOpenRemoteDir(path);
-        }}
-        onOpenFile={onOpenFile}
-        onUpload={() => {
-          void onUploadFile();
-        }}
-        onDropUpload={(paths) => {
-          return onUploadDroppedPaths(paths);
-        }}
-        onDownload={(entry) => {
-          void onDownloadFile(entry);
-        }}
-        onMkdir={(name) => {
-          void onCreateFolder(name);
-        }}
-        onRename={(entry, name) => {
-          void onRenameEntry(entry, name);
-        }}
-        onRemove={(entry) => {
-          return onRemoveEntry(entry);
-        }}
-        locale={locale}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <SftpWidget
+          isRemote={isRemoteConnected}
+          isRemoteSession={isRemoteSession}
+          currentPath={currentPath}
+          sftpAvailability={sftpAvailability}
+          terminalPathSyncStatus={terminalPathSyncStatus}
+          entries={entries}
+          onRefresh={(path) => {
+            void onRefreshList(path);
+          }}
+          onOpen={(path) => {
+            void onOpenRemoteDir(path);
+          }}
+          onOpenFile={onOpenFile}
+          onUpload={() => {
+            void onUploadFile();
+          }}
+          onDropUpload={(paths) => {
+            return onUploadDroppedPaths(paths);
+          }}
+          onDownload={(entry) => {
+            void onDownloadFile(entry);
+          }}
+          onMkdir={(name) => {
+            void onCreateFolder(name);
+          }}
+          onRename={(entry, name) => {
+            void onRenameEntry(entry, name);
+          }}
+          onRemove={(entry) => {
+            return onRemoveEntry(entry);
+          }}
+          locale={locale}
+          t={t}
+        />
+      </Suspense>
     ),
-    events: <EventsWidget events={appEvents} locale={locale} t={t} />,
+    events: (
+      <Suspense fallback={null}>
+        <EventsWidget events={appEvents} locale={locale} t={t} />
+      </Suspense>
+    ),
     history: (
-      <CommandHistoryWidget
-        loaded={historyLoaded}
-        hasActiveSession={hasActiveSession}
-        liveCapture={historyLiveCapture}
-        items={historyItems}
-        searchQuery={historySearchQuery}
-        onSearchQueryChange={onHistorySearchQueryChange}
-        onExecute={onExecuteHistoryItem}
-        locale={locale}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <CommandHistoryWidget
+          loaded={historyLoaded}
+          hasActiveSession={hasActiveSession}
+          liveCapture={historyLiveCapture}
+          items={historyItems}
+          searchQuery={historySearchQuery}
+          onSearchQueryChange={onHistorySearchQueryChange}
+          onExecute={onExecuteHistoryItem}
+          locale={locale}
+          t={t}
+        />
+      </Suspense>
     ),
     ai: (
-      <AiWidget
-        activeSessionId={activeSessionId}
-        aiAvailable={aiAvailable}
-        aiUnavailableMessage={aiUnavailableMessage}
-        messages={aiMessages}
-        draft={aiDraft}
-        pending={aiPending}
-        waitingFirstChunk={aiWaitingFirstChunk}
-        errorMessage={aiErrorMessage}
-        keepLocalDraftBuffer={isFloatingAiWidget}
-        onDraftChange={onAiDraftChange}
-        onSend={onAiSend}
-        onCancel={onAiCancel}
-        onClear={onAiClear}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <AiWidget
+          activeSessionId={activeSessionId}
+          aiAvailable={aiAvailable}
+          aiUnavailableMessage={aiUnavailableMessage}
+          messages={aiMessages}
+          draft={aiDraft}
+          pending={aiPending}
+          waitingFirstChunk={aiWaitingFirstChunk}
+          errorMessage={aiErrorMessage}
+          keepLocalDraftBuffer={isFloatingAiWidget}
+          onDraftChange={onAiDraftChange}
+          onSend={onAiSend}
+          onCancel={onAiCancel}
+          onClear={onAiClear}
+          t={t}
+        />
+      </Suspense>
     ),
     tunnels: (
-      <TunnelWidget
-        activeSessionId={tunnelSessionId}
-        supportsSshTunnel={tunnelSupportsSsh}
-        activeSessionState={tunnelSessionState}
-        activeSessionLabel={tunnelSessionLabel}
-        activeSessionHost={tunnelSessionHost}
-        activeSessionUsername={tunnelSessionUsername}
-        tunnels={tunnelRuntimes}
-        onOpenTunnel={onOpenTunnel}
-        onCloseTunnel={onCloseTunnel}
-        onCloseAll={onCloseAllTunnels}
-        t={t}
-      />
+      <Suspense fallback={null}>
+        <TunnelWidget
+          activeSessionId={tunnelSessionId}
+          supportsSshTunnel={tunnelSupportsSsh}
+          activeSessionState={tunnelSessionState}
+          activeSessionLabel={tunnelSessionLabel}
+          activeSessionHost={tunnelSessionHost}
+          activeSessionUsername={tunnelSessionUsername}
+          tunnels={tunnelRuntimes}
+          onOpenTunnel={onOpenTunnel}
+          onCloseTunnel={onCloseTunnel}
+          onCloseAll={onCloseAllTunnels}
+          t={t}
+        />
+      </Suspense>
     ),
   };
 }
