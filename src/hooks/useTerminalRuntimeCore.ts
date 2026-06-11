@@ -51,6 +51,12 @@ import {
   normalizeTerminalCursorStyle,
   type TerminalCursorStyle,
 } from "@/constants/terminalCursorStyle";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY,
+  DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  resolveTerminalFontFamily,
+  type TerminalFontFamilyMode,
+} from "@/constants/terminalFontFamily";
 import { resolveTerminalHostKeyAction } from "@/hooks/terminalHostShortcuts";
 import { isMacOS } from "@/utils/platform";
 import type { ResolvedTerminalTheme } from "@/main/theme/buildTerminalTheme";
@@ -61,6 +67,7 @@ type UseTerminalRuntimeProps = {
   selectionAutoCopyEnabled?: boolean;
   scrollback?: number;
   cursorStyle?: TerminalCursorStyle;
+  terminalFontFamilyMode?: TerminalFontFamilyMode;
   resolveWordSeparators?: (sessionId: string) => string | null | undefined;
   activeSessionId: string | null;
   activeSession: Session | null;
@@ -462,6 +469,7 @@ export default function useTerminalRuntime({
   selectionAutoCopyEnabled = false,
   scrollback = DEFAULT_TERMINAL_SCROLLBACK,
   cursorStyle = DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalFontFamilyMode = DEFAULT_TERMINAL_FONT_FAMILY_MODE,
   resolveWordSeparators,
   activeSessionId,
   activeSession,
@@ -1420,16 +1428,22 @@ export default function useTerminalRuntime({
     const normalizedCursorStyle =
       normalizeTerminalCursorStyle(cursorStyle) ??
       DEFAULT_TERMINAL_CURSOR_STYLE;
+    const configuredTerminalFontFamily = resolveTerminalFontFamily(
+      terminalFontFamilyMode,
+    );
     const terminalFontFamily =
       getComputedStyle(document.documentElement)
         .getPropertyValue("--font-family-mono")
-        .trim() || '"JetBrains Mono", "Cascadia Mono", monospace';
+        .trim() || DEFAULT_TERMINAL_FONT_FAMILY;
     const term = new modules.Terminal({
       allowProposedApi: true,
       // 启用终端画布透明通道，使半透明主题背景可透出到底层应用背景图。
       allowTransparency: true,
       convertEol: true,
-      fontFamily: terminalFontFamily,
+      fontFamily:
+        terminalFontFamilyMode === "system"
+          ? terminalFontFamily
+          : configuredTerminalFontFamily,
       fontSize: 13,
       cursorBlink: true,
       cursorStyle: normalizedCursorStyle,
@@ -1999,6 +2013,21 @@ export default function useTerminalRuntime({
       bundle.terminal.options.cursorStyle = normalizedCursorStyle;
     });
   }, [cursorStyle]);
+
+  useEffect(() => {
+    const cssTerminalFontFamily =
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--font-family-mono")
+        .trim() || DEFAULT_TERMINAL_FONT_FAMILY;
+    const nextFontFamily =
+      terminalFontFamilyMode === "system"
+        ? cssTerminalFontFamily
+        : resolveTerminalFontFamily(terminalFontFamilyMode);
+    Object.values(terminalsRef.current).forEach((bundle) => {
+      bundle.terminal.options.fontFamily = nextFontFamily;
+      safeFit(bundle.fitAddon, bundle.host);
+    });
+  }, [terminalFontFamilyMode]);
 
   useEffect(() => {
     if (!activeSessionId || !activeSession) return;

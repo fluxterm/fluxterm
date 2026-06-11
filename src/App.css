@@ -1,5 +1,23 @@
 @import "@/styles/scrollbar.css";
 
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("@/assets/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("@/assets/fonts/jetbrains-mono/JetBrainsMono-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 html,
 body,
 #root {
@@ -16,8 +34,13 @@ html[data-window-surface="detached"][data-window-appearance="pending"] #root {
 }
 
 :root {
-  --font-family-body: "IBM Plex Sans", "Segoe UI", sans-serif;
-  --font-family-mono: "JetBrains Mono", "Cascadia Mono", monospace;
+  --font-family-body:
+    system-ui, -apple-system, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial,
+    sans-serif;
+  --font-family-mono:
+    "Cascadia Mono", "SF Mono", Menlo, Consolas, "Ubuntu Mono",
+    "DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC",
+    "JetBrains Mono", monospace;
   font-size: 15px;
   line-height: 1.5;
   font-weight: 400;

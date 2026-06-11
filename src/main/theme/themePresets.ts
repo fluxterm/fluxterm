@@ -34,9 +34,10 @@ type CatppuccinFlavor = {
   crust: string;
 };
 
-const fontFamilyBody = '"IBM Plex Sans", "Segoe UI", sans-serif';
+const fontFamilyBody =
+  'system-ui, -apple-system, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif';
 const fontFamilyMono =
-  '"Ubuntu Mono", "JetBrains Mono", "Cascadia Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC", "DejaVu Sans Mono", monospace';
+  '"Cascadia Mono", "SF Mono", Menlo, Consolas, "Ubuntu Mono", "DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC", "JetBrains Mono", monospace';
 
 const catppuccinLatte: CatppuccinFlavor = {
   rosewater: "#dc8a78",

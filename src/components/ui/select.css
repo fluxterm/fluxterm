@@ -133,8 +133,32 @@
   gap: 4px;
   z-index: 1200;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 45%, transparent)
+    transparent;
   backdrop-filter: blur(18px) saturate(155%);
   -webkit-backdrop-filter: blur(18px) saturate(155%);
+}
+
+.select-menu-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.select-menu-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.select-menu-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 42%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.select-menu-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 .select-menu-list.is-upward {

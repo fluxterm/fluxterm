@@ -366,6 +366,7 @@ export default function AppShell() {
     autoReconnectOnPoweroff,
     autoReconnectOnReboot,
     cursorStyle,
+    terminalFontFamilyMode,
     wordSeparators: sessionWordSeparators,
     scrollback,
     terminalPathSyncEnabled,
@@ -378,6 +379,7 @@ export default function AppShell() {
     setAutoReconnectOnPoweroff,
     setAutoReconnectOnReboot,
     setCursorStyle,
+    setTerminalFontFamilyMode,
     setScrollback,
     setTerminalPathSyncEnabled,
     setResourceMonitorEnabled,
@@ -844,6 +846,7 @@ export default function AppShell() {
     webLinksEnabled,
     selectionAutoCopyEnabled,
     cursorStyle,
+    terminalFontFamilyMode,
     scrollback,
     activeSessionId: sessionState.activeSessionId,
     activeSession: sessionState.activeSession,
@@ -2842,6 +2845,7 @@ export default function AppShell() {
             autoReconnectOnPoweroff={autoReconnectOnPoweroff}
             autoReconnectOnReboot={autoReconnectOnReboot}
             cursorStyle={cursorStyle}
+            terminalFontFamilyMode={terminalFontFamilyMode}
             scrollback={scrollback}
             terminalPathSyncEnabled={terminalPathSyncEnabled}
             resourceMonitorEnabled={resourceMonitorEnabled}
@@ -2913,6 +2917,7 @@ export default function AppShell() {
             onAutoReconnectOnPoweroffChange={setAutoReconnectOnPoweroff}
             onAutoReconnectOnRebootChange={setAutoReconnectOnReboot}
             onCursorStyleChange={setCursorStyle}
+            onTerminalFontFamilyModeChange={setTerminalFontFamilyMode}
             onScrollbackChange={setScrollback}
             onTerminalPathSyncEnabledChange={setTerminalPathSyncEnabled}
             onResourceMonitorEnabledChange={setResourceMonitorEnabled}

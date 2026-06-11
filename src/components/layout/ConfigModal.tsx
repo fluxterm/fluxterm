@@ -37,6 +37,11 @@ import {
   type TerminalCursorStyle,
 } from "@/constants/terminalCursorStyle";
 import {
+  DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  TERMINAL_FONT_FAMILY_OPTIONS,
+  type TerminalFontFamilyMode,
+} from "@/constants/terminalFontFamily";
+import {
   MAX_BACKGROUND_IMAGE_SURFACE_ALPHA,
   MIN_BACKGROUND_IMAGE_SURFACE_ALPHA,
 } from "@/hooks/useAppSettings";
@@ -118,6 +123,7 @@ type ConfigModalProps = {
   autoReconnectOnPoweroff?: boolean;
   autoReconnectOnReboot?: boolean;
   cursorStyle?: TerminalCursorStyle;
+  terminalFontFamilyMode?: TerminalFontFamilyMode;
   scrollback?: number;
   terminalPathSyncEnabled?: boolean;
   resourceMonitorEnabled?: boolean;
@@ -182,6 +188,7 @@ type ConfigModalProps = {
   onAutoReconnectOnPoweroffChange?: (enabled: boolean) => void;
   onAutoReconnectOnRebootChange?: (enabled: boolean) => void;
   onCursorStyleChange?: (value: TerminalCursorStyle) => void;
+  onTerminalFontFamilyModeChange?: (value: TerminalFontFamilyMode) => void;
   onScrollbackChange?: (value: number) => void;
   onTerminalPathSyncEnabledChange?: (enabled: boolean) => void;
   onResourceMonitorEnabledChange?: (enabled: boolean) => void;
@@ -283,6 +290,7 @@ export default function ConfigModal({
   autoReconnectOnPoweroff = false,
   autoReconnectOnReboot = true,
   cursorStyle = DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalFontFamilyMode = DEFAULT_TERMINAL_FONT_FAMILY_MODE,
   scrollback = 3000,
   terminalPathSyncEnabled = true,
   resourceMonitorEnabled = false,
@@ -326,6 +334,7 @@ export default function ConfigModal({
   onAutoReconnectOnPoweroffChange,
   onAutoReconnectOnRebootChange,
   onCursorStyleChange,
+  onTerminalFontFamilyModeChange,
   onScrollbackChange,
   onTerminalPathSyncEnabledChange,
   onResourceMonitorEnabledChange,
@@ -2349,6 +2358,30 @@ export default function ConfigModal({
               />
             </div>
           </label>
+          <div className="config-toggle-card config-feature-group">
+            <label className="config-toggle-head">
+              <div className="config-toggle-copy">
+                <span className="config-toggle-title">
+                  {t("config.session.terminalFontFamily")}
+                </span>
+              </div>
+              <div className="config-select-control">
+                <Select
+                  value={terminalFontFamilyMode}
+                  options={TERMINAL_FONT_FAMILY_OPTIONS.map((item) => ({
+                    value: item.mode,
+                    label: t(`config.session.terminalFontFamily.${item.mode}`),
+                  }))}
+                  onChange={(value) =>
+                    onTerminalFontFamilyModeChange?.(
+                      value as TerminalFontFamilyMode,
+                    )
+                  }
+                  aria-label={t("config.session.terminalFontFamily")}
+                />
+              </div>
+            </label>
+          </div>
         </div>
       );
     }

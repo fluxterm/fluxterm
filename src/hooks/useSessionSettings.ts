@@ -28,6 +28,11 @@ import {
   normalizeTerminalCursorStyle,
   type TerminalCursorStyle,
 } from "@/constants/terminalCursorStyle";
+import {
+  DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  normalizeTerminalFontFamilyMode,
+  type TerminalFontFamilyMode,
+} from "@/constants/terminalFontFamily";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 
 /** 终端域全局配置结构。 */
@@ -39,6 +44,7 @@ type SessionSettings = {
   autoReconnectOnPoweroff?: boolean;
   autoReconnectOnReboot?: boolean;
   cursorStyle?: TerminalCursorStyle;
+  terminalFontFamilyMode?: TerminalFontFamilyMode;
   wordSeparators?: string;
   scrollback?: number;
   terminalPathSyncEnabled?: boolean;
@@ -58,6 +64,7 @@ type UseSessionSettingsResult = {
   autoReconnectOnPoweroff: boolean;
   autoReconnectOnReboot: boolean;
   cursorStyle: TerminalCursorStyle;
+  terminalFontFamilyMode: TerminalFontFamilyMode;
   wordSeparators: string;
   scrollback: number;
   terminalPathSyncEnabled: boolean;
@@ -70,6 +77,9 @@ type UseSessionSettingsResult = {
   setAutoReconnectOnPoweroff: React.Dispatch<React.SetStateAction<boolean>>;
   setAutoReconnectOnReboot: React.Dispatch<React.SetStateAction<boolean>>;
   setCursorStyle: React.Dispatch<React.SetStateAction<TerminalCursorStyle>>;
+  setTerminalFontFamilyMode: React.Dispatch<
+    React.SetStateAction<TerminalFontFamilyMode>
+  >;
   setWordSeparators: React.Dispatch<React.SetStateAction<string>>;
   setScrollback: React.Dispatch<React.SetStateAction<number>>;
   setTerminalPathSyncEnabled: React.Dispatch<React.SetStateAction<boolean>>;
@@ -109,6 +119,7 @@ const defaultSessionSettings: Required<
     | "autoReconnectOnPoweroff"
     | "autoReconnectOnReboot"
     | "cursorStyle"
+    | "terminalFontFamilyMode"
     | "wordSeparators"
     | "scrollback"
     | "terminalPathSyncEnabled"
@@ -123,6 +134,7 @@ const defaultSessionSettings: Required<
   autoReconnectOnPoweroff: false,
   autoReconnectOnReboot: true,
   cursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
+  terminalFontFamilyMode: DEFAULT_TERMINAL_FONT_FAMILY_MODE,
   wordSeparators: DEFAULT_TERMINAL_WORD_SEPARATORS,
   scrollback: 3000,
   terminalPathSyncEnabled: true,
@@ -154,6 +166,10 @@ export default function useSessionSettings(): UseSessionSettingsResult {
   const [cursorStyle, setCursorStyle] = useState<TerminalCursorStyle>(
     defaultSessionSettings.cursorStyle,
   );
+  const [terminalFontFamilyMode, setTerminalFontFamilyMode] =
+    useState<TerminalFontFamilyMode>(
+      defaultSessionSettings.terminalFontFamilyMode,
+    );
   const [wordSeparators, setWordSeparators] = useState(
     defaultSessionSettings.wordSeparators,
   );
@@ -221,6 +237,14 @@ export default function useSessionSettings(): UseSessionSettingsResult {
         );
         if (nextCursorStyle) {
           setCursorStyle(nextCursorStyle);
+        }
+      }
+      {
+        const nextFontFamilyMode = normalizeTerminalFontFamilyMode(
+          parsed?.terminalFontFamilyMode,
+        );
+        if (nextFontFamilyMode) {
+          setTerminalFontFamilyMode(nextFontFamilyMode);
         }
       }
       if (typeof parsed?.wordSeparators === "string") {
@@ -306,6 +330,9 @@ export default function useSessionSettings(): UseSessionSettingsResult {
       cursorStyle:
         normalizeTerminalCursorStyle(cursorStyle) ??
         defaultSessionSettings.cursorStyle,
+      terminalFontFamilyMode:
+        normalizeTerminalFontFamilyMode(terminalFontFamilyMode) ??
+        defaultSessionSettings.terminalFontFamilyMode,
       wordSeparators:
         normalizeTerminalWordSeparators(wordSeparators) ??
         defaultSessionSettings.wordSeparators,
@@ -369,6 +396,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     autoReconnectOnPoweroff,
     autoReconnectOnReboot,
     cursorStyle,
+    terminalFontFamilyMode,
     wordSeparators,
     scrollback,
     terminalPathSyncEnabled,
@@ -392,6 +420,9 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     cursorStyle:
       normalizeTerminalCursorStyle(cursorStyle) ??
       defaultSessionSettings.cursorStyle,
+    terminalFontFamilyMode:
+      normalizeTerminalFontFamilyMode(terminalFontFamilyMode) ??
+      defaultSessionSettings.terminalFontFamilyMode,
     wordSeparators:
       normalizeTerminalWordSeparators(wordSeparators) ??
       defaultSessionSettings.wordSeparators,
@@ -408,6 +439,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     setAutoReconnectOnPoweroff,
     setAutoReconnectOnReboot,
     setCursorStyle,
+    setTerminalFontFamilyMode,
     setWordSeparators,
     setScrollback,
     setTerminalPathSyncEnabled,
