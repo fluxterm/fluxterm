@@ -68,8 +68,10 @@ export type AiProviderInput = {
 
 /** AI 对话消息。 */
 export type AiChatMessage = {
+  id?: string;
   role: "system" | "user" | "assistant";
   content: string;
+  source?: "selection" | "chat";
 };
 
 /** 会话上下文问答请求。 */

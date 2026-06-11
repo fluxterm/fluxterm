@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use engine::EngineError;
 use openai::{
-    ChatMessage, OpenAiSelectionExplainInput, OpenAiSessionChatInput, OpenAiSessionChatStreamInput,
+    ChatMessage, OpenAiSessionChatInput, OpenAiSessionChatStreamInput,
     ResponseLanguageStrategy, SessionContextSnapshot,
 };
 
@@ -32,15 +32,7 @@ pub struct AiSessionChatStreamRequest {
     pub messages: Vec<ChatMessage>,
 }
 
-/// 终端选中文本解释请求。
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AiExplainSelectionRequest {
-    pub session_id: String,
-    pub response_language_strategy: ResponseLanguageStrategy,
-    pub ui_language: String,
-    pub selection_text: String,
-}
+
 
 /// 从运行时缓存构建会话上下文问答输入。
 pub fn build_session_chat_input(
@@ -91,33 +83,7 @@ pub fn build_session_chat_stream_input(
     })
 }
 
-/// 从运行时缓存构建选中文本解释输入。
-pub fn build_selection_explain_input(
-    state: &AiRuntimeState,
-    request: AiExplainSelectionRequest,
-    settings: &AiSettings,
-) -> Result<OpenAiSelectionExplainInput, EngineError> {
-    with_store(state, |store| {
-        let session = store
-            .sessions
-            .get(&request.session_id)
-            .ok_or_else(|| EngineError::new("ai_context_missing", "未找到当前会话的 AI 上下文"))?;
-        let selection_text = request.selection_text.trim();
-        if selection_text.is_empty() {
-            return Err(EngineError::new("ai_input_invalid", "选中文本不能为空"));
-        }
-        Ok(OpenAiSelectionExplainInput {
-            context: build_session_context_snapshot(
-                session,
-                settings.selection_recent_output_max_snippets,
-                settings.selection_recent_output_max_chars,
-            ),
-            response_language_strategy: request.response_language_strategy,
-            ui_language: request.ui_language,
-            selection_text: truncate_chars(selection_text, settings.selection_max_chars),
-        })
-    })
-}
+
 
 fn build_session_context_snapshot(
     session: &SessionContextRecord,
@@ -289,81 +255,7 @@ mod tests {
         assert_eq!(input.messages.len(), 1);
     }
 
-    #[test]
-    fn build_selection_explain_input_requires_selection_text() {
-        let state = AiRuntimeState::default();
-        register_local_session(
-            &state,
-            &Session {
-                session_id: "local-2".to_string(),
-                profile_id: "__local_shell__".to_string(),
-                state: SessionState::Connected,
-                created_at: 0,
-                last_error: None,
-            },
-            "PowerShell",
-            Some("PowerShell".to_string()),
-        )
-        .unwrap();
 
-        let err = build_selection_explain_input(
-            &state,
-            AiExplainSelectionRequest {
-                session_id: "local-2".to_string(),
-                response_language_strategy: ResponseLanguageStrategy::FollowUi,
-                ui_language: "zh-CN".to_string(),
-                selection_text: "   ".to_string(),
-            },
-            &crate::ai_settings::default_ai_settings_for_test(),
-        )
-        .expect_err("empty selection should fail");
-
-        assert_eq!(err.code, "ai_input_invalid");
-    }
-
-    #[test]
-    fn build_selection_explain_input_uses_configured_limit() {
-        let state = AiRuntimeState::default();
-        register_local_session(
-            &state,
-            &Session {
-                session_id: "local-3".to_string(),
-                profile_id: "__local_shell__".to_string(),
-                state: SessionState::Connected,
-                created_at: 0,
-                last_error: None,
-            },
-            "PowerShell",
-            Some("PowerShell".to_string()),
-        )
-        .unwrap();
-
-        let input = build_selection_explain_input(
-            &state,
-            AiExplainSelectionRequest {
-                session_id: "local-3".to_string(),
-                response_language_strategy: ResponseLanguageStrategy::FollowUi,
-                ui_language: "zh-CN".to_string(),
-                selection_text: "abcdef".to_string(),
-            },
-            &crate::ai_settings::AiSettings {
-                version: 1,
-                selection_max_chars: 4,
-                session_recent_output_max_chars: 1_200,
-                session_recent_output_max_snippets: 4,
-                selection_recent_output_max_chars: 600,
-                selection_recent_output_max_snippets: 2,
-                request_cache_ttl_ms: 15_000,
-                request_timeout_ms: 20_000,
-                debug_logging_enabled: true,
-                active_provider_id: String::new(),
-                providers: Vec::new(),
-            },
-        )
-        .expect("selection input should build");
-
-        assert_eq!(input.selection_text, "abcd");
-    }
 
     #[test]
     fn build_session_chat_input_applies_recent_output_budget() {

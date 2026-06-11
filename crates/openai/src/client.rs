@@ -7,10 +7,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::error::OpenAiError;
-use crate::prompts::{build_selection_explain_messages, build_session_chat_messages};
+use crate::prompts::build_session_chat_messages;
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
-    ChatMessage, OpenAiClientConfig, OpenAiSelectionExplainInput, OpenAiSessionChatInput,
+    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput,
     OpenAiSessionChatResponse, OpenAiSessionChatStreamInput,
 };
 
@@ -38,14 +38,7 @@ pub async fn chat_session(
     complete_chat(config, messages, "session_chat").await
 }
 
-/// 基于终端选中文本执行解释。
-pub async fn explain_selection(
-    config: &OpenAiClientConfig,
-    input: OpenAiSelectionExplainInput,
-) -> Result<OpenAiSessionChatResponse, OpenAiError> {
-    let messages = build_selection_explain_messages(&input);
-    complete_chat(config, messages, "selection_explain").await
-}
+
 
 /// 以流式方式执行会话上下文问答。
 pub async fn chat_session_stream(

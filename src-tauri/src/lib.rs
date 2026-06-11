@@ -30,7 +30,7 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 use crate::commands::ai::{
-    ai_explain_selection, ai_provider_test, ai_session_chat, ai_session_chat_stream_cancel,
+    ai_provider_test, ai_session_chat, ai_session_chat_stream_cancel,
     ai_session_chat_stream_start, ai_settings_get, ai_settings_save,
 };
 use crate::commands::file::file_open;
@@ -155,7 +155,6 @@ pub fn run() {
             ai_session_chat,
             ai_session_chat_stream_start,
             ai_session_chat_stream_cancel,
-            ai_explain_selection,
             ai_settings_get,
             ai_settings_save,
             ai_provider_test,

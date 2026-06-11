@@ -64,6 +64,14 @@ export default function AiWidget({
   }, [autoScroll, messages, waitingFirstChunk, errorMessage]);
 
   useEffect(() => {
+    if (pending) {
+      setTimeout(() => {
+        setAutoScroll(true);
+      }, 0);
+    }
+  }, [pending]);
+
+  useEffect(() => {
     if (keepLocalDraftBuffer && isComposing) return;
     // 外部草稿变化回灌到本地输入缓存；中文输入法组合态期间避免覆盖用户输入。
     queueMicrotask(() => {
@@ -107,6 +115,25 @@ export default function AiWidget({
       );
     }
 
+    if (message.role === "user") {
+      if (message.source === "selection") {
+        return (
+          <div className="ai-message-selection">
+            <div className="ai-message-selection-header">
+              <span className="ai-message-selection-icon">📝</span>
+              <span className="ai-message-selection-label">
+                {t("ai.selectionPrefix")}
+              </span>
+            </div>
+            <pre className="ai-message-selection-text">
+              <code>{message.content}</code>
+            </pre>
+          </div>
+        );
+      }
+      return message.content;
+    }
+
     if (message.role === "assistant") {
       // assistant 默认按 Markdown 渲染，支持 GFM；链接统一新窗口打开。
       return (
@@ -123,7 +150,7 @@ export default function AiWidget({
       );
     }
 
-    return message.content;
+    return null;
   }
 
   return (

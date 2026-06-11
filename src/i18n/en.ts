@@ -786,6 +786,7 @@ export const enUsTranslations = {
   "ai.streaming": "Generating",
   "ai.message.user": "Input",
   "ai.message.assistant": "Output",
+  "ai.selectionPrefix": "Terminal Selection",
   "sftp.columns.name": "Name",
   "sftp.columns.mtime": "Modified",
   "sftp.columns.type": "Type",

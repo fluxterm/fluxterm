@@ -378,3 +378,46 @@
     transform: translateY(-1px);
   }
 }
+
+.ai-message-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-message-selection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.ai-message-selection-icon {
+  font-size: 12px;
+}
+
+.ai-message-selection-label {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ai-message-selection-text {
+  margin: 0;
+  padding: 8px;
+  background: var(--ai-surface-strong-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre;
+}
+
+.ai-message-selection-text code {
+  font-family: inherit;
+  white-space: inherit;
+  color: var(--text-primary);
+}

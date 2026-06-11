@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { debug as logDebug } from "@/shared/logging/telemetry";
 import {
-  aiExplainSelection,
   aiSessionChatStreamCancel,
   aiSessionChatStreamStart,
   onAiChatChunk,
@@ -44,6 +43,7 @@ type UseAiStateProps = {
   debugLoggingEnabled: boolean;
   aiAvailable: boolean;
   aiUnavailableMessage: string | null;
+  selectionMaxChars?: number;
   enabled?: boolean;
 };
 
@@ -97,6 +97,16 @@ function writeSessionState(
   writePersistedAiSessionStates(all);
 }
 
+function normalizeSelectionMaxChars(value: number | undefined) {
+  if (!Number.isFinite(value)) return 1500;
+  return Math.max(1, Math.round(value ?? 1500));
+}
+
+function truncateSelectionText(value: string, maxChars: number) {
+  if (value.length <= maxChars) return value;
+  return value.slice(0, maxChars);
+}
+
 /** AI 面板状态管理。 */
 export default function useAiState({
   activeSessionId,
@@ -104,6 +114,7 @@ export default function useAiState({
   debugLoggingEnabled,
   aiAvailable,
   aiUnavailableMessage,
+  selectionMaxChars,
   enabled = true,
 }: UseAiStateProps): UseAiStateResult {
   const instanceIdRef = useRef(crypto.randomUUID());
@@ -286,30 +297,30 @@ export default function useAiState({
     void aiSessionChatStreamCancel(requestId);
   }
 
-  async function sendMessage() {
-    if (!enabled) return;
-    const content = draft.trim();
-    if (!content || !activeSessionId || pending) return;
+  async function sendStreamingMessage(
+    userMessage: AiChatMessage,
+    options: { onAccepted?: () => void } = {},
+  ) {
+    if (!enabled) return false;
+    const activeId = activeSessionId;
+    if (!activeId || pending) return false;
     if (!aiAvailable) {
-      setErrorMessage(aiUnavailableMessage ?? "AI 助手当前不可用");
-      return;
+      setErrorMessage(aiUnavailableMessage ?? t("ai.unavailable.generic"));
+      return false;
     }
 
-    const nextUserMessage: AiChatMessage = {
-      role: "user",
-      content,
-    };
-    const nextMessages = messages.concat(nextUserMessage);
+    const nextMessages = messages.concat(userMessage);
     const nextRequestId = crypto.randomUUID();
     pendingRequestIdRef.current = nextRequestId;
-    // 聊天发送路径：先插入空 assistant 占位，首包前由 UI 渲染 loading。
-    setMessages(
-      nextMessages.concat({
-        role: "assistant",
-        content: "",
-      }),
-    );
-    setDraftState("");
+
+    const assistantPlaceholder: AiChatMessage = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+    };
+
+    options.onAccepted?.();
+    setMessages(nextMessages.concat(assistantPlaceholder));
     setPending(true);
     setWaitingFirstChunk(true);
     setErrorMessage(null);
@@ -318,28 +329,52 @@ export default function useAiState({
       if (debugLoggingEnabled) {
         void logDebug(
           JSON.stringify({
-            event: "ai.session.chat.request",
-            sessionId: activeSessionId,
+            event:
+              userMessage.source === "selection"
+                ? "ai.selection.request"
+                : "ai.session.chat.request",
+            sessionId: activeId,
             requestId: nextRequestId,
-            responseLanguageStrategy: "follow_user_input",
+            responseLanguageStrategy:
+              userMessage.source === "selection"
+                ? "follow_ui"
+                : "follow_user_input",
             uiLanguage: locale,
-            content,
+            content: userMessage.content,
           }),
         );
       }
       await aiSessionChatStreamStart({
         requestId: nextRequestId,
-        sessionId: activeSessionId,
-        responseLanguageStrategy: "follow_user_input",
+        sessionId: activeId,
+        responseLanguageStrategy:
+          userMessage.source === "selection"
+            ? "follow_ui"
+            : "follow_user_input",
         uiLanguage: locale,
-        messages: nextMessages,
+        messages: nextMessages.map((msg) => {
+          if (msg.role === "user" && msg.source === "selection") {
+            return {
+              role: msg.role,
+              content: `Selected terminal text:\n${msg.content}`,
+            };
+          }
+          return {
+            role: msg.role,
+            content: msg.content,
+          };
+        }),
       });
+      return true;
     } catch (error) {
       if (debugLoggingEnabled) {
         void logDebug(
           JSON.stringify({
-            event: "ai.session.chat.error",
-            sessionId: activeSessionId,
+            event:
+              userMessage.source === "selection"
+                ? "ai.selection.error"
+                : "ai.session.chat.error",
+            sessionId: activeId,
             requestId: nextRequestId,
             error: translateAppError(error, t),
           }),
@@ -349,113 +384,51 @@ export default function useAiState({
       setMessages((prev) => {
         // 请求启动失败时同时回滚 user 与 assistant 占位，恢复发送前状态。
         const next = prev.slice();
-        if (next[next.length - 1]?.role === "assistant") {
+        if (next[next.length - 1]?.id === assistantPlaceholder.id) {
           next.pop();
         }
-        if (next[next.length - 1] === nextUserMessage) {
+        if (next[next.length - 1]?.id === userMessage.id) {
           next.pop();
         }
         return next;
       });
-      setDraftState(content);
+      if (userMessage.source !== "selection") {
+        setDraftState(userMessage.content);
+      }
       setErrorMessage(translateAppError(error, t));
       setPending(false);
       setWaitingFirstChunk(false);
+      return false;
     }
   }
 
-  async function sendSelectionText(selectionText: string) {
-    if (!enabled) return;
-    const content = selectionText.trim();
-    if (!content || !activeSessionId || pending) return;
-    if (!aiAvailable) {
-      setErrorMessage(aiUnavailableMessage ?? "AI 助手当前不可用");
-      return;
-    }
+  async function sendMessage() {
+    const content = draft.trim();
+    if (!content) return;
+    await sendStreamingMessage(
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content,
+      },
+      {
+        onAccepted: () => setDraftState(""),
+      },
+    );
+  }
 
-    const nextUserMessage: AiChatMessage = {
+  async function sendSelectionText(selectionText: string) {
+    const content = truncateSelectionText(
+      selectionText.trim(),
+      normalizeSelectionMaxChars(selectionMaxChars),
+    );
+    if (!content) return;
+    await sendStreamingMessage({
+      id: crypto.randomUUID(),
       role: "user",
       content,
-    };
-    // 与聊天提问路径保持一致：先插入空 assistant 占位，复用同一套 loading UI。
-    const nextAssistantPlaceholder: AiChatMessage = {
-      role: "assistant",
-      content: "",
-    };
-    setMessages((prev) =>
-      prev.concat(nextUserMessage, nextAssistantPlaceholder),
-    );
-    setPending(true);
-    setWaitingFirstChunk(true);
-    setErrorMessage(null);
-
-    try {
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event: "ai.selection.request",
-            sessionId: activeSessionId,
-            responseLanguageStrategy: "follow_ui",
-            uiLanguage: locale,
-            selectionChars: content.length,
-          }),
-        );
-      }
-      const response = await aiExplainSelection({
-        sessionId: activeSessionId,
-        responseLanguageStrategy: "follow_ui",
-        uiLanguage: locale,
-        selectionText: content,
-      });
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event: "ai.selection.response",
-            sessionId: activeSessionId,
-            responseChars: response.message.content.length,
-            responseRole: response.message.role,
-          }),
-        );
-      }
-      setMessages((prev) => {
-        // 优先替换最近一个空 assistant 占位，避免右键发送阶段出现重复 assistant 气泡。
-        const next = prev.slice();
-        for (let index = next.length - 1; index >= 0; index -= 1) {
-          if (next[index]?.role === "assistant" && !next[index]?.content) {
-            next[index] = response.message;
-            return next;
-          }
-        }
-        return next.concat(response.message);
-      });
-    } catch (error) {
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event: "ai.selection.error",
-            sessionId: activeSessionId,
-            error: translateAppError(error, t),
-          }),
-        );
-      }
-      setMessages((prev) => {
-        // 失败时回滚本次右键发送注入的空 assistant 占位，防止遗留空消息。
-        const withoutUser = prev.filter((item) => item !== nextUserMessage);
-        let placeholderRemoved = false;
-        return withoutUser.filter((item) => {
-          if (placeholderRemoved) return true;
-          if (item.role === "assistant" && !item.content) {
-            placeholderRemoved = true;
-            return false;
-          }
-          return true;
-        });
-      });
-      setErrorMessage(translateAppError(error, t));
-    } finally {
-      setPending(false);
-      setWaitingFirstChunk(false);
-    }
+      source: "selection",
+    });
   }
 
   function clearMessages() {

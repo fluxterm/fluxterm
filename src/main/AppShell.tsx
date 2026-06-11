@@ -53,7 +53,7 @@ import useRemoteEditSessions from "@/main/hooks/useRemoteEditSessions";
 import useSessionResourceMonitor from "@/main/hooks/useSessionResourceMonitor";
 import useTerminalPathSync from "@/main/hooks/useTerminalPathSync";
 import { moveWidgetToSlot, widgetKeys } from "@/layout/model";
-import type { WidgetSlotId } from "@/layout/types";
+import type { WidgetSide, WidgetSlotId } from "@/layout/types";
 import type {
   HostProfile,
   LocalShellConfig,
@@ -817,6 +817,7 @@ export default function AppShell() {
     debugLoggingEnabled: aiDebugLoggingEnabled,
     aiAvailable,
     aiUnavailableMessage,
+    selectionMaxChars: aiSelectionMaxChars,
     enabled: floatingWidgetKey !== "ai",
   });
 
@@ -2545,6 +2546,30 @@ export default function AppShell() {
     });
   }
 
+  async function handleSendSelectionToAi(text: string) {
+    await aiState.sendSelectionText(text);
+
+    if (isFloatingAiWidget) return;
+
+    let aiSlot: WidgetSlotId | null = null;
+    for (const [slotId, group] of Object.entries(slotGroups)) {
+      if (group.active === "ai") {
+        aiSlot = slotId as WidgetSlotId;
+        break;
+      }
+    }
+
+    if (aiSlot) {
+      const side =
+        aiSlot === "bottom" ? "bottom" : (aiSlot.split(":")[0] as WidgetSide);
+      setWidgetCollapsed(side, false);
+    } else {
+      const targetSlot: WidgetSlotId = "right:0";
+      setSlotGroups((prev) => moveWidgetToSlot(prev, "ai", targetSlot));
+      setWidgetCollapsed("right", false);
+    }
+  }
+
   return (
     <>
       {activeBackgroundMediaType === "video" && backgroundMediaBlobUrl ? (
@@ -2640,7 +2665,7 @@ export default function AppShell() {
                 hasActiveSelection={terminalQuery.hasActiveSelection}
                 getActiveSelectionText={terminalQuery.getActiveSelectionText}
                 onCopySelection={terminalActions.copyActiveSelection}
-                onSendSelectionToAi={aiState.sendSelectionText}
+                onSendSelectionToAi={handleSendSelectionToAi}
                 onOpenLink={terminalActions.openActiveLink}
                 onCopyLink={terminalActions.copyActiveLink}
                 onCloseLinkMenu={terminalActions.closeActiveLinkMenu}

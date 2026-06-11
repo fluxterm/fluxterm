@@ -5,7 +5,6 @@ import type {
   AiChatDonePayload,
   AiChatErrorPayload,
   AiChatChunkPayload,
-  AiExplainSelectionRequest,
   AiSessionChatRequest,
   AiSessionChatResponse,
   AiSessionChatStreamRequest,
@@ -40,11 +39,6 @@ export function aiSessionChatStreamStart(request: AiSessionChatStreamRequest) {
 /** 取消流式会话上下文问答。 */
 export function aiSessionChatStreamCancel(requestId: string) {
   return callTauri<boolean>("ai_session_chat_stream_cancel", { requestId });
-}
-
-/** 基于当前终端选中文本发起解释。 */
-export function aiExplainSelection(request: AiExplainSelectionRequest) {
-  return callTauri<AiSessionChatResponse>("ai_explain_selection", { request });
 }
 
 /** 订阅 AI 流式输出片段。 */

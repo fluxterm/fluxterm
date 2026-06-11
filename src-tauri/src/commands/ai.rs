@@ -244,44 +244,7 @@ pub fn ai_session_chat_stream_cancel(
     cancel_chat_stream(&state, &request_id)
 }
 
-/// 基于当前会话与选中文本执行解释。
-#[tauri::command]
-pub async fn ai_explain_selection(
-    app: AppHandle,
-    state: State<'_, AiRuntimeState>,
-    request: context::AiExplainSelectionRequest,
-) -> Result<OpenAiSessionChatResponse, EngineError> {
-    let config = read_active_provider_config(&app)?;
-    let settings = read_ai_settings(&app)?;
-    let input = context::build_selection_explain_input(&state, request, &settings)?;
-    let cache_key = build_cache_key("selection_explain", &input)?;
-    if let Some(content) = get_cached_response(&state, &cache_key)? {
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ai.cache.hit",
-            None,
-            json!({
-                "requestType": "selectionExplain",
-            }),
-        );
-        return Ok(OpenAiSessionChatResponse {
-            message: openai::ChatMessage {
-                role: "assistant".to_string(),
-                content,
-            },
-        });
-    }
-    let response = openai::explain_selection(&config, input)
-        .await
-        .map_err(map_openai_error)?;
-    store_cached_response(
-        &state,
-        cache_key,
-        response.message.content.clone(),
-        settings.request_cache_ttl_ms,
-    )?;
-    Ok(response)
-}
+
 
 fn build_cache_key(label: &str, value: &impl Serialize) -> Result<String, EngineError> {
     let serialized = serde_json::to_string(value).map_err(|err| {

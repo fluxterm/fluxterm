@@ -11,10 +11,10 @@ pub mod prompts;
 pub mod telemetry;
 pub mod types;
 
-pub use crate::client::{chat_session, chat_session_stream, explain_selection, test_connection};
+pub use crate::client::{chat_session, chat_session_stream, test_connection};
 pub use crate::error::OpenAiError;
 pub use crate::types::{
-    ChatMessage, OpenAiClientConfig, OpenAiSelectionExplainInput, OpenAiSessionChatInput,
+    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput,
     OpenAiSessionChatResponse, OpenAiSessionChatStreamInput, ResponseLanguageStrategy,
     SessionContextSnapshot,
 };

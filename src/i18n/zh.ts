@@ -738,6 +738,7 @@ export const zhCnTranslations = {
   "ai.streaming": "正在生成",
   "ai.message.user": "输入",
   "ai.message.assistant": "输出",
+  "ai.selectionPrefix": "终端选中内容",
   "sftp.columns.name": "名称",
   "sftp.columns.mtime": "修改时间",
   "sftp.columns.type": "类型",
