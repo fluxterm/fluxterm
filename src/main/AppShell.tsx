@@ -2,19 +2,10 @@
  * 应用编排层。
  * 职责：聚合 settings/profiles/layout/session/terminal/sftp 等领域能力并组装主界面。
  */
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 import "@/App.css";
 import "@/components/ui/base-input.css";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { info, logTelemetry, warn } from "@/shared/logging/telemetry";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { translations, type Translate, type TranslationKey } from "@/i18n";
@@ -54,23 +45,22 @@ import useMacAppMenu from "@/main/hooks/useMacAppMenu";
 import useAppUpdater from "@/main/hooks/useAppUpdater";
 import useQuickBarState from "@/main/hooks/useQuickBarState";
 import useSubApps from "@/main/hooks/useSubApps";
+import useMainAppearance from "@/main/hooks/useMainAppearance";
+import useRemoteEditSessions from "@/main/hooks/useRemoteEditSessions";
+import useSessionResourceMonitor from "@/main/hooks/useSessionResourceMonitor";
+import useTerminalPathSync from "@/main/hooks/useTerminalPathSync";
 import { moveWidgetToSlot, widgetKeys } from "@/layout/model";
 import type { WidgetSlotId } from "@/layout/types";
 import type {
   HostProfile,
   LocalShellConfig,
-  LocalSessionMeta,
   LocalShellProfile,
   RdpProfile,
-  RemoteEditSnapshot,
   Session,
-  SftpEntry,
   SshConnectStateMap,
   TerminalCwdSupport,
-  TerminalPathSyncState,
   TerminalWorkingDirectory,
   WidgetKey,
-  SessionResourceSnapshot,
   ThemeId,
 } from "@/types";
 import {
@@ -108,14 +98,7 @@ import {
   type FloatingEventsMessage,
   type FloatingEventsSnapshot,
 } from "@/features/session/core/widgetEventsSync";
-import { MIN_RESOURCE_MONITOR_INTERVAL_SEC } from "@/hooks/useSessionSettings";
-import {
-  startLocalResourceMonitor,
-  startSshResourceMonitor,
-  stopResourceMonitor,
-} from "@/features/resource/core/commands";
 import { themePresets } from "@/main/theme/themePresets";
-import { buildThemeCssVars } from "@/main/theme/buildThemeCssVars";
 import { buildTerminalTheme } from "@/main/theme/buildTerminalTheme";
 import { buildWidgets } from "@/main/widgets/buildWidgets";
 import {
@@ -137,28 +120,16 @@ import {
   type FloatingTunnelsMessage,
   type FloatingTunnelsSnapshot,
 } from "@/features/tunnel/core/widgetSync";
-import {
-  confirmRemoteEditUpload,
-  dismissRemoteEditPending,
-  listRemoteEditSessions,
-  openLocalFile,
-  openRemoteFileForEditing,
-} from "@/features/file-open/core/commands";
-import { registerRemoteEditListener } from "@/features/file-open/core/listeners";
-import { normalizeLocalPath } from "@/features/sftp/core/path";
-import { subscribeTauri } from "@/shared/tauri/events";
 import { callTauri } from "@/shared/tauri/commands";
 import {
   extractErrorMessage,
   translateAppError,
 } from "@/shared/errors/appError";
-import { resolveBackgroundAssetUrl } from "@/features/backgrounds/core/assetResolver";
 import {
   clampBackgroundVideoReplayIntervalSec,
   normalizeBackgroundMediaType,
   normalizeBackgroundRenderMode,
   normalizeBackgroundVideoReplayMode,
-  type BackgroundMediaType,
 } from "@/constants/backgroundMedia";
 import {
   DEFAULT_TERMINAL_BELL_COOLDOWN_MS,
@@ -170,11 +141,6 @@ import {
   DEFAULT_TERMINAL_WORD_SEPARATORS,
   normalizeTerminalWordSeparators,
 } from "@/constants/terminalWordSeparators";
-import {
-  resolveDetachedBackgroundImageStyle,
-  waitForDetachedBackgroundMediaReady,
-  waitForNextPaint,
-} from "@/shared/detachedWindowAppearance";
 
 const widgetLabelKeys: Record<WidgetKey, TranslationKey> = {
   profiles: "widget.profiles",
@@ -307,119 +273,6 @@ function decodeQuickCommandEscapes(input: string) {
 function normalizeQuickCommandForSubmit(input: string) {
   // 在终端交互里，提交命令应使用 CR。将用户写的 LF/CRLF 统一折叠为 CR。
   return input.replace(/\r\n/g, "\r").replace(/\n/g, "\r");
-}
-
-function resolveTrackedWorkingDirectory(
-  rawPath: string,
-  homePath: string | null,
-  isLocalPath: boolean,
-) {
-  // 终端层只会上报 shell 当前目录的字面量。
-  // 这里负责把绝对路径或 `~` 语义还原成文件管理器可以直接打开的真实路径。
-  if (isLocalPath) {
-    if (rawPath === "drives://") return rawPath;
-    if (/^(?:[A-Za-z]:[\\/]|\/)/.test(rawPath)) {
-      return normalizeLocalPath(rawPath);
-    }
-    if (!rawPath.startsWith("~") || !homePath) return null;
-    if (rawPath === "~") return normalizeLocalPath(homePath);
-    const normalizedHome = normalizeLocalPath(homePath);
-    return normalizeLocalPath(
-      `${normalizedHome.replace(/[\\/]+$/, "")}\\${rawPath.slice(2)}`,
-    );
-  }
-  if (rawPath.startsWith("/")) return rawPath;
-  if (!rawPath.startsWith("~") || !homePath) return null;
-  if (rawPath === "~") return homePath;
-  return `${homePath.replace(/\/+$/, "")}/${rawPath.slice(2)}`;
-}
-
-function resolveWslWindowsPath(rawPath: string) {
-  const mountMatch = rawPath.match(/^\/mnt\/([a-zA-Z])(\/.*)?$/);
-  if (!mountMatch) return null;
-  const driveLetter = mountMatch[1].toUpperCase();
-  const tail = (mountMatch[2] ?? "").replace(/\//g, "\\");
-  return `${driveLetter}:${tail || "\\"}`;
-}
-
-/** 将 WSL Unix 路径映射为 Windows 可访问的 UNC 路径。 */
-function resolveWslUncPath(rawPath: string, distribution: string | null) {
-  const normalizedDistribution = distribution?.trim();
-  if (!normalizedDistribution) return null;
-  const normalizedPath = rawPath.trim();
-  if (!normalizedPath.startsWith("/")) return null;
-  const tail = normalizedPath
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter(Boolean)
-    .join("\\");
-  const uncRoot = `\\\\wsl.localhost\\${normalizedDistribution}`;
-  return tail ? `${uncRoot}\\${tail}` : uncRoot;
-}
-
-/** 推导 WSL 用户家目录的 UNC 路径。 */
-function resolveWslHomeUncPath(
-  distribution: string | null,
-  username: string | null,
-) {
-  const normalizedUsername = username?.trim();
-  if (!normalizedUsername) return null;
-  return resolveWslUncPath(`/home/${normalizedUsername}`, distribution);
-}
-
-/** 推导 WSL 用户家目录的 Unix 路径，用于缓存 `~` 展开结果。 */
-function inferWslHomePath(rawPath: string, username: string | null) {
-  const normalizedUsername = username?.trim();
-  if (!normalizedUsername) return null;
-  const normalizedPath = rawPath.trim();
-  const expectedHome = `/home/${normalizedUsername}`;
-  if (normalizedPath === "~" || normalizedPath.startsWith("~/")) {
-    return expectedHome;
-  }
-  if (
-    normalizedPath === expectedHome ||
-    normalizedPath.startsWith(`${expectedHome}/`)
-  ) {
-    return expectedHome;
-  }
-  return null;
-}
-
-function resolveLocalSessionWorkingDirectory(
-  rawPath: string,
-  homePath: string | null,
-  localMeta: LocalSessionMeta | null | undefined,
-  username: string | null,
-) {
-  if (localMeta?.shellKind === "wsl") {
-    if (rawPath === "~") {
-      if (!homePath) {
-        return resolveWslHomeUncPath(
-          localMeta.wslDistribution ?? null,
-          username,
-        );
-      }
-      return (
-        resolveWslWindowsPath(homePath) ??
-        resolveWslUncPath(homePath, localMeta.wslDistribution ?? null)
-      );
-    }
-    if (rawPath.startsWith("~/")) {
-      const resolvedHome = homePath
-        ? (resolveWslWindowsPath(homePath) ??
-          resolveWslUncPath(homePath, localMeta.wslDistribution ?? null))
-        : resolveWslHomeUncPath(localMeta.wslDistribution ?? null, username);
-      if (!resolvedHome) return null;
-      return normalizeLocalPath(
-        `${resolvedHome.replace(/[\\/]+$/, "")}\\${rawPath.slice(2).replace(/\//g, "\\")}`,
-      );
-    }
-    return (
-      resolveWslWindowsPath(rawPath) ??
-      resolveWslUncPath(rawPath, localMeta.wslDistribution ?? null)
-    );
-  }
-  return resolveTrackedWorkingDirectory(rawPath, homePath, true);
 }
 
 /** 应用主界面编排层。 */
@@ -692,17 +545,27 @@ export default function AppShell() {
   }, []);
   const layoutMenuDisabled = Boolean(floatingWidgetKey);
   const shouldDeferFloatingWindowReveal = Boolean(floatingWidgetKey);
-  const [floatingWindowAppearanceReady, setFloatingWindowAppearanceReady] =
-    useState(!shouldDeferFloatingWindowReveal);
-  const floatingWindowShownRef = useRef(false);
-  const backgroundVideoRef = useRef<HTMLVideoElement | null>(null);
-  const backgroundVideoReplayTimerRef = useRef<number | null>(null);
-  const [backgroundMediaBlobUrl, setBackgroundMediaBlobUrl] = useState("");
-  const [activeBackgroundMediaType, setActiveBackgroundMediaType] =
-    useState<BackgroundMediaType>("image");
+  const {
+    activeBackgroundMediaType,
+    backgroundMediaBlobUrl,
+    backgroundVideoRef,
+    handleBackgroundVideoEnded,
+  } = useMainAppearance({
+    locale,
+    themeId,
+    activeThemePreset,
+    settingsLoaded,
+    isBackgroundMediaRequested,
+    backgroundImageAsset,
+    backgroundImageSurfaceAlpha: normalizedBackgroundImageSurfaceAlpha,
+    backgroundMediaType: normalizedBackgroundMediaType,
+    backgroundRenderMode: effectiveBackgroundRenderMode,
+    backgroundVideoReplayMode: normalizedBackgroundVideoReplayMode,
+    backgroundVideoReplayIntervalSec:
+      normalizedBackgroundVideoReplayIntervalSec,
+    shouldDeferFloatingWindowReveal,
+  });
   const terminalSizeRef = useRef({ cols: 80, rows: 24 });
-  const activeResourceMonitorSessionIdRef = useRef<string | null>(null);
-  const activeResourceMonitorKeyRef = useRef("");
   const [floatingFilesSnapshot, setFloatingFilesSnapshot] =
     useState<FloatingFilesSnapshot | null>(null);
   const [floatingTransfersSnapshot, setFloatingTransfersSnapshot] =
@@ -717,265 +580,10 @@ export default function AppShell() {
     useState<FloatingAiSnapshot | null>(null);
   const [floatingTunnelsSnapshot, setFloatingTunnelsSnapshot] =
     useState<FloatingTunnelsSnapshot | null>(null);
-  const previousResourceSessionStateRef = useRef<string | null>(null);
-  const [resourceSnapshotsBySession, setResourceSnapshotsBySession] = useState<
-    Record<string, SessionResourceSnapshot>
-  >({});
-  const [terminalWorkingDirs, setTerminalWorkingDirs] = useState<
-    Record<string, TerminalWorkingDirectory>
-  >({});
-  const [terminalHomeDirs, setTerminalHomeDirs] = useState<
-    Record<string, string>
-  >({});
-  const [lastSyncedTerminalPaths, setLastSyncedTerminalPaths] = useState<
-    Record<string, string>
-  >({});
-  const [terminalCwdSupportBySession, setTerminalCwdSupportBySession] =
-    useState<Record<string, TerminalCwdSupport>>({});
-  const [terminalPathSyncStateBySession, setTerminalPathSyncStateBySession] =
-    useState<Record<string, TerminalPathSyncState>>({});
   const [bellPendingBySession, setBellPendingBySession] = useState<
     Record<string, boolean>
   >({});
-  const [remoteEditSessions, setRemoteEditSessions] = useState<
-    Record<string, RemoteEditSnapshot>
-  >({});
-  const [remoteEditAutoUploadBySession, setRemoteEditAutoUploadBySession] =
-    useState<Record<string, boolean>>({});
   const focusActiveTerminalRef = useRef<() => boolean>(() => false);
-  const remoteEditSessionsRef = useRef<Record<string, RemoteEditSnapshot>>({});
-
-  useEffect(() => {
-    remoteEditSessionsRef.current = remoteEditSessions;
-  }, [remoteEditSessions]);
-  useEffect(() => {
-    const theme = activeThemePreset;
-    const cssVars = buildThemeCssVars(theme);
-    const root = document.documentElement;
-    root.dataset.theme = themeId;
-    Object.entries(cssVars).forEach(([key, value]) => {
-      root.style.setProperty(key, value);
-    });
-  }, [themeId, activeThemePreset]);
-
-  useEffect(() => {
-    document.documentElement.lang = locale;
-  }, [locale]);
-
-  useEffect(() => {
-    // 透明度单独走独立链路，确保滑杆拖动时可即时生效，不受主题变量批量更新影响。
-    const root = document.documentElement;
-    root.style.setProperty(
-      "--chrome-surface-alpha",
-      `${Math.round(normalizedBackgroundImageSurfaceAlpha * 100)}%`,
-    );
-  }, [normalizedBackgroundImageSurfaceAlpha]);
-
-  useEffect(() => {
-    let disposed = false;
-    let blobUrl: string | null = null;
-    let revokeBlobUrl = () => {};
-    const root = document.documentElement;
-    const scheduleFloatingWindowReveal = () => {
-      scheduleDeferredTask(() => {
-        setFloatingWindowAppearanceReady(true);
-      });
-    };
-    const applyBackgroundImageMode = (enabled: boolean) => {
-      root.dataset.backgroundImageMode = enabled ? "on" : "off";
-    };
-    const applyDefaultBackground = () => {
-      root.style.setProperty("--app-bg-image", "none");
-      root.style.setProperty("--app-bg-overlay", "none");
-      root.style.setProperty("--app-bg-image-size", "cover");
-      root.style.setProperty("--app-bg-image-repeat", "no-repeat");
-      root.style.setProperty("--app-bg-image-position", "center center");
-      scheduleDeferredTask(() => {
-        setBackgroundMediaBlobUrl("");
-        setActiveBackgroundMediaType("image");
-      });
-      applyBackgroundImageMode(false);
-    };
-
-    if (!settingsLoaded) {
-      return;
-    }
-
-    if (!isBackgroundMediaRequested) {
-      applyDefaultBackground();
-      if (shouldDeferFloatingWindowReveal) {
-        scheduleFloatingWindowReveal();
-      }
-      return;
-    }
-
-    const overlay =
-      "linear-gradient(0deg, rgba(7, 10, 14, 0.42), rgba(7, 10, 14, 0.42))";
-    root.style.setProperty("--app-bg-overlay", overlay);
-
-    void (async () => {
-      try {
-        const resolvedAsset =
-          await resolveBackgroundAssetUrl(backgroundImageAsset);
-        blobUrl = resolvedAsset.url;
-        revokeBlobUrl = resolvedAsset.revoke;
-        if (disposed) {
-          resolvedAsset.revoke();
-          return;
-        }
-        if (shouldDeferFloatingWindowReveal) {
-          // 悬浮窗口先等背景媒体首帧可用，再解除隐藏，避免启动时白框或纯色占位。
-          await waitForDetachedBackgroundMediaReady(
-            blobUrl,
-            normalizedBackgroundMediaType,
-          );
-          if (disposed) {
-            resolvedAsset.revoke();
-            return;
-          }
-        }
-        const style = resolveDetachedBackgroundImageStyle(
-          effectiveBackgroundRenderMode,
-        );
-        root.style.setProperty("--app-bg-image-size", style.size);
-        root.style.setProperty("--app-bg-image-repeat", style.repeat);
-        root.style.setProperty("--app-bg-image-position", style.position);
-        const resolvedBlobUrl = blobUrl;
-        if (normalizedBackgroundMediaType === "video") {
-          root.style.setProperty("--app-bg-image", "none");
-          scheduleDeferredTask(() => {
-            setBackgroundMediaBlobUrl(resolvedBlobUrl);
-            setActiveBackgroundMediaType("video");
-          });
-        } else {
-          root.style.setProperty("--app-bg-image", `url("${resolvedBlobUrl}")`);
-          scheduleDeferredTask(() => {
-            setBackgroundMediaBlobUrl("");
-            setActiveBackgroundMediaType("image");
-          });
-        }
-        // 仅在背景图真正可读后启用语义层半透明模式，避免加载失败时界面过透。
-        applyBackgroundImageMode(true);
-        if (shouldDeferFloatingWindowReveal) {
-          await waitForNextPaint(2);
-          if (disposed) return;
-          scheduleFloatingWindowReveal();
-        }
-      } catch (error) {
-        if (disposed) return;
-        applyDefaultBackground();
-        if (shouldDeferFloatingWindowReveal) {
-          await waitForNextPaint(2);
-          if (disposed) return;
-          scheduleFloatingWindowReveal();
-        }
-        void warn(
-          JSON.stringify({
-            event: "settings.background.image.load.failed",
-            asset: backgroundImageAsset,
-            error: extractErrorMessage(error),
-          }),
-        );
-      }
-    })();
-
-    return () => {
-      disposed = true;
-      if (!blobUrl) return;
-      revokeBlobUrl();
-    };
-  }, [
-    isBackgroundMediaRequested,
-    backgroundImageAsset,
-    effectiveBackgroundRenderMode,
-    normalizedBackgroundMediaType,
-    settingsLoaded,
-    shouldDeferFloatingWindowReveal,
-    themeId,
-  ]);
-
-  useEffect(() => {
-    const video = backgroundVideoRef.current;
-    if (!video || !backgroundMediaBlobUrl) return;
-    backgroundVideoReplayTimerRef.current = null;
-    const syncVisibility = () => {
-      if (document.visibilityState !== "visible") {
-        video.pause();
-        return;
-      }
-      void video.play().catch(() => {});
-    };
-    syncVisibility();
-    document.addEventListener("visibilitychange", syncVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", syncVisibility);
-      if (backgroundVideoReplayTimerRef.current) {
-        window.clearTimeout(backgroundVideoReplayTimerRef.current);
-        backgroundVideoReplayTimerRef.current = null;
-      }
-    };
-  }, [backgroundMediaBlobUrl]);
-
-  useEffect(() => {
-    if (!backgroundVideoReplayTimerRef.current) return;
-    window.clearTimeout(backgroundVideoReplayTimerRef.current);
-    backgroundVideoReplayTimerRef.current = null;
-  }, [
-    normalizedBackgroundVideoReplayMode,
-    normalizedBackgroundVideoReplayIntervalSec,
-  ]);
-
-  function handleBackgroundVideoEnded() {
-    const video = backgroundVideoRef.current;
-    if (!video) return;
-    if (normalizedBackgroundVideoReplayMode === "single") return;
-    if (normalizedBackgroundVideoReplayMode === "loop") {
-      video.currentTime = 0;
-      void video.play().catch(() => {});
-      return;
-    }
-    if (backgroundVideoReplayTimerRef.current) {
-      window.clearTimeout(backgroundVideoReplayTimerRef.current);
-      backgroundVideoReplayTimerRef.current = null;
-    }
-    backgroundVideoReplayTimerRef.current = window.setTimeout(() => {
-      const currentVideo = backgroundVideoRef.current;
-      if (!currentVideo) return;
-      currentVideo.currentTime = 0;
-      void currentVideo.play().catch(() => {});
-    }, normalizedBackgroundVideoReplayIntervalSec * 1000);
-  }
-
-  useLayoutEffect(() => {
-    if (!shouldDeferFloatingWindowReveal) return;
-    const root = document.documentElement;
-    root.dataset.windowSurface = "detached";
-    root.dataset.windowAppearance = floatingWindowAppearanceReady
-      ? "ready"
-      : "pending";
-    document.body.style.visibility = floatingWindowAppearanceReady
-      ? "visible"
-      : "hidden";
-    return () => {
-      delete root.dataset.windowSurface;
-      delete root.dataset.windowAppearance;
-      document.body.style.visibility = "";
-    };
-  }, [floatingWindowAppearanceReady, shouldDeferFloatingWindowReveal]);
-
-  useEffect(() => {
-    if (!shouldDeferFloatingWindowReveal) return;
-    if (!floatingWindowAppearanceReady) return;
-    if (floatingWindowShownRef.current) return;
-    floatingWindowShownRef.current = true;
-    const current = getCurrentWindow();
-    void waitForNextPaint(2).then(() => {
-      current
-        .show()
-        .then(() => current.setFocus().catch(() => {}))
-        .catch(() => {});
-    });
-  }, [floatingWindowAppearanceReady, shouldDeferFloatingWindowReveal]);
 
   const openNewProfile = useCallback(
     (defaultGroup?: string | null) => {
@@ -1138,47 +746,16 @@ export default function AppShell() {
     autoReconnectOnReboot,
     getTerminalSize: () => terminalSizeRef.current,
   });
-  const openManagedRemoteFile = useCallback(
-    async (sessionId: string, entry: SftpEntry) => {
-      const session = sessionState.sessions.find(
-        (sessionItem) => sessionItem.sessionId === sessionId,
-      );
-      const profile = session?.profileId
-        ? (profiles.find((item) => item.id === session.profileId) ?? null)
-        : null;
-      const opened = await openRemoteFileForEditing(
-        sessionId,
-        {
-          host: profile?.host?.trim() || "unknown-host",
-          username: profile?.username?.trim() || "unknown-user",
-          port:
-            typeof profile?.port === "number" && profile.port > 0
-              ? profile.port
-              : 22,
-        },
-        entry,
-        fileDefaultEditorPath,
-      );
-      void logTelemetry("info", "remote.edit.open.success", {
-        sessionId,
-        instanceId: opened.instanceId,
-        remotePath: entry.path,
-        trackChanges: opened.trackChanges,
-      });
-      pushToast({
-        level: "success",
-        message: opened.trackChanges
-          ? t("sftp.remoteEdit.openedTracked", { name: entry.name })
-          : t("sftp.remoteEdit.openedExternal", { name: entry.name }),
-      });
-      if (opened.trackChanges) {
-        setRemoteEditSessions((current) => ({
-          ...current,
-          [opened.instanceId]: opened,
-        }));
-      }
+  const { openManagedRemoteFile, openManagedLocalFile } = useRemoteEditSessions(
+    {
+      sessions: sessionState.sessions,
+      profiles,
+      sessionStates: sessionState.sessionStates,
+      fileDefaultEditorPath,
+      t,
+      pushToast,
+      openDialog,
     },
-    [fileDefaultEditorPath, profiles, pushToast, sessionState.sessions, t],
   );
   const tunnelState = useSshTunnelState(sessionState.activeSessionId);
   const activeTunnelSessionMeta = useMemo(() => {
@@ -1212,193 +789,6 @@ export default function AppShell() {
     t,
   ]);
 
-  useEffect(() => {
-    const cancel = scheduleDeferredTask(() => {
-      setRemoteEditSessions((current) =>
-        Object.fromEntries(
-          Object.entries(current).filter(([, item]) => {
-            return sessionState.sessionStates[item.sessionId] === "connected";
-          }),
-        ),
-      );
-      setRemoteEditAutoUploadBySession((current) =>
-        Object.fromEntries(
-          Object.entries(current).filter(
-            ([sessionId]) =>
-              sessionState.sessionStates[sessionId] === "connected",
-          ),
-        ),
-      );
-    });
-    return cancel;
-  }, [sessionState.sessionStates]);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-
-    void listRemoteEditSessions()
-      .then((items) => {
-        if (disposed) return;
-        setRemoteEditSessions(() =>
-          Object.fromEntries(items.map((item) => [item.instanceId, item])),
-        );
-      })
-      .catch(() => {});
-
-    void registerRemoteEditListener((payload) => {
-      const previous =
-        remoteEditSessionsRef.current[payload.instanceId] ?? null;
-      if (previous?.status === "uploading" && payload.status === "synced") {
-        void logTelemetry("info", "remote.edit.upload.success", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-        });
-        pushToast({
-          level: "success",
-          message: t("sftp.remoteEdit.uploadSuccess", {
-            name: payload.fileName,
-          }),
-        });
-      }
-      if (
-        payload.status === "sync_failed" &&
-        payload.lastError &&
-        previous?.lastError !== payload.lastError
-      ) {
-        void logTelemetry("warn", "remote.edit.sync.failed", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-          errorCode: payload.lastErrorCode,
-        });
-        const translatedMessage = payload.lastErrorCode
-          ? translateAppError(
-              {
-                code: payload.lastErrorCode,
-                message: payload.lastError,
-              },
-              t,
-            )
-          : payload.lastError;
-        pushToast({
-          level: "error",
-          message: translatedMessage,
-        });
-      }
-      setRemoteEditSessions((current) => ({
-        ...current,
-        [payload.instanceId]: payload,
-      }));
-      if (payload.status !== "pending_confirm") {
-        return;
-      }
-      if (sessionState.sessionStates[payload.sessionId] !== "connected") {
-        return;
-      }
-      if (remoteEditAutoUploadBySession[payload.sessionId]) {
-        void logTelemetry("info", "remote.edit.upload.auto.confirmed", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-        });
-        void confirmRemoteEditUpload(payload.instanceId).catch((error) => {
-          pushToast({
-            level: "error",
-            message: translateAppError(error, t),
-          });
-        });
-        return;
-      }
-      const session = sessionState.sessions.find(
-        (sessionItem) => sessionItem.sessionId === payload.sessionId,
-      );
-      const profile = session?.profileId
-        ? (profiles.find((item) => item.id === session.profileId) ?? null)
-        : null;
-      const serverLabel =
-        profile?.name && profile.host
-          ? `${profile.name} (${profile.host})`
-          : profile?.host || profile?.name || payload.sessionId;
-      void logTelemetry("info", "remote.edit.upload.prompted", {
-        sessionId: payload.sessionId,
-        instanceId: payload.instanceId,
-        remotePath: payload.remotePath,
-      });
-      openDialog({
-        title: t("sftp.remoteEdit.confirmTitle"),
-        message: t("sftp.remoteEdit.confirmMessage", {
-          name: payload.fileName,
-          server: serverLabel,
-          path: payload.remotePath,
-        }),
-        confirmLabel: t("actions.upload"),
-        secondaryLabel: t("sftp.remoteEdit.confirmAllInSession"),
-        cancelLabel: t("actions.cancel"),
-        onConfirm: () => {
-          void logTelemetry("info", "remote.edit.upload.confirmed", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
-          void confirmRemoteEditUpload(payload.instanceId).catch((error) => {
-            pushToast({
-              level: "error",
-              message: translateAppError(error, t),
-            });
-          });
-        },
-        onSecondary: () => {
-          void logTelemetry("info", "remote.edit.upload.auto.enabled", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
-          setRemoteEditAutoUploadBySession((current) => ({
-            ...current,
-            [payload.sessionId]: true,
-          }));
-          void confirmRemoteEditUpload(payload.instanceId).catch((error) => {
-            pushToast({
-              level: "error",
-              message: translateAppError(error, t),
-            });
-          });
-        },
-        onCancel: () => {
-          void logTelemetry("info", "remote.edit.upload.cancelled", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
-          void dismissRemoteEditPending(payload.instanceId).catch(() => {});
-        },
-      });
-    }).then((listener) => {
-      if (disposed) {
-        void listener();
-        return;
-      }
-      unlisten = listener;
-    });
-
-    return () => {
-      disposed = true;
-      if (unlisten) {
-        void unlisten();
-      }
-    };
-  }, [
-    openDialog,
-    profiles,
-    pushToast,
-    remoteEditAutoUploadBySession,
-    sessionState.sessionStates,
-    sessionState.sessions,
-    t,
-  ]);
-
   const historyState = useCommandHistoryState({
     activeSessionId: sessionState.activeSessionId,
     writeToSession: sessionActions.writeToSession,
@@ -1421,6 +811,19 @@ export default function AppShell() {
         : null,
     [commandAutocompleteEnabled, historyState.globalItems],
   );
+  const terminalPathSyncHandlersRef = useRef<{
+    handleWorkingDirectoryChange: (
+      sessionId: string,
+      payload: TerminalWorkingDirectory,
+    ) => void;
+    handlePathSyncSupportChange: (
+      sessionId: string,
+      status: TerminalCwdSupport,
+    ) => void;
+  }>({
+    handleWorkingDirectoryChange: () => {},
+    handlePathSyncSupportChange: () => {},
+  });
 
   const { terminalQuery, terminalActions } = useTerminalController({
     theme: activeTerminalTheme,
@@ -1438,19 +841,16 @@ export default function AppShell() {
     sendSessionInput: sessionActions.sendSessionInput,
     resizeSession: sessionActions.resizeSession,
     onWorkingDirectoryChange: (sessionId, payload) => {
-      setTerminalWorkingDirs((prev) =>
-        prev[sessionId]?.path === payload.path &&
-        prev[sessionId]?.username === payload.username &&
-        prev[sessionId]?.source === payload.source
-          ? prev
-          : { ...prev, [sessionId]: payload },
+      terminalPathSyncHandlersRef.current.handleWorkingDirectoryChange(
+        sessionId,
+        payload,
       );
     },
     onPathSyncSupportChange: (sessionId, status) => {
-      setTerminalCwdSupportBySession((prev) => {
-        if (prev[sessionId] === status) return prev;
-        return { ...prev, [sessionId]: status };
-      });
+      terminalPathSyncHandlersRef.current.handlePathSyncSupportChange(
+        sessionId,
+        status,
+      );
     },
     isLocalSession: sessionActions.isLocalSession,
     reconnectSession: sessionActions.reconnectSession,
@@ -1550,21 +950,6 @@ export default function AppShell() {
         delete next[activeSessionId];
         return next;
       });
-    });
-    return cancel;
-  }, [sessionState.activeSessionId]);
-
-  useEffect(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    if (!activeSessionId) return;
-    // 新会话先走保守默认值，只有真正拿到可靠 cwd 后才提升为 supported，
-    // 避免首屏短暂闪成绿色联动中。
-    const cancel = scheduleDeferredTask(() => {
-      setTerminalCwdSupportBySession((prev) =>
-        prev[activeSessionId]
-          ? prev
-          : { ...prev, [activeSessionId]: "unsupported" },
-      );
     });
     return cancel;
   }, [sessionState.activeSessionId]);
@@ -1726,405 +1111,40 @@ export default function AppShell() {
     sftpEnabled,
     sftpState.availabilityBySession,
   ]);
-  const activeTerminalPathSyncStatus = useMemo<
-    "active" | "paused" | "checking" | "unsupported" | "disabled"
-  >(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    if (!terminalPathSyncEnabled || !filesWidgetVisible) {
-      return "disabled";
-    }
-    if (!activeSessionId) return "unsupported";
-    const isLocalSession = sessionActions.isLocalSession(activeSessionId);
-    if (!isLocalSession && !sftpEnabled) {
-      return "disabled";
-    }
-    const cwdSupport =
-      terminalCwdSupportBySession[activeSessionId] ?? "unsupported";
-    const tracked = terminalWorkingDirs[activeSessionId];
-    const localMeta = sessionState.localSessionMeta[activeSessionId];
-    const inferredLocalHome =
-      tracked && localMeta?.shellKind === "wsl"
-        ? inferWslHomePath(tracked.path, tracked.username)
-        : null;
-    const knownHome =
-      terminalHomeDirs[activeSessionId] ??
-      inferredLocalHome ??
-      (tracked?.path === "~" && !!sftpState.currentPath
-        ? sftpState.currentPath
-        : null);
-    const localResolvedPath =
-      isLocalSession && tracked
-        ? resolveLocalSessionWorkingDirectory(
-            tracked.path,
-            knownHome,
-            localMeta,
-            tracked.username,
-          )
-        : null;
-    const pathSyncState = terminalPathSyncStateBySession[activeSessionId];
-    if (
-      !isLocalSession &&
-      cwdSupport !== "supported" &&
-      activeSftpAvailability === "checking"
-    ) {
-      return "checking";
-    }
-    if (cwdSupport !== "supported") {
-      return "unsupported";
-    }
-    if (isLocalSession && !localResolvedPath) {
-      return "unsupported";
-    }
-    if (!isLocalSession && activeSftpAvailability === "unsupported") {
-      return "unsupported";
-    }
-    return pathSyncState === "paused-mismatch" ? "paused" : "active";
-  }, [
-    sessionActions,
-    sessionState.activeSessionId,
-    sessionState.localSessionMeta,
-    activeSftpAvailability,
+  const {
+    activeTerminalPathSyncStatus,
+    handleWorkingDirectoryChange,
+    handlePathSyncSupportChange,
+  } = useTerminalPathSync({
+    enabled: terminalPathSyncEnabled,
     filesWidgetVisible,
-    sftpState.currentPath,
     sftpEnabled,
-    terminalPathSyncEnabled,
-    terminalCwdSupportBySession,
-    terminalHomeDirs,
-    terminalWorkingDirs,
-    terminalPathSyncStateBySession,
-  ]);
-
-  const activeResourceSnapshot = useMemo(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    if (!activeSessionId) return null;
-    if (sessionState.activeSessionState !== "connected") return null;
-    return resourceSnapshotsBySession[activeSessionId] ?? null;
-  }, [
-    resourceSnapshotsBySession,
-    sessionState.activeSessionId,
-    sessionState.activeSessionState,
-  ]);
-  const activeResourceMonitorStatus = useMemo<
-    "disabled" | "checking" | "ready" | "unsupported"
-  >(() => {
-    if (!resourceMonitorEnabled) return "disabled";
-    const activeSessionId = sessionState.activeSessionId;
-    if (!activeSessionId) return "disabled";
-    if (sessionState.activeSessionState !== "connected") return "disabled";
-    const snapshot = resourceSnapshotsBySession[activeSessionId];
-    if (!snapshot) return "checking";
-    if (snapshot.status === "ready" && snapshot.cpu && snapshot.memory) {
-      return "ready";
-    }
-    return snapshot.status;
-  }, [
-    resourceMonitorEnabled,
-    resourceSnapshotsBySession,
-    sessionState.activeSessionId,
-    sessionState.activeSessionState,
-  ]);
-
-  useEffect(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    const previousState = previousResourceSessionStateRef.current;
-    const currentState = sessionState.activeSessionState;
-    previousResourceSessionStateRef.current = currentState;
-    if (!activeSessionId) return;
-    if (currentState !== "connected" || previousState === "connected") return;
-    const cancel = scheduleDeferredTask(() => {
-      setResourceSnapshotsBySession((prev) => {
-        if (prev[activeSessionId]?.status !== "unsupported") {
-          return prev;
-        }
-        const next = { ...prev };
-        delete next[activeSessionId];
-        return next;
-      });
-    });
-    return cancel;
-  }, [sessionState.activeSessionId, sessionState.activeSessionState]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let teardown: (() => void) | null = null;
-
-    const registerResourceListener = async () => {
-      const unlisten = await subscribeTauri<SessionResourceSnapshot>(
-        "session:resource",
-        (event) => {
-          if (cancelled) return;
-          setResourceSnapshotsBySession((prev) => ({
-            ...prev,
-            [event.payload.sessionId]: event.payload,
-          }));
-        },
-      );
-      if (cancelled) {
-        unlisten();
-        return;
-      }
-      teardown = unlisten;
-    };
-
-    registerResourceListener().catch(() => {});
-    return () => {
-      cancelled = true;
-      teardown?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    const normalizedInterval = Math.max(
-      MIN_RESOURCE_MONITOR_INTERVAL_SEC,
-      resourceMonitorIntervalSec,
-    );
-    const isLocalActiveSession =
-      !!activeSessionId && sessionActions.isLocalSession(activeSessionId);
-    const desiredMonitorKey =
-      resourceMonitorEnabled &&
-      activeSessionId &&
-      sessionState.activeSessionState === "connected" &&
-      (isLocalActiveSession || sessionState.activeSessionProfile)
-        ? [
-            activeSessionId,
-            isLocalActiveSession ? "local" : "ssh",
-            sessionState.activeSessionProfile?.id ?? "local",
-            normalizedInterval,
-          ].join(":")
-        : "";
-
-    const stopMonitorById = async (sessionId: string | null) => {
-      if (!sessionId) return;
-      await stopResourceMonitor(sessionId).catch(() => {});
-    };
-
-    const syncMonitor = async () => {
-      // 资源监控的启停只能跟随稳定的“会话 + 模式 + 间隔”键变化，
-      // 不能依赖 controller 包装对象本身，否则 render 抖动会导致 start/stop 循环。
-      if (activeResourceMonitorKeyRef.current === desiredMonitorKey) {
-        return;
-      }
-      activeResourceMonitorKeyRef.current = desiredMonitorKey;
-
-      const previousSessionId = activeResourceMonitorSessionIdRef.current;
-      if (!desiredMonitorKey || !activeSessionId) {
-        await stopMonitorById(previousSessionId);
-        activeResourceMonitorSessionIdRef.current = null;
-        return;
-      }
-
-      if (
-        resourceSnapshotsBySession[activeSessionId]?.status === "unsupported"
-      ) {
-        await stopMonitorById(previousSessionId);
-        activeResourceMonitorSessionIdRef.current = null;
-        activeResourceMonitorKeyRef.current = `unsupported:${activeSessionId}`;
-        return;
-      }
-
-      if (previousSessionId && previousSessionId !== activeSessionId) {
-        await stopMonitorById(previousSessionId);
-      }
-
-      setResourceSnapshotsBySession((prev) => {
-        const existing = prev[activeSessionId];
-        if (existing?.status === "checking" || existing?.status === "ready") {
-          return prev;
-        }
-        return {
-          ...prev,
-          [activeSessionId]: {
-            sessionId: activeSessionId,
-            sampledAt: Date.now(),
-            source: isLocalActiveSession ? "local" : "ssh-linux",
-            status: "checking",
-            uptimeSeconds: null,
-            cpu: null,
-            memory: null,
-          },
-        };
-      });
-
-      if (isLocalActiveSession) {
-        await startLocalResourceMonitor(activeSessionId, normalizedInterval);
-      } else if (sessionState.activeSessionProfile) {
-        await startSshResourceMonitor(
-          activeSessionId,
-          sessionState.activeSessionProfile,
-          normalizedInterval,
-        );
-      }
-
-      activeResourceMonitorSessionIdRef.current = activeSessionId;
-    };
-
-    syncMonitor().catch(() => {});
-  }, [
-    resourceMonitorEnabled,
-    resourceMonitorIntervalSec,
-    resourceSnapshotsBySession,
-    sessionState.activeSessionId,
-    sessionState.activeSessionProfile,
-    sessionState.activeSessionState,
-    sessionActions,
-    sessionActions.isLocalSession,
-  ]);
-
-  useEffect(() => {
-    return () => {
-      const sessionId = activeResourceMonitorSessionIdRef.current;
-      if (!sessionId) return;
-      stopResourceMonitor(sessionId).catch(() => {});
-    };
-  }, []);
-
-  useEffect(() => {
-    const activeSessionId = sessionState.activeSessionId;
-    if (!activeSessionId) return;
-    const isLocalSession = sessionActions.isLocalSession(activeSessionId);
-    if (!terminalPathSyncEnabled || !filesWidgetVisible) return;
-    if (!isLocalSession && !sftpEnabled) return;
-    if (!isLocalSession && !sessionState.isRemoteConnected) return;
-    const tracked = terminalWorkingDirs[activeSessionId];
-    if (!tracked) return;
-    if (
-      (terminalCwdSupportBySession[activeSessionId] ?? "unsupported") !==
-      "supported"
-    ) {
-      return;
-    }
-    if (!isLocalSession && activeSftpAvailability === "unsupported") return;
-    const sessionProfile = sessionState.activeSessionProfile;
-    const loginUsername = sessionProfile?.username?.trim() || null;
-    const promptUsername = tracked.username?.trim() || null;
-    const syncState =
-      terminalPathSyncStateBySession[activeSessionId] ?? "active";
-    if (
-      !isLocalSession &&
-      loginUsername &&
-      promptUsername &&
-      loginUsername !== promptUsername
-    ) {
-      if (syncState !== "paused-mismatch") {
-        scheduleDeferredTask(() => {
-          setTerminalPathSyncStateBySession((prev) => ({
-            ...prev,
-            [activeSessionId]: "paused-mismatch",
-          }));
-        });
-        void warn(
-          JSON.stringify({
-            event: "terminal.cwd.sync.paused.user.mismatch",
-            sessionId: activeSessionId,
-            loginUsername,
-            promptUsername,
-          }),
-        );
-      }
-      return;
-    }
-    if (!isLocalSession && syncState === "paused-mismatch") {
-      scheduleDeferredTask(() => {
-        setTerminalPathSyncStateBySession((prev) => ({
-          ...prev,
-          [activeSessionId]: "active",
-        }));
-      });
-      info(
-        JSON.stringify({
-          event: "terminal.cwd.sync.resumed.user.match",
-          sessionId: activeSessionId,
-          loginUsername,
-          promptUsername,
-        }),
-      ).catch(() => {});
-    }
-    const trackedPath = tracked.path;
-    const localMeta = sessionState.localSessionMeta[activeSessionId];
-    const inferredLocalHome =
-      localMeta?.shellKind === "wsl"
-        ? inferWslHomePath(trackedPath, tracked.username)
-        : null;
-    const knownHome =
-      terminalHomeDirs[activeSessionId] ??
-      inferredLocalHome ??
-      (trackedPath === "~" && !!sftpState.currentPath
-        ? sftpState.currentPath
-        : null);
-    if (knownHome && terminalHomeDirs[activeSessionId] !== knownHome) {
-      scheduleDeferredTask(() => {
-        setTerminalHomeDirs((prev) => ({
-          ...prev,
-          [activeSessionId]: knownHome,
-        }));
-      });
-    }
-    const resolvedPath = resolveTrackedWorkingDirectory(
-      trackedPath,
-      knownHome,
-      isLocalSession,
-    );
-    const effectiveResolvedPath = isLocalSession
-      ? resolveLocalSessionWorkingDirectory(
-          trackedPath,
-          knownHome,
-          localMeta,
-          tracked.username,
-        )
-      : resolvedPath;
-    if (!effectiveResolvedPath) return;
-    if (effectiveResolvedPath === sftpState.currentPath) {
-      // 当文件管理器已经处于终端 cwd 时，记住这次已同步的终端路径。
-      // 后续用户手动浏览目录时，只要终端 cwd 没变化，就不要再被这个旧路径覆盖回去。
-      scheduleDeferredTask(() => {
-        setLastSyncedTerminalPaths((prev) =>
-          prev[activeSessionId] === effectiveResolvedPath
-            ? prev
-            : { ...prev, [activeSessionId]: effectiveResolvedPath },
-        );
-      });
-      return;
-    }
-    if (lastSyncedTerminalPaths[activeSessionId] === effectiveResolvedPath)
-      return;
-    // 终端 cwd 只在“路径发生新变化”时单向驱动文件管理器，
-    // 避免文件管理器手动浏览后又被旧的终端路径持续覆盖。
-    openRemoteDir(effectiveResolvedPath).catch((error) => {
-      void warn(
-        JSON.stringify({
-          event: "sftp.sync.terminal.path.failed",
-          sessionId: activeSessionId,
-          path: effectiveResolvedPath,
-          rawPath: trackedPath,
-          error: extractErrorMessage(error),
-        }),
-      );
-    });
-    scheduleDeferredTask(() => {
-      setLastSyncedTerminalPaths((prev) => ({
-        ...prev,
-        [activeSessionId]: effectiveResolvedPath,
-      }));
-    });
-  }, [
-    lastSyncedTerminalPaths,
+    activeSessionId: sessionState.activeSessionId,
+    activeSessionProfile: sessionState.activeSessionProfile,
+    isRemoteConnected: sessionState.isRemoteConnected,
+    localSessionMeta: sessionState.localSessionMeta,
+    currentPath: sftpState.currentPath,
+    activeSftpAvailability,
+    isLocalSession: sessionActions.isLocalSession,
     openRemoteDir,
-    sessionActions,
-    sessionState.activeSessionProfile,
-    sessionState.activeSessionId,
-    sessionState.isRemoteConnected,
-    sessionState.localSessionMeta,
-    activeSftpAvailability,
-    filesWidgetVisible,
-    terminalCwdSupportBySession,
-    terminalPathSyncStateBySession,
-    sftpState.currentPath,
-    terminalHomeDirs,
-    sftpEnabled,
-    terminalPathSyncEnabled,
-    terminalWorkingDirs,
-  ]);
+  });
+
+  useEffect(() => {
+    terminalPathSyncHandlersRef.current = {
+      handleWorkingDirectoryChange,
+      handlePathSyncSupportChange,
+    };
+  }, [handlePathSyncSupportChange, handleWorkingDirectoryChange]);
+
+  const { activeResourceSnapshot, activeResourceMonitorStatus } =
+    useSessionResourceMonitor({
+      enabled: resourceMonitorEnabled,
+      intervalSec: resourceMonitorIntervalSec,
+      activeSessionId: sessionState.activeSessionId,
+      activeSessionState: sessionState.activeSessionState,
+      activeSessionProfile: sessionState.activeSessionProfile,
+      isLocalSession: sessionActions.isLocalSession,
+    });
 
   useFloatingWidgetSnapshotSync<FloatingFilesMessage>({
     channelName: WIDGET_FILES_CHANNEL,
@@ -2182,14 +1202,12 @@ export default function AppShell() {
               });
             });
           } else {
-            openLocalFile(message.entry.path, fileDefaultEditorPath).catch(
-              (error) => {
-                pushToast({
-                  level: "error",
-                  message: translateAppError(error, t),
-                });
-              },
-            );
+            openManagedLocalFile(message.entry).catch((error) => {
+              pushToast({
+                level: "error",
+                message: translateAppError(error, t),
+              });
+            });
           }
           break;
         case "files:upload":
@@ -2240,9 +1258,8 @@ export default function AppShell() {
       renameEntry,
       uploadFile,
       uploadDroppedPaths,
-      sessionState.isRemoteConnected,
       openManagedRemoteFile,
-      fileDefaultEditorPath,
+      openManagedLocalFile,
       pushToast,
       t,
     ],
@@ -3066,7 +2083,7 @@ export default function AppShell() {
                 );
                 return;
               }
-              await openLocalFile(entry.path, fileDefaultEditorPath);
+              await openManagedLocalFile(entry);
             },
             uploadFile,
             uploadDroppedPaths,
@@ -3077,7 +2094,6 @@ export default function AppShell() {
             remove: removeEntry,
           },
     [
-      fileDefaultEditorPath,
       createFolder,
       downloadFile,
       filesWidgetState,
@@ -3087,6 +2103,7 @@ export default function AppShell() {
       refreshList,
       removeEntry,
       renameEntry,
+      openManagedLocalFile,
       openManagedRemoteFile,
       sessionState.activeSessionId,
       sessionState.isRemoteConnected,
