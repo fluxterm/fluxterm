@@ -7,7 +7,7 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["dist", "coverage", "node_modules", "src-tauri/target"],
+    ignores: ["docs", "dist", "node_modules", "crates", "**/target/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -18,9 +18,7 @@ export default defineConfig(
       ecmaVersion: "latest",
       globals: globals.browser,
       parserOptions: {
-        projectService: {
-          allowDefaultProject: ["eslint.config.ts"],
-        },
+        projectService: true,
         tsconfigRootDir: import.meta.dirname,
       },
     },
