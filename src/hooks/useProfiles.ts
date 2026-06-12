@@ -23,6 +23,10 @@ type UseProfilesResult = {
   defaultProfile: HostProfile;
   pickProfile: (profileId: string) => void;
   saveProfile: (profile: HostProfile) => Promise<HostProfile>;
+  duplicateProfile: (
+    profile: HostProfile,
+    copySuffix: string,
+  ) => Promise<HostProfile>;
   removeProfile: (profileId: string) => Promise<void>;
   reloadProfiles: () => Promise<void>;
   importOpenSshConfig: () => Promise<OpensshImportSummary>;
@@ -54,9 +58,27 @@ const defaultProfile: HostProfile = {
   bellCooldownMs: DEFAULT_TERMINAL_BELL_COOLDOWN_MS,
 };
 
+const PROFILE_NAME_MAX_LENGTH = 14;
+
 /** 统一清理分组名的首尾空白，避免分组展示与持久化出现幽灵差异。 */
 function normalizeGroupName(value: string) {
   return value.trim();
+}
+
+/** 为复制出的主机生成可直接保存的名称，并遵守后端名称长度限制。 */
+function buildDuplicateProfileName(profile: HostProfile, copySuffix: string) {
+  const fallbackName = profile.name || profile.host || copySuffix;
+  const baseChars = Array.from(fallbackName.trim());
+  const suffixChars = Array.from(copySuffix.trim() || "Copy");
+  const suffix = suffixChars.slice(0, PROFILE_NAME_MAX_LENGTH).join("");
+  const separatorLength = baseChars.length && suffix.length ? 1 : 0;
+  const baseLimit = Math.max(
+    0,
+    PROFILE_NAME_MAX_LENGTH - suffixChars.length - separatorLength,
+  );
+  const base = baseChars.slice(0, baseLimit).join("").trim();
+  const name = [base, suffix].filter(Boolean).join(" ").trim();
+  return Array.from(name).slice(0, PROFILE_NAME_MAX_LENGTH).join("");
 }
 
 /** 对分组列表做去重和排序，确保分组展示顺序稳定。 */
@@ -151,6 +173,16 @@ export default function useProfiles(): UseProfilesResult {
     setActiveProfileId(saved.id);
     setEditingProfile(saved);
     return saved;
+  }
+
+  /** 复制主机配置并立即持久化为新条目。 */
+  async function duplicateProfile(profile: HostProfile, copySuffix: string) {
+    return await saveProfile({
+      ...profile,
+      id: "",
+      name: buildDuplicateProfileName(profile, copySuffix),
+      knownHost: null,
+    });
   }
 
   /** 删除主机配置；如果删除的是当前选中项，则回退到列表中的下一项。 */
@@ -319,6 +351,7 @@ export default function useProfiles(): UseProfilesResult {
     defaultProfile,
     pickProfile,
     saveProfile,
+    duplicateProfile,
     removeProfile,
     reloadProfiles,
     /** 执行 OpenSSH 导入并在成功后刷新当前主机列表与分组。 */

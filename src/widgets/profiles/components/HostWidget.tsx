@@ -4,6 +4,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import {
+  FiCopy,
   FiEdit2,
   FiEye,
   FiFolder,
@@ -50,6 +51,7 @@ type HostWidgetProps = {
   onOpenNewProfile: (defaultGroup?: string | null) => void;
   onImportOpenSshConfig: () => void;
   onOpenEditProfile: (profile: HostProfile) => void;
+  onDuplicateProfile: (profile: HostProfile) => void;
   onRemoveProfile: (profile: HostProfile) => void;
   onAddGroup: (groupName: string) => boolean;
   onRenameGroup: (from: string, to: string) => Promise<boolean>;
@@ -77,6 +79,7 @@ export default function HostWidget({
   onOpenNewProfile,
   onImportOpenSshConfig,
   onOpenEditProfile,
+  onDuplicateProfile,
   onRemoveProfile,
   onAddGroup,
   onRenameGroup,
@@ -459,6 +462,15 @@ export default function HostWidget({
         },
       },
       {
+        label: t("profile.menu.copy"),
+        icon: <FiCopy />,
+        disabled: false,
+        onClick: () => {
+          setMenu(null);
+          onDuplicateProfile(profile);
+        },
+      },
+      {
         label: t("host.menu.moveTo"),
         icon: <FiFolder />,
         disabled: false,
@@ -498,6 +510,15 @@ export default function HostWidget({
         onClick: () => {
           setMenu(null);
           onOpenEditProfile(profile);
+        },
+      },
+      {
+        label: t("profile.menu.copy"),
+        icon: <FiCopy />,
+        disabled: false,
+        onClick: () => {
+          setMenu(null);
+          onDuplicateProfile(profile);
         },
       },
       {

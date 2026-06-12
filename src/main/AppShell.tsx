@@ -441,6 +441,7 @@ export default function AppShell() {
     defaultProfile,
     pickProfile,
     saveProfile,
+    duplicateProfile,
     removeProfile,
     reloadProfiles,
     importOpenSshConfig,
@@ -2429,6 +2430,14 @@ export default function AppShell() {
             });
         },
         onOpenEditProfile: openEditProfile,
+        onDuplicateProfile: (profile) => {
+          duplicateProfile(profile, t("profile.copySuffix")).catch((error) => {
+            pushToast({
+              level: "error",
+              message: getErrorMessage(error),
+            });
+          });
+        },
         onRemoveProfile: (profile) => {
           void removeProfile(profile.id);
         },
@@ -2501,6 +2510,7 @@ export default function AppShell() {
       renameGroup,
       removeGroup,
       moveProfileToGroup,
+      duplicateProfile,
       handleConnectProfile,
       handleCancelConnectProfile,
       handleConnectRdpProfile,

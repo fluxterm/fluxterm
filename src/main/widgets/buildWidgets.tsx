@@ -92,6 +92,7 @@ type buildWidgetsProps = {
   onOpenNewProfile: (defaultGroup?: string | null) => void;
   onImportOpenSshConfig: () => void;
   onOpenEditProfile: (profile: HostProfile) => void;
+  onDuplicateProfile: (profile: HostProfile) => void;
   onRemoveProfile: (profile: HostProfile) => void;
   onHistorySearchQueryChange: (value: string) => void;
   onExecuteHistoryItem: (command: string) => void;
@@ -185,6 +186,7 @@ export function buildWidgets(
     onOpenNewProfile,
     onImportOpenSshConfig,
     onOpenEditProfile,
+    onDuplicateProfile,
     onRemoveProfile,
     onHistorySearchQueryChange,
     onExecuteHistoryItem,
@@ -239,6 +241,7 @@ export function buildWidgets(
           onOpenNewProfile={onOpenNewProfile}
           onImportOpenSshConfig={onImportOpenSshConfig}
           onOpenEditProfile={onOpenEditProfile}
+          onDuplicateProfile={onDuplicateProfile}
           onRemoveProfile={onRemoveProfile}
           onAddGroup={onAddGroup}
           onRenameGroup={onRenameGroup}
