@@ -9,7 +9,7 @@ import useAppSettings, {
 } from "@/hooks/useAppSettings";
 import { useDisableBrowserShortcuts } from "@/hooks/useDisableBrowserShortcuts";
 import { usePreventBrowserDefaults } from "@/hooks/usePreventBrowserDefaults";
-import { translations, type Locale, type Translate } from "@/i18n";
+import { getTranslationMessage, type Locale, type Translate } from "@/i18n";
 import type { ThemeId } from "@/types";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import { themePresets } from "@/main/theme/themePresets";
@@ -164,7 +164,7 @@ export default function SubAppRoot() {
     backgroundVideoReplayIntervalSec;
   const t: Translate = useMemo(
     () => (key, vars) =>
-      formatMessage(translations[effectiveLocale][key] ?? key, vars),
+      formatMessage(getTranslationMessage(effectiveLocale, key), vars),
     [effectiveLocale],
   );
 

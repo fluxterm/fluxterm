@@ -16,7 +16,11 @@ import "@/App.css";
 import "@/components/ui/base-input.css";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
-import { translations, type Translate, type TranslationKey } from "@/i18n";
+import {
+  getTranslationMessage,
+  type Translate,
+  type TranslationKey,
+} from "@/i18n";
 import type { ConfigSectionKey } from "@/main/config/configNavigation";
 import TitleBar from "@/components/layout/TitleBar";
 import FloatingShell from "@/main/components/FloatingShell";
@@ -506,7 +510,8 @@ export default function AppShell() {
   const isMac = useMemo(() => isMacOS(), []);
 
   const t: Translate = useMemo(
-    () => (key, vars) => formatMessage(translations[locale][key] ?? key, vars),
+    () => (key, vars) =>
+      formatMessage(getTranslationMessage(locale, key), vars),
     [locale],
   );
   const appUpdater = useAppUpdater({
@@ -1053,8 +1058,23 @@ export default function AppShell() {
     layoutCollapsed,
     locale,
     themeId,
+    backgroundImageEnabled,
+    backgroundImageAsset,
+    backgroundImageSurfaceAlpha: normalizedBackgroundImageSurfaceAlpha,
+    backgroundMediaType: normalizedBackgroundMediaType,
+    backgroundRenderMode: normalizedBackgroundRenderMode,
+    backgroundVideoReplayMode: normalizedBackgroundVideoReplayMode,
+    backgroundVideoReplayIntervalSec:
+      normalizedBackgroundVideoReplayIntervalSec,
     setLocale,
     setThemeId,
+    setBackgroundImageEnabled,
+    setBackgroundImageAsset,
+    setBackgroundImageSurfaceAlpha,
+    setBackgroundMediaType,
+    setBackgroundRenderMode,
+    setBackgroundVideoReplayMode,
+    setBackgroundVideoReplayIntervalSec,
     onOpenCurrentDevtools: openCurrentDevtools,
     onMainShutdown: notifyMainShutdown,
   });

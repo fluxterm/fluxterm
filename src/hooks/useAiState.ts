@@ -13,7 +13,11 @@ import type {
   AiChatMessage,
   AiChatChunkPayload,
 } from "@/features/ai/types";
-import { translations, type Locale, type TranslationKey } from "@/i18n";
+import {
+  getTranslationMessage,
+  type Locale,
+  type TranslationKey,
+} from "@/i18n";
 import { translateAppError } from "@/shared/errors/appError";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 
@@ -126,7 +130,7 @@ export default function useAiState({
   const pendingRequestIdRef = useRef<string | null>(null);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const t = useCallback(
-    (key: TranslationKey) => translations[locale][key] ?? key,
+    (key: TranslationKey) => getTranslationMessage(locale, key),
     [locale],
   );
 

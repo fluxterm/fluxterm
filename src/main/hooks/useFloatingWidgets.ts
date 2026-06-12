@@ -12,6 +12,14 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import type { Locale } from "@/i18n";
 import {
+  normalizeBackgroundMediaType,
+  normalizeBackgroundRenderMode,
+  normalizeBackgroundVideoReplayMode,
+  type BackgroundMediaType,
+  type BackgroundRenderMode,
+  type BackgroundVideoReplayMode,
+} from "@/constants/backgroundMedia";
+import {
   FLOATING_WIDGET_WINDOW_HEIGHT,
   FLOATING_WIDGET_WINDOW_MIN_HEIGHT,
   FLOATING_WIDGET_WINDOW_MIN_WIDTH,
@@ -35,8 +43,22 @@ type useFloatingWidgetsProps = {
   layoutCollapsed: Record<"left" | "right" | "bottom", boolean>;
   locale: Locale;
   themeId: ThemeId;
+  backgroundImageEnabled: boolean;
+  backgroundImageAsset: string;
+  backgroundImageSurfaceAlpha: number;
+  backgroundMediaType: BackgroundMediaType;
+  backgroundRenderMode: BackgroundRenderMode;
+  backgroundVideoReplayMode: BackgroundVideoReplayMode;
+  backgroundVideoReplayIntervalSec: number;
   setLocale: (locale: Locale) => void;
   setThemeId: (themeId: ThemeId) => void;
+  setBackgroundImageEnabled: (enabled: boolean) => void;
+  setBackgroundImageAsset: (asset: string) => void;
+  setBackgroundImageSurfaceAlpha: (alpha: number) => void;
+  setBackgroundMediaType: (type: BackgroundMediaType) => void;
+  setBackgroundRenderMode: (mode: BackgroundRenderMode) => void;
+  setBackgroundVideoReplayMode: (mode: BackgroundVideoReplayMode) => void;
+  setBackgroundVideoReplayIntervalSec: (intervalSec: number) => void;
   onOpenCurrentDevtools?: () => void;
   onMainShutdown?: () => Promise<void> | void;
 };
@@ -82,8 +104,22 @@ export default function useFloatingWidgets({
   layoutCollapsed,
   locale,
   themeId,
+  backgroundImageEnabled,
+  backgroundImageAsset,
+  backgroundImageSurfaceAlpha,
+  backgroundMediaType,
+  backgroundRenderMode,
+  backgroundVideoReplayMode,
+  backgroundVideoReplayIntervalSec,
   setLocale,
   setThemeId,
+  setBackgroundImageEnabled,
+  setBackgroundImageAsset,
+  setBackgroundImageSurfaceAlpha,
+  setBackgroundMediaType,
+  setBackgroundRenderMode,
+  setBackgroundVideoReplayMode,
+  setBackgroundVideoReplayIntervalSec,
   onOpenCurrentDevtools,
   onMainShutdown,
 }: useFloatingWidgetsProps): FloatingWidgetsState {
@@ -108,6 +144,7 @@ export default function useFloatingWidgets({
 
   /** 主窗口向浮动窗口广播布局与外观状态，保证视觉与语言一致。 */
   const broadcastFloatState = useCallback(() => {
+    if (floatingWidgetKey) return;
     if (typeof BroadcastChannel === "undefined") return;
     const channel = floatSyncChannelRef.current;
     if (!channel) return;
@@ -115,10 +152,30 @@ export default function useFloatingWidgets({
       type: "layout",
       locale,
       themeId,
+      backgroundImageEnabled,
+      backgroundImageAsset,
+      backgroundImageSurfaceAlpha,
+      backgroundMediaType,
+      backgroundRenderMode,
+      backgroundVideoReplayMode,
+      backgroundVideoReplayIntervalSec,
       collapsed: layoutCollapsed,
       slots: slotGroups,
     });
-  }, [layoutCollapsed, locale, slotGroups, themeId]);
+  }, [
+    backgroundImageAsset,
+    backgroundImageEnabled,
+    backgroundImageSurfaceAlpha,
+    backgroundMediaType,
+    backgroundRenderMode,
+    backgroundVideoReplayIntervalSec,
+    backgroundVideoReplayMode,
+    floatingWidgetKey,
+    layoutCollapsed,
+    locale,
+    slotGroups,
+    themeId,
+  ]);
 
   const restoreWidgetFloating = useCallback((widget: WidgetKey) => {
     floatSyncChannelRef.current?.postMessage({
@@ -178,6 +235,13 @@ export default function useFloatingWidgets({
             widget?: string;
             locale?: Locale;
             themeId?: ThemeId;
+            backgroundImageEnabled?: boolean;
+            backgroundImageAsset?: string;
+            backgroundImageSurfaceAlpha?: number;
+            backgroundMediaType?: BackgroundMediaType;
+            backgroundRenderMode?: BackgroundRenderMode;
+            backgroundVideoReplayMode?: BackgroundVideoReplayMode;
+            backgroundVideoReplayIntervalSec?: number;
           }
         | undefined;
       if (!payload) return;
@@ -203,6 +267,43 @@ export default function useFloatingWidgets({
         if (normalizedThemeId) {
           setThemeId(normalizedThemeId);
         }
+        if (typeof payload.backgroundImageEnabled === "boolean") {
+          setBackgroundImageEnabled(payload.backgroundImageEnabled);
+        }
+        if (typeof payload.backgroundImageAsset === "string") {
+          setBackgroundImageAsset(payload.backgroundImageAsset);
+        }
+        if (
+          typeof payload.backgroundImageSurfaceAlpha === "number" &&
+          Number.isFinite(payload.backgroundImageSurfaceAlpha)
+        ) {
+          setBackgroundImageSurfaceAlpha(payload.backgroundImageSurfaceAlpha);
+        }
+        if (typeof payload.backgroundMediaType === "string") {
+          setBackgroundMediaType(
+            normalizeBackgroundMediaType(payload.backgroundMediaType),
+          );
+        }
+        if (typeof payload.backgroundRenderMode === "string") {
+          setBackgroundRenderMode(
+            normalizeBackgroundRenderMode(payload.backgroundRenderMode),
+          );
+        }
+        if (typeof payload.backgroundVideoReplayMode === "string") {
+          setBackgroundVideoReplayMode(
+            normalizeBackgroundVideoReplayMode(
+              payload.backgroundVideoReplayMode,
+            ),
+          );
+        }
+        if (
+          typeof payload.backgroundVideoReplayIntervalSec === "number" &&
+          Number.isFinite(payload.backgroundVideoReplayIntervalSec)
+        ) {
+          setBackgroundVideoReplayIntervalSec(
+            payload.backgroundVideoReplayIntervalSec,
+          );
+        }
       }
       if (payload.type === "devtools:open") {
         onOpenCurrentDevtools?.();
@@ -219,6 +320,13 @@ export default function useFloatingWidgets({
     dismissFloatingWidget,
     floatingWidgetKey,
     onOpenCurrentDevtools,
+    setBackgroundImageAsset,
+    setBackgroundImageEnabled,
+    setBackgroundImageSurfaceAlpha,
+    setBackgroundMediaType,
+    setBackgroundRenderMode,
+    setBackgroundVideoReplayIntervalSec,
+    setBackgroundVideoReplayMode,
     setLocale,
     setThemeId,
   ]);
