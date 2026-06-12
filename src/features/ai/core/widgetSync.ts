@@ -27,7 +27,8 @@ export type FloatingAiActionMessage =
   | { type: "ai:set-draft"; draft: string }
   | { type: "ai:send" }
   | { type: "ai:cancel" }
-  | { type: "ai:clear" };
+  | { type: "ai:clear" }
+  | { type: "ai:send-code-to-terminal"; code: string };
 
 /** 主窗口发往浮动 AI 面板的状态快照消息。 */
 export type FloatingAiSnapshotMessage = {

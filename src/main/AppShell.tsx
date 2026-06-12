@@ -1476,6 +1476,38 @@ export default function AppShell() {
     ],
   });
 
+  const fillCodeToActiveTerminal = useCallback(
+    async (code: string) => {
+      const sessionId = sessionState.activeSessionId;
+      if (!sessionId) {
+        sessionActions.setBusyMessage(t("quickbar.noSession"));
+        window.setTimeout(() => {
+          sessionActions.setBusyMessage((prev) =>
+            prev === t("quickbar.noSession") ? null : prev,
+          );
+        }, 1500);
+        return;
+      }
+
+      terminalActions.focusActiveTerminal();
+      const localMeta = sessionState.localSessionMeta[sessionId] ?? null;
+      const clearInputSequence =
+        sessionActions.isLocalSession(sessionId) &&
+        localMeta?.shellKind !== "wsl"
+          ? "\u001b"
+          : "\u0015";
+      await sessionActions.writeToSession(sessionId, clearInputSequence);
+      await sessionActions.writeToSession(sessionId, code);
+    },
+    [
+      sessionActions,
+      sessionState.activeSessionId,
+      sessionState.localSessionMeta,
+      t,
+      terminalActions,
+    ],
+  );
+
   useFloatingWidgetSnapshotSync<FloatingAiMessage>({
     channelName: WIDGET_AI_CHANNEL,
     floatingWidgetKey,
@@ -1527,6 +1559,9 @@ export default function AppShell() {
         case "ai:clear":
           aiState.clearMessages();
           break;
+        case "ai:send-code-to-terminal":
+          fillCodeToActiveTerminal(message.code).catch(() => {});
+          break;
         case "ai:snapshot":
           break;
       }
@@ -1549,6 +1584,7 @@ export default function AppShell() {
       aiState.pending,
       aiState.waitingFirstChunk,
       aiUnavailableMessage,
+      fillCodeToActiveTerminal,
       sessionState.activeSessionId,
     ],
   });
@@ -2282,18 +2318,28 @@ export default function AppShell() {
             clear: () => {
               postFloatingAiMessage({ type: "ai:clear" });
             },
+            sendCodeToTerminal: (code: string) => {
+              postFloatingAiMessage({
+                type: "ai:send-code-to-terminal",
+                code,
+              });
+            },
           }
         : {
             setDraft: aiState.setDraft,
             send: aiState.sendMessage,
             cancel: aiState.cancelMessage,
             clear: aiState.clearMessages,
+            sendCodeToTerminal: (code: string) => {
+              fillCodeToActiveTerminal(code).catch(() => {});
+            },
           },
     [
       aiState.cancelMessage,
       aiState.clearMessages,
       aiState.sendMessage,
       aiState.setDraft,
+      fillCodeToActiveTerminal,
       isFloatingAiWidget,
       postFloatingAiMessage,
     ],
@@ -2447,6 +2493,7 @@ export default function AppShell() {
         onAiSend: AiWidgetActions.send,
         onAiCancel: AiWidgetActions.cancel,
         onAiClear: AiWidgetActions.clear,
+        onAiSendCodeToTerminal: AiWidgetActions.sendCodeToTerminal,
         onAddGroup: addGroup,
         onRenameGroup: renameGroup,
         onRemoveGroup: removeGroup,

@@ -100,6 +100,7 @@ type buildWidgetsProps = {
   onAiSend: () => Promise<void>;
   onAiCancel: () => void;
   onAiClear: () => void;
+  onAiSendCodeToTerminal: (code: string) => void;
   onAddGroup: (groupName: string) => boolean;
   onRenameGroup: (from: string, to: string) => Promise<boolean>;
   onRemoveGroup: (groupName: string) => Promise<boolean>;
@@ -194,6 +195,7 @@ export function buildWidgets(
     onAiSend,
     onAiCancel,
     onAiClear,
+    onAiSendCodeToTerminal,
     onAddGroup,
     onRenameGroup,
     onRemoveGroup,
@@ -362,6 +364,7 @@ export function buildWidgets(
           onSend={onAiSend}
           onCancel={onAiCancel}
           onClear={onAiClear}
+          onSendCodeToTerminal={onAiSendCodeToTerminal}
           t={t}
         />
       </Suspense>

@@ -1,11 +1,111 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import ReactMarkdown from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
+import { FiCopy, FiTerminal } from "react-icons/fi";
 import remarkGfm from "remark-gfm";
 import Button from "@/components/ui/button";
 import type { Translate } from "@/i18n";
 import type { AiChatMessage } from "@/features/ai/types";
 import "./AiWidget.css";
+
+type AiCodeBlockProps = {
+  activeSessionId: string | null;
+  code: string;
+  copied: boolean;
+  language: string | null;
+  onCopy: () => void;
+  onSendCodeToTerminal: (code: string) => void;
+  t: Translate;
+};
+
+type MarkdownElement = NonNullable<ExtraProps["node"]>;
+type MarkdownChild = MarkdownElement["children"][number];
+
+/** AI 输出中的代码块工具容器。 */
+function AiCodeBlock({
+  activeSessionId,
+  code,
+  copied,
+  language,
+  onCopy,
+  onSendCodeToTerminal,
+  t,
+}: AiCodeBlockProps) {
+  return (
+    <div className="ai-code-block" data-ui="ai-code-block">
+      <div className="ai-code-toolbar">
+        <span className="ai-code-language">
+          {language ?? t("ai.code.plainText")}
+        </span>
+        <span className="ai-code-actions">
+          <button
+            type="button"
+            className="ai-code-action"
+            title={copied ? t("actions.copied") : t("ai.code.copy")}
+            aria-label={copied ? t("actions.copied") : t("ai.code.copy")}
+            onClick={onCopy}
+          >
+            <FiCopy />
+          </button>
+          <button
+            type="button"
+            className="ai-code-action"
+            title={
+              activeSessionId
+                ? t("ai.code.fillTerminal")
+                : t("ai.code.noSession")
+            }
+            aria-label={
+              activeSessionId
+                ? t("ai.code.fillTerminal")
+                : t("ai.code.noSession")
+            }
+            disabled={!activeSessionId}
+            onClick={() => onSendCodeToTerminal(code)}
+          >
+            <FiTerminal />
+          </button>
+        </span>
+      </div>
+      <pre className="ai-code-pre">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+/** 从 HAST code 节点提取文本，避免依赖 React 子节点结构。 */
+function extractHastText(node: MarkdownChild | undefined): string {
+  if (!node) return "";
+  if (node.type === "text") return node.value;
+  if (node.type !== "element") return "";
+  return node.children
+    .map((child: MarkdownChild) => extractHastText(child))
+    .join("");
+}
+
+/** 为代码块生成稳定短 key，避免不同代码块共享复制状态。 */
+function createCodeBlockKey(language: string | null, code: string): string {
+  let hash = 0;
+  const source = `${language ?? "plain"}\n${code}`;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) | 0;
+  }
+  return `code-${language ?? "plain"}-${source.length}-${hash.toString(36)}`;
+}
+
+/** 获取最新用户消息 key，用于识别新一轮提问。 */
+function getLatestUserMessageKey(messages: AiChatMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === "user") {
+      return message.id ?? `${index}-${message.content}`;
+    }
+  }
+  return null;
+}
 
 /**
  * AI 会话面板视图组件。
@@ -26,6 +126,7 @@ type AiWidgetProps = {
   onSend: () => Promise<void>;
   onCancel: () => void;
   onClear: () => void;
+  onSendCodeToTerminal: (code: string) => void;
   t: Translate;
 };
 
@@ -44,16 +145,25 @@ export default function AiWidget({
   onSend,
   onCancel,
   onClear,
+  onSendCodeToTerminal,
   t,
 }: AiWidgetProps) {
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const onSendCodeToTerminalRef = useRef(onSendCodeToTerminal);
+  const userPausedAutoScrollRef = useRef(false);
+  const lastWheelUpAtRef = useRef(0);
+  const latestUserMessageKeyRef = useRef<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [localDraft, setLocalDraft] = useState(draft);
   const [isComposing, setIsComposing] = useState(false);
   const canChat = !!activeSessionId && !pending && aiAvailable;
   const textareaValue = keepLocalDraftBuffer ? localDraft : draft;
+
+  useEffect(() => {
+    onSendCodeToTerminalRef.current = onSendCodeToTerminal;
+  }, [onSendCodeToTerminal]);
 
   useEffect(() => {
     if (!autoScroll) return;
@@ -66,10 +176,30 @@ export default function AiWidget({
   useEffect(() => {
     if (pending) {
       setTimeout(() => {
-        setAutoScroll(true);
+        if (!userPausedAutoScrollRef.current) {
+          setAutoScroll(true);
+        }
       }, 0);
     }
   }, [pending]);
+
+  useEffect(() => {
+    const latestUserMessageKey = getLatestUserMessageKey(messages);
+    if (!latestUserMessageKey) {
+      latestUserMessageKeyRef.current = null;
+      userPausedAutoScrollRef.current = false;
+      lastWheelUpAtRef.current = 0;
+      queueMicrotask(() => setAutoScroll(true));
+      return;
+    }
+
+    if (latestUserMessageKeyRef.current === latestUserMessageKey) return;
+
+    latestUserMessageKeyRef.current = latestUserMessageKey;
+    userPausedAutoScrollRef.current = false;
+    lastWheelUpAtRef.current = 0;
+    queueMicrotask(() => setAutoScroll(true));
+  }, [messages]);
 
   useEffect(() => {
     if (keepLocalDraftBuffer && isComposing) return;
@@ -88,13 +218,67 @@ export default function AiWidget({
     textarea.style.height = `${nextHeight}px`;
   }, [textareaValue]);
 
-  async function copyMessage(content: string, key: string) {
+  const copyMessage = useCallback(async (content: string, key: string) => {
     await writeText(content);
     setCopiedKey(key);
     window.setTimeout(() => {
       setCopiedKey((current) => (current === key ? null : current));
     }, 1500);
-  }
+  }, []);
+
+  const markdownComponents = useMemo<Components>(
+    () => ({
+      a: ({ ...props }) => (
+        <a {...props} target="_blank" rel="noreferrer noopener" />
+      ),
+      pre: ({
+        children,
+        node,
+      }: {
+        children?: ReactNode;
+        node?: MarkdownElement;
+      }) => {
+        const codeNode = node?.children.find(
+          (child: MarkdownChild): child is MarkdownElement =>
+            child.type === "element" && child.tagName === "code",
+        );
+        if (!codeNode) {
+          return <pre>{children}</pre>;
+        }
+        const className =
+          typeof codeNode.properties.className === "string"
+            ? codeNode.properties.className
+            : Array.isArray(codeNode.properties.className)
+              ? codeNode.properties.className.join(" ")
+              : "";
+        const languageMatch = /language-([\w-]+)/.exec(className ?? "");
+        const code = extractHastText(codeNode).replace(/\n$/, "");
+        const language = languageMatch?.[1] ?? null;
+        const key = createCodeBlockKey(language, code);
+        return (
+          <AiCodeBlock
+            activeSessionId={activeSessionId}
+            code={code}
+            copied={copiedKey === key}
+            language={language}
+            onCopy={() => {
+              copyMessage(code, key).catch(() => {});
+            }}
+            onSendCodeToTerminal={(code) => {
+              onSendCodeToTerminalRef.current(code);
+            }}
+            t={t}
+          />
+        );
+      },
+      code: ({ children, className, ...props }) => (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      ),
+    }),
+    [activeSessionId, copiedKey, copyMessage, t],
+  );
 
   function renderMessageBody(message: AiChatMessage) {
     if (!message.content && pending && message.role === "assistant") {
@@ -139,11 +323,7 @@ export default function AiWidget({
       return (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          components={{
-            a: ({ ...props }) => (
-              <a {...props} target="_blank" rel="noreferrer noopener" />
-            ),
-          }}
+          components={markdownComponents}
         >
           {message.content}
         </ReactMarkdown>
@@ -178,12 +358,32 @@ export default function AiWidget({
       <div
         ref={messagesRef}
         className="ai-widget-messages"
+        onWheel={(event) => {
+          if (event.deltaY < 0) {
+            lastWheelUpAtRef.current = Date.now();
+            userPausedAutoScrollRef.current = true;
+            setAutoScroll(false);
+          }
+        }}
         onScroll={(event) => {
           const element = event.currentTarget;
           // 用户离开底部后暂停自动滚动，避免阅读历史消息时被新消息打断。
-          const nearBottom =
-            element.scrollHeight - element.scrollTop - element.clientHeight <
-            24;
+          const bottomDistance =
+            element.scrollHeight - element.scrollTop - element.clientHeight;
+          const nearBottom = bottomDistance < 4;
+          if (userPausedAutoScrollRef.current) {
+            const recentWheelUp = Date.now() - lastWheelUpAtRef.current < 250;
+            if (nearBottom && !recentWheelUp) {
+              userPausedAutoScrollRef.current = false;
+              setAutoScroll(true);
+              return;
+            }
+            setAutoScroll(false);
+            return;
+          }
+          if (nearBottom) {
+            userPausedAutoScrollRef.current = false;
+          }
           setAutoScroll(nearBottom);
         }}
       >
@@ -198,7 +398,7 @@ export default function AiWidget({
         )}
         {messages.map((message, index) => (
           <div
-            key={`${message.role}-${index}-${message.content.slice(0, 20)}`}
+            key={message.id ?? `${message.role}-${index}`}
             className={`ai-message ${message.role === "user" ? "user" : "assistant"}`}
           >
             <div className="ai-message-toolbar">
