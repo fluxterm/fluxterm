@@ -296,6 +296,15 @@ export default function HostWidget({
   function buildRootBlankMenuItems(): ContextMenuItem[] {
     return [
       {
+        label: t("profile.menu.new"),
+        icon: <FiPlus />,
+        disabled: false,
+        onClick: () => {
+          setMenu(null);
+          onOpenNewProfile();
+        },
+      },
+      {
         label: t("host.addGroup"),
         icon: <FiFolderPlus />,
         disabled: false,
@@ -308,15 +317,6 @@ export default function HostWidget({
         onClick: () => {
           setMenu(null);
           onImportOpenSshConfig();
-        },
-      },
-      {
-        label: t("profile.menu.new"),
-        icon: <FiPlus />,
-        disabled: false,
-        onClick: () => {
-          setMenu(null);
-          onOpenNewProfile();
         },
       },
     ];
