@@ -244,8 +244,6 @@ pub fn ai_session_chat_stream_cancel(
     cancel_chat_stream(&state, &request_id)
 }
 
-
-
 fn build_cache_key(label: &str, value: &impl Serialize) -> Result<String, EngineError> {
     let serialized = serde_json::to_string(value).map_err(|err| {
         EngineError::with_detail(

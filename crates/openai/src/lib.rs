@@ -14,7 +14,6 @@ pub mod types;
 pub use crate::client::{chat_session, chat_session_stream, test_connection};
 pub use crate::error::OpenAiError;
 pub use crate::types::{
-    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput,
-    OpenAiSessionChatResponse, OpenAiSessionChatStreamInput, ResponseLanguageStrategy,
-    SessionContextSnapshot,
+    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput, OpenAiSessionChatResponse,
+    OpenAiSessionChatStreamInput, ResponseLanguageStrategy, SessionContextSnapshot,
 };

@@ -10,8 +10,8 @@ use crate::error::OpenAiError;
 use crate::prompts::build_session_chat_messages;
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
-    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput,
-    OpenAiSessionChatResponse, OpenAiSessionChatStreamInput,
+    ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput, OpenAiSessionChatResponse,
+    OpenAiSessionChatStreamInput,
 };
 
 #[derive(Debug, Serialize)]
@@ -37,8 +37,6 @@ pub async fn chat_session(
     let messages = build_session_chat_messages(&input);
     complete_chat(config, messages, "session_chat").await
 }
-
-
 
 /// 以流式方式执行会话上下文问答。
 pub async fn chat_session_stream(

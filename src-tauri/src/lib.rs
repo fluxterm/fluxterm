@@ -30,8 +30,8 @@ use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
 use crate::commands::ai::{
-    ai_provider_test, ai_session_chat, ai_session_chat_stream_cancel,
-    ai_session_chat_stream_start, ai_settings_get, ai_settings_save,
+    ai_provider_test, ai_session_chat, ai_session_chat_stream_cancel, ai_session_chat_stream_start,
+    ai_settings_get, ai_settings_save,
 };
 use crate::commands::file::file_open;
 use crate::commands::local::{local_home, local_list, local_ssh_keys};

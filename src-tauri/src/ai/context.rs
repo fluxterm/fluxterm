@@ -4,8 +4,8 @@ use std::collections::HashSet;
 
 use engine::EngineError;
 use openai::{
-    ChatMessage, OpenAiSessionChatInput, OpenAiSessionChatStreamInput,
-    ResponseLanguageStrategy, SessionContextSnapshot,
+    ChatMessage, OpenAiSessionChatInput, OpenAiSessionChatStreamInput, ResponseLanguageStrategy,
+    SessionContextSnapshot,
 };
 
 use crate::ai::{AiRuntimeState, SessionContextRecord, with_store};
@@ -31,8 +31,6 @@ pub struct AiSessionChatStreamRequest {
     pub ui_language: String,
     pub messages: Vec<ChatMessage>,
 }
-
-
 
 /// 从运行时缓存构建会话上下文问答输入。
 pub fn build_session_chat_input(
@@ -82,8 +80,6 @@ pub fn build_session_chat_stream_input(
         })
     })
 }
-
-
 
 fn build_session_context_snapshot(
     session: &SessionContextRecord,
@@ -254,8 +250,6 @@ mod tests {
         assert_eq!(input.context.platform.as_deref(), Some("windows"));
         assert_eq!(input.messages.len(), 1);
     }
-
-
 
     #[test]
     fn build_session_chat_input_applies_recent_output_budget() {
