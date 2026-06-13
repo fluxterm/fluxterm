@@ -78,7 +78,10 @@ pub async fn authenticate(
                     if !remaining_methods.contains(&MethodKind::Password) {
                         return Err(EngineError::new("ssh_auth_failed", "目标不支持密码认证"));
                     }
-                    return Err(EngineError::new("ssh_auth_failed", "密码错误"));
+                    return Err(EngineError::new(
+                        "ssh_auth_failed",
+                        "认证被服务器拒绝，请检查用户名、密码或目标主机登录策略（例如 root 登录权限）",
+                    ));
                 }
             }
         }
