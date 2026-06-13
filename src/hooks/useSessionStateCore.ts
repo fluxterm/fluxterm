@@ -43,6 +43,7 @@ import {
   disconnectSessionCommand,
   reconnectLocalShellCommand,
 } from "@/features/session/core/commands";
+import { translateAppError } from "@/shared/errors/appError";
 
 const appEventStorageKey = "fluxterm.appEvents";
 const maxAppEvents = 10;
@@ -601,10 +602,11 @@ export default function useSessionState({
           ...prev,
           [payload.sessionId]: payload.state,
         }));
-        if (payload.state === "error" && payload.error?.message) {
-          setBusyMessage(payload.error.message);
-        }
         if (payload.state === "error") {
+          const errorMessage = payload.error
+            ? translateAppError(payload.error, t)
+            : t("log.unknownError");
+          setBusyMessage(errorMessage);
           setSessionReasons((prev) => ({
             ...prev,
             [payload.sessionId]: "network",
@@ -622,7 +624,7 @@ export default function useSessionState({
             titleKey: "log.event.error",
             vars: {
               name: label,
-              detail: payload.error?.message ?? t("log.unknownError"),
+              detail: errorMessage,
             },
             details: payload.error ? { ...payload.error } : undefined,
           });
@@ -640,7 +642,7 @@ export default function useSessionState({
             errorDialogShownRef.current[payload.sessionId] = true;
             openDialog({
               title: t("dialog.sshErrorTitle"),
-              message: payload.error?.message ?? t("dialog.sshErrorBody"),
+              message: errorMessage || t("dialog.sshErrorBody"),
               confirmLabel: t("actions.close"),
             });
           }

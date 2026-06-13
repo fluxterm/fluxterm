@@ -2,7 +2,7 @@
  * 应用统一错误模型。
  * 职责：将未知异常归一化为可读、可记录、可扩展的标准错误结构。
  */
-import type { Translate, TranslationKey } from "@/i18n";
+import { translations, type Translate, type TranslationKey } from "@/i18n";
 
 /** 应用错误来源。 */
 export type AppErrorSource = "tauri" | "frontend";
@@ -101,7 +101,22 @@ export function translateAppError(error: unknown, t: Translate): string {
   const code = resolveErrorCode(error);
   const key = code ? ERROR_CODE_TRANSLATIONS[code] : null;
   if (key) return t(key);
-  return extractErrorMessage(error);
+  const message = extractErrorMessage(error);
+  const messageKey = findTranslationKey(message);
+  if (messageKey) return t(messageKey);
+  return message;
+}
+
+/** 从后端错误文本中识别前端翻译键。 */
+function findTranslationKey(value: string): TranslationKey | null {
+  const trimmed = value.trim();
+  if (isTranslationKey(trimmed)) return trimmed;
+  return TRANSLATION_KEYS.find((key) => trimmed.includes(key)) ?? null;
+}
+
+/** 判断文本是否为前端翻译键。 */
+function isTranslationKey(value: string): value is TranslationKey {
+  return TRANSLATION_KEYS.includes(value as TranslationKey);
 }
 
 function pickNestedMessage(value: unknown): string | null {
@@ -193,3 +208,5 @@ const ERROR_CODE_TRANSLATIONS: Partial<Record<string, TranslationKey>> = {
   remote_edit_workspace_invalid: "sftp.remoteEdit.workspaceInvalid",
   remote_edit_index_failed: "sftp.remoteEdit.workspaceInvalid",
 };
+
+const TRANSLATION_KEYS = Object.keys(translations["zh-CN"]) as TranslationKey[];

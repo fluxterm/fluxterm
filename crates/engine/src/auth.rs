@@ -12,6 +12,18 @@ use crate::session::ClientHandler;
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{AuthType, HostProfile};
 
+const SSH_AUTH_MISSING_PASSWORD: &str = "error.ssh.auth.missingPassword";
+const SSH_AUTH_PASSWORD_FAILED: &str = "error.ssh.auth.passwordFailed";
+const SSH_AUTH_PASSWORD_UNSUPPORTED: &str = "error.ssh.auth.passwordUnsupported";
+const SSH_AUTH_REJECTED: &str = "error.ssh.auth.rejected";
+const SSH_AUTH_MISSING_PRIVATE_KEY: &str = "error.ssh.auth.missingPrivateKey";
+const SSH_AUTH_PUBLIC_KEY_FAILED: &str = "error.ssh.auth.publicKeyFailed";
+const SSH_AUTH_PUBLIC_KEY_UNSUPPORTED: &str = "error.ssh.auth.publicKeyUnsupported";
+const SSH_AUTH_PUBLIC_KEY_REJECTED: &str = "error.ssh.auth.publicKeyRejected";
+const SSH_AUTH_AGENT_UNSUPPORTED: &str = "error.ssh.auth.agentUnsupported";
+const SSH_AUTH_NOT_AUTHENTICATED: &str = "error.ssh.auth.notAuthenticated";
+const SSH_AUTH_KEY_READ_FAILED: &str = "error.ssh.auth.keyReadFailed";
+
 /// SSH 认证用途，用于区分会话连接与资源监控等链路。
 #[derive(Clone, Copy)]
 pub enum AuthPurpose {
@@ -58,62 +70,78 @@ pub async fn authenticate(
             "authType": format!("{:?}", profile.auth_type),
         }),
     );
-    let authenticated = match profile.auth_type {
-        AuthType::Password => {
-            let password = profile
-                .password_ref
-                .clone()
-                .ok_or_else(|| EngineError::new("ssh_auth_failed", "缺少密码"))?;
-            let result = session
-                .authenticate_password(profile.username.clone(), password)
-                .await
-                .map_err(|err| {
-                    EngineError::with_detail("ssh_auth_failed", "密码认证失败", err.to_string())
+    let authenticated =
+        match profile.auth_type {
+            AuthType::Password => {
+                let password = profile.password_ref.clone().ok_or_else(|| {
+                    EngineError::new("ssh_auth_failed", SSH_AUTH_MISSING_PASSWORD)
                 })?;
-            match result {
-                AuthResult::Success => result,
-                AuthResult::Failure {
-                    remaining_methods, ..
-                } => {
-                    if !remaining_methods.contains(&MethodKind::Password) {
-                        return Err(EngineError::new("ssh_auth_failed", "目标不支持密码认证"));
+                let result = session
+                    .authenticate_password(profile.username.clone(), password)
+                    .await
+                    .map_err(|err| {
+                        EngineError::with_detail(
+                            "ssh_auth_failed",
+                            SSH_AUTH_PASSWORD_FAILED,
+                            err.to_string(),
+                        )
+                    })?;
+                match result {
+                    AuthResult::Success => result,
+                    AuthResult::Failure {
+                        remaining_methods, ..
+                    } => {
+                        if !remaining_methods.contains(&MethodKind::Password) {
+                            return Err(EngineError::new(
+                                "ssh_auth_failed",
+                                SSH_AUTH_PASSWORD_UNSUPPORTED,
+                            ));
+                        }
+                        return Err(EngineError::new("ssh_auth_failed", SSH_AUTH_REJECTED));
                     }
-                    return Err(EngineError::new(
-                        "ssh_auth_failed",
-                        "认证被服务器拒绝，请检查用户名、密码或目标主机登录策略（例如 root 登录权限）",
-                    ));
                 }
             }
-        }
-        AuthType::PrivateKey => {
-            let key_path = profile
-                .private_key_path
-                .clone()
-                .ok_or_else(|| EngineError::new("ssh_auth_failed", "缺少私钥路径"))?;
-            let key = load_key(&key_path, profile.private_key_passphrase_ref.as_deref())?;
-            let key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
-            let result = session
-                .authenticate_publickey(profile.username.clone(), key)
-                .await
-                .map_err(|err| {
-                    EngineError::with_detail("ssh_auth_failed", "密钥认证失败", err.to_string())
+            AuthType::PrivateKey => {
+                let key_path = profile.private_key_path.clone().ok_or_else(|| {
+                    EngineError::new("ssh_auth_failed", SSH_AUTH_MISSING_PRIVATE_KEY)
                 })?;
-            match result {
-                AuthResult::Success => result,
-                AuthResult::Failure {
-                    remaining_methods, ..
-                } => {
-                    if !remaining_methods.contains(&MethodKind::PublicKey) {
-                        return Err(EngineError::new("ssh_auth_failed", "目标不支持私钥认证"));
+                let key = load_key(&key_path, profile.private_key_passphrase_ref.as_deref())?;
+                let key = PrivateKeyWithHashAlg::new(Arc::new(key), None);
+                let result = session
+                    .authenticate_publickey(profile.username.clone(), key)
+                    .await
+                    .map_err(|err| {
+                        EngineError::with_detail(
+                            "ssh_auth_failed",
+                            SSH_AUTH_PUBLIC_KEY_FAILED,
+                            err.to_string(),
+                        )
+                    })?;
+                match result {
+                    AuthResult::Success => result,
+                    AuthResult::Failure {
+                        remaining_methods, ..
+                    } => {
+                        if !remaining_methods.contains(&MethodKind::PublicKey) {
+                            return Err(EngineError::new(
+                                "ssh_auth_failed",
+                                SSH_AUTH_PUBLIC_KEY_UNSUPPORTED,
+                            ));
+                        }
+                        return Err(EngineError::new(
+                            "ssh_auth_failed",
+                            SSH_AUTH_PUBLIC_KEY_REJECTED,
+                        ));
                     }
-                    return Err(EngineError::new("ssh_auth_failed", "私钥认证失败"));
                 }
             }
-        }
-        AuthType::Agent => {
-            return Err(EngineError::new("ssh_auth_failed", "Agent 认证暂未实现"));
-        }
-    };
+            AuthType::Agent => {
+                return Err(EngineError::new(
+                    "ssh_auth_failed",
+                    SSH_AUTH_AGENT_UNSUPPORTED,
+                ));
+            }
+        };
 
     if !authenticated.success() {
         log_telemetry(
@@ -126,12 +154,15 @@ pub async fn authenticate(
                 "authType": format!("{:?}", profile.auth_type),
                 "error": {
                     "code": "ssh_auth_failed",
-                    "message": "认证未成功",
+                    "message": SSH_AUTH_NOT_AUTHENTICATED,
                     "detail": Option::<String>::None,
                 }
             }),
         );
-        return Err(EngineError::new("ssh_auth_failed", "认证未成功"));
+        return Err(EngineError::new(
+            "ssh_auth_failed",
+            SSH_AUTH_NOT_AUTHENTICATED,
+        ));
     }
 
     log_telemetry(
@@ -149,6 +180,7 @@ pub async fn authenticate(
 
 /// 从本地读取密钥文件。
 fn load_key(path: &str, passphrase: Option<&str>) -> Result<keys::PrivateKey, EngineError> {
-    keys::load_secret_key(Path::new(path), passphrase)
-        .map_err(|err| EngineError::with_detail("ssh_auth_failed", "无法读取密钥", err.to_string()))
+    keys::load_secret_key(Path::new(path), passphrase).map_err(|err| {
+        EngineError::with_detail("ssh_auth_failed", SSH_AUTH_KEY_READ_FAILED, err.to_string())
+    })
 }

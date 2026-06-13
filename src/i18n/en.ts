@@ -98,6 +98,21 @@ export const enUsTranslations = {
     "Strong protection is not enabled, so the password cannot be changed",
   "error.securityUnlockUnavailable":
     "Strong protection is not enabled, so unlocking is not required",
+  "error.ssh.auth.missingPassword": "Password is required",
+  "error.ssh.auth.passwordFailed": "Password authentication failed",
+  "error.ssh.auth.passwordUnsupported":
+    "The target does not support password authentication",
+  "error.ssh.auth.rejected":
+    "Authentication was rejected by the server. Check the username, password, or target host login policy, such as root login permission.",
+  "error.ssh.auth.missingPrivateKey": "Private key path is required",
+  "error.ssh.auth.publicKeyFailed": "Key authentication failed",
+  "error.ssh.auth.publicKeyUnsupported":
+    "The target does not support private key authentication",
+  "error.ssh.auth.publicKeyRejected": "Private key authentication failed",
+  "error.ssh.auth.agentUnsupported":
+    "Agent authentication is not implemented yet",
+  "error.ssh.auth.notAuthenticated": "Authentication did not complete",
+  "error.ssh.auth.keyReadFailed": "Unable to read the key",
   "config.app.sftpEnabled": "Enable SFTP",
   "config.app.sftpEnabledHint":
     "Enable file browsing, upload, and download for remote hosts in the file widget.",
