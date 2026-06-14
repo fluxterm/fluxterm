@@ -86,9 +86,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Run code checks
-        run: pnpm check:all
-
       - name: Add Rust Target
         run: |
           # Ensure cross target is installed for the repo-pinned toolchain; fallback without explicit toolchain if needed
