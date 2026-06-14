@@ -1,6 +1,6 @@
 name: Private Release
 
-run-name: "Version ${{ inputs.tag_name }}"
+run-name: "Private Version ${{ inputs.tag_name }}"
 
 env:
   NODE_VERSION: "24"

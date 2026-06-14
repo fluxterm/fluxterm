@@ -1,6 +1,6 @@
 name: Public Release
 
-run-name: "Version ${{ inputs.tag_name }}"
+run-name: "Public Version ${{ inputs.tag_name }}"
 
 env:
   NODE_VERSION: "24"
