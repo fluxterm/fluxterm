@@ -1,0 +1,158 @@
+name: Release Build
+
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: "App version (e.g. 0.1.0-rc.1)"
+        required: true
+        type: string
+      release_name:
+        description: "The name of the release."
+        required: true
+        type: string
+      release_target:
+        description: "Release target."
+        required: true
+        type: string
+      release_owner:
+        description: "Target release owner for public release."
+        required: false
+        type: string
+        default: ""
+      release_repo:
+        description: "Target release repository for public release."
+        required: false
+        type: string
+        default: ""
+      release_commitish:
+        description: "Target release commitish for public release."
+        required: false
+        type: string
+        default: ""
+    secrets:
+      FLUXTERM_RELEASE_TOKEN:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: true
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -e "const fs=require('fs'); const cfg=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')); process.stdout.write(cfg.version);")
+
+          if [ "${{ inputs.tag_name }}" != "$version" ]; then
+            echo "Input tag_name (${{ inputs.tag_name }}) does not match src-tauri/tauri.conf.json version ($version)." >&2
+            exit 1
+          fi
+
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          prefix-key: "v1-rust"
+          key: "rust-shared-stable-${{ matrix.os }}-${{ matrix.target }}"
+          workspaces: |
+            . -> target
+          cache-all-crates: true
+          cache-workspace-crates: true
+
+      - name: Install dependencies (ubuntu only)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxslt1.1 libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Install x86 OpenSSL (macOS only)
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          arch -x86_64 brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl@3)/include" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl@3)/lib" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-env
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Add Rust Target
+        run: |
+          # Ensure cross target is installed for the repo-pinned toolchain; fallback without explicit toolchain if needed
+          rustup target add ${{ matrix.target }} || rustup target add ${{ matrix.target }}
+          rustup target list --installed
+          echo "Rust target ${{ matrix.target }} installed."
+
+      - name: Tauri build and upload private
+        if: inputs.release_target == 'private'
+        uses: tauri-apps/tauri-action@v0.6.1
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: ${{ inputs.release_name == 'Version' && 'Version __VERSION__' || inputs.release_name }}
+          releaseBody: "Draft release, will be updated later."
+          releaseDraft: true
+          prerelease: true
+          tauriScript: pnpm
+          args: --target ${{ matrix.target }}
+          includeUpdaterJson: true
+
+      - name: Tauri build and upload public
+        if: inputs.release_target == 'public'
+        uses: tauri-apps/tauri-action@v0.6.1
+        env:
+          NODE_OPTIONS: "--max_old_space_size=4096"
+          GITHUB_TOKEN: ${{ secrets.FLUXTERM_RELEASE_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: ${{ inputs.release_owner }}
+          repo: ${{ inputs.release_repo }}
+          releaseCommitish: ${{ inputs.release_commitish }}
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: ${{ inputs.release_name == 'Version' && 'Version __VERSION__' || inputs.release_name }}
+          releaseBody: "Draft release, will be updated later."
+          releaseDraft: true
+          prerelease: true
+          tauriScript: pnpm
+          args: --target ${{ matrix.target }}
+          includeUpdaterJson: true
