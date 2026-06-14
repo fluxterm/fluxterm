@@ -113,6 +113,9 @@ export const enUsTranslations = {
     "Agent authentication is not implemented yet",
   "error.ssh.auth.notAuthenticated": "Authentication did not complete",
   "error.ssh.auth.keyReadFailed": "Unable to read the key",
+  "error.ssh.hostKey.probeTimeout": "Fetching the target host key timed out",
+  "error.ssh.hostKey.probeLockFailed": "Host key probe state is unavailable",
+  "error.ssh.hostKey.probeFailed": "Unable to fetch the target host key",
   "config.app.sftpEnabled": "Enable SFTP",
   "config.app.sftpEnabledHint":
     "Enable file browsing, upload, and download for remote hosts in the file widget.",

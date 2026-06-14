@@ -6,6 +6,16 @@ export type AuthType = "password" | "privateKey" | "agent";
 /** 终端 Bell 响应模式。 */
 export type TerminalBellMode = "silent" | "sound";
 
+/** 后端标准错误视图。 */
+export type EngineErrorView = {
+  code: string;
+  message: string;
+  messageKey?: string | null;
+  messageVars?: Record<string, string | number> | null;
+  detail?: string | null;
+  details?: string | null;
+};
+
 /** 主机配置数据。 */
 export type HostProfile = {
   id: string;
@@ -41,12 +51,7 @@ export type Session = {
   profileId: string;
   state: "connecting" | "connected" | "disconnected" | "error";
   createdAt: number;
-  lastError?: {
-    code: string;
-    message: string;
-    detail?: string | null;
-    details?: string | null;
-  } | null;
+  lastError?: EngineErrorView | null;
 };
 
 /** SSH 配置列表中的连接中状态。 */
@@ -196,12 +201,7 @@ export type SshTunnelRuntime = {
   bytesIn: number;
   bytesOut: number;
   activeConnections: number;
-  lastError?: {
-    code: string;
-    message: string;
-    detail?: string | null;
-    details?: string | null;
-  } | null;
+  lastError?: EngineErrorView | null;
 };
 
 /** 代理协议类型。 */
@@ -241,12 +241,7 @@ export type ProxyRuntime = {
   bytesIn: number;
   bytesOut: number;
   activeConnections: number;
-  lastError?: {
-    code: string;
-    message: string;
-    detail?: string | null;
-    details?: string | null;
-  } | null;
+  lastError?: EngineErrorView | null;
 };
 
 /** RDP 分辨率模式。 */
@@ -322,12 +317,7 @@ export type RdpSessionSnapshot = {
   width: number;
   height: number;
   wsUrl?: string | null;
-  lastError?: {
-    code: string;
-    message: string;
-    detail?: string | null;
-    details?: string | null;
-  } | null;
+  lastError?: EngineErrorView | null;
   certificatePrompt?: RdpCertificatePrompt | null;
 };
 

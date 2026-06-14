@@ -21,6 +21,9 @@ pub struct HostKeyProbe {
 /// Host Key 预检的连接超时秒数。
 /// 目标不可达或端口未开放时，避免前端长时间无响应。
 const SSH_HOST_KEY_PROBE_TIMEOUT_SECS: u64 = 8;
+const SSH_HOST_KEY_PROBE_TIMEOUT: &str = "error.ssh.hostKey.probeTimeout";
+const SSH_HOST_KEY_PROBE_LOCK_FAILED: &str = "error.ssh.hostKey.probeLockFailed";
+const SSH_HOST_KEY_PROBE_FAILED: &str = "error.ssh.hostKey.probeFailed";
 
 #[derive(Clone)]
 struct ProbeHandler {
@@ -63,17 +66,24 @@ pub async fn probe_host_key(profile: &HostProfile) -> Result<HostKeyProbe, Engin
     .map_err(|_| {
         EngineError::with_detail(
             "ssh_host_key_probe_failed",
-            "无法获取目标主机的 Host Key（连接超时）",
+            "Unable to fetch the target host key before the connection timed out",
             format!(
                 "host={} port={} timeout={}s",
                 profile.host, profile.port, SSH_HOST_KEY_PROBE_TIMEOUT_SECS
             ),
         )
+        .with_message_key(SSH_HOST_KEY_PROBE_TIMEOUT)
     })?;
 
     let captured = key
         .lock()
-        .map_err(|_| EngineError::new("ssh_host_key_probe_failed", "Host Key 预检失败"))?
+        .map_err(|_| {
+            EngineError::localized(
+                "ssh_host_key_probe_failed",
+                "Host key probe state is unavailable",
+                SSH_HOST_KEY_PROBE_LOCK_FAILED,
+            )
+        })?
         .clone();
 
     if let Some(public_key) = captured {
@@ -87,13 +97,15 @@ pub async fn probe_host_key(profile: &HostProfile) -> Result<HostKeyProbe, Engin
     connect_result.map_err(|err| {
         EngineError::with_detail(
             "ssh_host_key_probe_failed",
-            "无法获取目标主机的 Host Key",
+            "Unable to fetch the target host key",
             err.to_string(),
         )
+        .with_message_key(SSH_HOST_KEY_PROBE_FAILED)
     })?;
 
-    Err(EngineError::new(
+    Err(EngineError::localized(
         "ssh_host_key_probe_failed",
-        "无法获取目标主机的 Host Key",
+        "Unable to fetch the target host key",
+        SSH_HOST_KEY_PROBE_FAILED,
     ))
 }

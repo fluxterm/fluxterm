@@ -1,4 +1,5 @@
 import type { Locale } from "@/i18n";
+import type { EngineErrorView } from "@/types";
 
 export type AiResponseLanguageStrategy = "follow_ui" | "follow_user_input";
 
@@ -121,10 +122,5 @@ export type AiChatDonePayload = {
 export type AiChatErrorPayload = {
   requestId: string;
   sessionId: string;
-  error: {
-    code: string;
-    message: string;
-    detail?: string | null;
-    details?: string | null;
-  };
+  error: EngineErrorView;
 };

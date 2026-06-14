@@ -12,6 +12,7 @@ import type { Translate } from "@/i18n";
 import type {
   AppEvent,
   DisconnectReason,
+  EngineErrorView,
   HostProfile,
   LocalShellConfig,
   LocalSessionMeta,
@@ -267,12 +268,7 @@ export default function useSessionState({
     handleSessionStatus: (payload: {
       sessionId: string;
       state: SessionStateUi;
-      error?: {
-        code: string;
-        message: string;
-        detail?: string | null;
-        details?: string | null;
-      };
+      error?: EngineErrorView;
     }) => void;
     handleHostKeyVerificationRequired: (
       payload: HostKeyVerificationRequiredPayload,
