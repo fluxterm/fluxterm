@@ -441,6 +441,15 @@
   text-align: left;
   padding: 6px 8px;
   cursor: pointer;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
 }
 
 .qm-command-item:hover {
@@ -450,6 +459,34 @@
 .qm-command-item.active {
   border-color: color-mix(in srgb, var(--accent) 48%, var(--border-soft));
   background: color-mix(in srgb, var(--accent-subtle) 72%, transparent);
+}
+
+.qm-command-item.dragging {
+  opacity: 0.52;
+}
+
+.qm-command-item.drag-over {
+  border-color: color-mix(in srgb, var(--accent) 62%, var(--border-soft));
+  background: color-mix(in srgb, var(--accent-subtle) 88%, transparent);
+}
+
+.qm-command-drag-handle {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.qm-command-item:active .qm-command-drag-handle {
+  cursor: grabbing;
+}
+
+.qm-command-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qm-left-actions {

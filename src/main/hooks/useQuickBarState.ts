@@ -56,6 +56,7 @@ type UseQuickBarStateResult = {
     commandId: string,
     payload: Partial<QuickCommandItem>,
   ) => void;
+  reorderCommands: (groupId: string, commandIds: string[]) => void;
   removeCommand: (commandId: string) => void;
   visibleCommands: Array<QuickCommandItem & { groupName: string }>;
 };
@@ -478,6 +479,34 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
     );
   }
 
+  /** 按分组内完整 ID 列表调整快捷命令顺序。 */
+  function reorderCommands(groupId: string, commandIds: string[]) {
+    setCommands((prev) => {
+      const groupCommands = prev.filter((item) => item.groupId === groupId);
+      if (groupCommands.length !== commandIds.length) return prev;
+      const groupCommandIds = new Set(groupCommands.map((item) => item.id));
+      if (
+        commandIds.some((commandId) => !groupCommandIds.has(commandId)) ||
+        new Set(commandIds).size !== commandIds.length
+      ) {
+        return prev;
+      }
+      const commandById = new Map(groupCommands.map((item) => [item.id, item]));
+      const orderedGroupCommands = commandIds
+        .map((commandId) => commandById.get(commandId))
+        .filter((item): item is QuickCommandItem => Boolean(item));
+      if (orderedGroupCommands.length !== groupCommands.length) return prev;
+
+      let nextGroupIndex = 0;
+      return prev.map((item) => {
+        if (item.groupId !== groupId) return item;
+        const nextItem = orderedGroupCommands[nextGroupIndex] ?? item;
+        nextGroupIndex += 1;
+        return nextItem;
+      });
+    });
+  }
+
   function removeCommand(commandId: string) {
     setCommands((prev) => prev.filter((item) => item.id !== commandId));
   }
@@ -494,6 +523,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
     toggleGroupVisible,
     addCommand,
     updateCommand,
+    reorderCommands,
     removeCommand,
     visibleCommands,
   };

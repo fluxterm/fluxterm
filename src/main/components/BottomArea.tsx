@@ -9,6 +9,7 @@ import {
   FiDatabase,
   FiEdit2,
   FiLock,
+  FiMenu,
   FiUnlock,
   FiRepeat,
   FiSettings,
@@ -70,6 +71,7 @@ type BottomAreaProps = {
     commandId: string,
     payload: Partial<QuickCommandItem>,
   ) => void;
+  onReorderCommands: (groupId: string, commandIds: string[]) => void;
   onRemoveCommand: (commandId: string) => void;
   onShowGroupTitleChange: React.Dispatch<React.SetStateAction<boolean>>;
   onRunCommand: (command: string) => void;
@@ -149,6 +151,23 @@ function resolveResourceUnsupportedMessage(
   }
 }
 
+/** 按目标索引生成命令排序预览。 */
+function moveCommandId(
+  commandIds: string[],
+  sourceCommandId: string,
+  targetIndex: number,
+) {
+  const sourceIndex = commandIds.indexOf(sourceCommandId);
+  if (sourceIndex < 0) {
+    return commandIds;
+  }
+  const next = commandIds.slice();
+  const [moved] = next.splice(sourceIndex, 1);
+  const safeTargetIndex = Math.max(0, Math.min(targetIndex, next.length));
+  next.splice(safeTargetIndex, 0, moved);
+  return next;
+}
+
 function useMinuteClock() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -190,6 +209,7 @@ export default function BottomArea({
   onToggleGroupVisible,
   onAddCommand,
   onUpdateCommand,
+  onReorderCommands,
   onRemoveCommand,
   onShowGroupTitleChange,
   onRunCommand,
@@ -228,10 +248,21 @@ export default function BottomArea({
   const [pendingFocusCommandId, setPendingFocusCommandId] = useState<
     string | null
   >(null);
+  const [draggingCommandId, setDraggingCommandId] = useState<string | null>(
+    null,
+  );
+  const [dragOverCommandId, setDragOverCommandId] = useState<string | null>(
+    null,
+  );
+  const [previewCommandIds, setPreviewCommandIds] = useState<string[] | null>(
+    null,
+  );
   const now = useMinuteClock();
   const quickbarMenuRef = useRef<HTMLDivElement | null>(null);
   const commandLabelInputRef = useRef<HTMLInputElement | null>(null);
   const getActiveTerminalStatsRef = useRef(getActiveTerminalStats);
+  const draggingCommandIdRef = useRef<string | null>(null);
+  const suppressCommandClickRef = useRef<string | null>(null);
   const [quickbarMenuOpen, setQuickbarMenuOpen] = useState(false);
   const [resourcePopoverOpen, setResourcePopoverOpen] = useState(false);
 
@@ -314,6 +345,15 @@ export default function BottomArea({
     () => commands.filter((item) => item.groupId === selectedGroupId),
     [commands, selectedGroupId],
   );
+  const previewGroupCommands = useMemo(() => {
+    if (!previewCommandIds) return groupCommands;
+    const commandById = new Map(groupCommands.map((item) => [item.id, item]));
+    const previewCommands = previewCommandIds
+      .map((id) => commandById.get(id))
+      .filter((item): item is QuickCommandItem => Boolean(item));
+    if (previewCommands.length !== groupCommands.length) return groupCommands;
+    return previewCommands;
+  }, [groupCommands, previewCommandIds]);
 
   const selectedCommand = useMemo(
     () => groupCommands.find((item) => item.id === selectedCommandId) ?? null,
@@ -443,6 +483,112 @@ export default function BottomArea({
       command: selectedCommand.command,
       groupId: selectedCommand.groupId,
     });
+  }
+
+  function clearCommandDragState() {
+    draggingCommandIdRef.current = null;
+    setDraggingCommandId(null);
+    setDragOverCommandId(null);
+    setPreviewCommandIds(null);
+  }
+
+  function handleCommandPointerDown(
+    event: React.PointerEvent<HTMLButtonElement>,
+    commandId: string,
+  ) {
+    if (event.button !== 0 || groupCommands.length < 2) return;
+    event.preventDefault();
+    const commandList = event.currentTarget.closest(".qm-command-list");
+    if (!commandList) return;
+    const activeCommandList = commandList;
+    const commandIds = groupCommands.map((item) => item.id);
+    let currentPreviewCommandIds = commandIds;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let moved = false;
+    let lastPreviewCommandIds = commandIds;
+
+    function resolvePreviewCommandIds(clientY: number) {
+      const items = Array.from(
+        activeCommandList.querySelectorAll<HTMLElement>("[data-command-id]"),
+      );
+      const orderedIds = items
+        .map((item) => item.dataset.commandId)
+        .filter((id): id is string => Boolean(id && commandIds.includes(id)));
+      const idsWithoutSource = orderedIds.filter((id) => id !== commandId);
+      let insertIndex = idsWithoutSource.length;
+
+      for (const item of items) {
+        const itemCommandId = item.dataset.commandId;
+        if (!itemCommandId || itemCommandId === commandId) continue;
+        const rect = item.getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) {
+          insertIndex = idsWithoutSource.indexOf(itemCommandId);
+          break;
+        }
+      }
+
+      return moveCommandId(orderedIds, commandId, insertIndex);
+    }
+
+    function cleanup() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("blur", onPointerCancel);
+      clearCommandDragState();
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (
+        !moved &&
+        (Math.abs(moveEvent.clientX - startX) > 4 ||
+          Math.abs(moveEvent.clientY - startY) > 4)
+      ) {
+        moved = true;
+        draggingCommandIdRef.current = commandId;
+        setDraggingCommandId(commandId);
+        setPreviewCommandIds(currentPreviewCommandIds);
+      }
+      if (!moved) return;
+      const nextPreviewCommandIds = resolvePreviewCommandIds(moveEvent.clientY);
+      if (
+        nextPreviewCommandIds.join("\u0000") ===
+        lastPreviewCommandIds.join("\u0000")
+      ) {
+        return;
+      }
+      lastPreviewCommandIds = nextPreviewCommandIds;
+      currentPreviewCommandIds = nextPreviewCommandIds;
+      setPreviewCommandIds(nextPreviewCommandIds);
+      const sourceIndex = nextPreviewCommandIds.indexOf(commandId);
+      const nextTargetCommandId =
+        sourceIndex >= 0
+          ? (nextPreviewCommandIds[sourceIndex + 1] ??
+            nextPreviewCommandIds[sourceIndex - 1] ??
+            null)
+          : null;
+      setDragOverCommandId(nextTargetCommandId);
+    };
+
+    const onPointerUp = () => {
+      cleanup();
+      if (!moved) return;
+      suppressCommandClickRef.current = commandId;
+      if (
+        !selectedGroupId ||
+        currentPreviewCommandIds.join("\u0000") === commandIds.join("\u0000")
+      ) {
+        return;
+      }
+      onReorderCommands(selectedGroupId, currentPreviewCommandIds);
+    };
+
+    const onPointerCancel = () => cleanup();
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp, { once: true });
+    window.addEventListener("pointercancel", onPointerCancel, { once: true });
+    window.addEventListener("blur", onPointerCancel, { once: true });
   }
 
   const transferHint = useMemo(() => {
@@ -886,15 +1032,34 @@ export default function BottomArea({
 
           <section className="qm-left">
             <div className="qm-title">{t("quickbar.manager.commandList")}</div>
-            <div className="qm-command-list">
-              {groupCommands.map((item) => (
+            <div
+              className="qm-command-list"
+              data-ui="quickbar-manager-command-list"
+            >
+              {previewGroupCommands.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className={`qm-command-item ${selectedCommandId === item.id ? "active" : ""}`.trim()}
-                  onClick={() => setSelectedCommandId(item.id)}
+                  data-ui="quickbar-manager-command-item"
+                  data-command-id={item.id}
+                  className={`qm-command-item ${selectedCommandId === item.id ? "active" : ""} ${
+                    draggingCommandId === item.id ? "dragging" : ""
+                  } ${dragOverCommandId === item.id ? "drag-over" : ""}`.trim()}
+                  onClick={() => {
+                    if (suppressCommandClickRef.current === item.id) {
+                      suppressCommandClickRef.current = null;
+                      return;
+                    }
+                    setSelectedCommandId(item.id);
+                  }}
+                  onPointerDown={(event) =>
+                    handleCommandPointerDown(event, item.id)
+                  }
                 >
-                  {resolveCommandLabel(item)}
+                  <FiMenu className="qm-command-drag-handle" aria-hidden />
+                  <span className="qm-command-label">
+                    {resolveCommandLabel(item)}
+                  </span>
                 </button>
               ))}
               {!groupCommands.length && (

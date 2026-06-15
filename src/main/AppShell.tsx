@@ -996,6 +996,7 @@ export default function AppShell() {
     toggleGroupVisible: toggleQuickbarGroupVisible,
     addCommand: addQuickbarCommand,
     updateCommand: updateQuickbarCommand,
+    reorderCommands: reorderQuickbarCommands,
     removeCommand: removeQuickbarCommand,
   } = useQuickBarState(t);
 
@@ -2822,6 +2823,7 @@ export default function AppShell() {
             onToggleGroupVisible={toggleQuickbarGroupVisible}
             onAddCommand={addQuickbarCommand}
             onUpdateCommand={updateQuickbarCommand}
+            onReorderCommands={reorderQuickbarCommands}
             onRemoveCommand={removeQuickbarCommand}
             onShowGroupTitleChange={setShowGroupTitle}
             onRunCommand={handleRunQuickCommand}
