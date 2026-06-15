@@ -529,6 +529,18 @@
   gap: 8px;
   color: var(--text-secondary);
   font-size: 13px;
+  line-height: 16px;
+}
+
+.qm-option input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.qm-option span {
+  line-height: 16px;
 }
 
 .qm-empty {
