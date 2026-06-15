@@ -18,8 +18,8 @@ export const TERMINAL_MOUNT_RETRY_LIMIT = 8;
 /** 联想浮层最小可用高度。 */
 export const AUTOCOMPLETE_MIN_PANEL_HEIGHT = 120;
 
-/** 联想候选最多保留数量，防止历史过多时排序与渲染开销过大。 */
-export const AUTOCOMPLETE_MAX_CANDIDATES = 100;
+/** 联想候选最多保留数量，避免补全面板承担历史搜索职责。 */
+export const AUTOCOMPLETE_MAX_CANDIDATES = 20;
 
 /** 联想浮层最多显示的可视条目数，超出后滚动展示。 */
 export const AUTOCOMPLETE_VISIBLE_ITEMS = 5;
