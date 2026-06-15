@@ -2753,27 +2753,38 @@ export default function AppShell() {
                 onSearchPrev={terminalActions.searchActiveTerminalPrev}
                 onSearchClear={terminalActions.clearActiveSearchDecorations}
                 searchResultStats={terminalQuery.getActiveSearchStats()}
-                autocomplete={
-                  terminalQuery.getActiveAutocomplete()
-                    ? {
-                        sessionId:
-                          terminalQuery.getActiveAutocomplete()!.sessionId,
-                        items: terminalQuery
-                          .getActiveAutocomplete()!
-                          .items.map((item) => ({
-                            command: item.command,
-                            useCount: item.useCount,
-                          })),
-                        selectedIndex:
-                          terminalQuery.getActiveAutocomplete()!.selectedIndex,
-                      }
-                    : null
-                }
+                autocomplete={(() => {
+                  const autocomplete = terminalQuery.getActiveAutocomplete();
+                  if (!autocomplete) return null;
+                  const globalCommandSet = new Set(
+                    historyState.globalItems.map((item) => item.command),
+                  );
+                  const selectedCommand =
+                    autocomplete.items[autocomplete.selectedIndex]?.command;
+                  const items = autocomplete.items
+                    .filter((item) => globalCommandSet.has(item.command))
+                    .map((item) => ({
+                      command: item.command,
+                      useCount: item.useCount,
+                    }));
+                  return {
+                    sessionId: autocomplete.sessionId,
+                    items,
+                    selectedIndex: selectedCommand
+                      ? items.findIndex(
+                          (item) => item.command === selectedCommand,
+                        )
+                      : -1,
+                  };
+                })()}
                 autocompleteAnchor={terminalQuery.getActiveAutocompleteAnchor()}
                 onApplyAutocompleteSuggestion={(command) => {
                   terminalActions
                     .applyActiveAutocompleteSuggestion(command)
                     .catch(() => {});
+                }}
+                onRemoveAutocompleteSuggestion={(command) => {
+                  historyState.removeGlobalCommand(command);
                 }}
                 onDismissAutocomplete={terminalActions.closeActiveAutocomplete}
                 isLocalSession={sessionActions.isLocalSession}

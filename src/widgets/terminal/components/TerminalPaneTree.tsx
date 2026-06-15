@@ -8,7 +8,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type React from "react";
 import type { MouseEvent } from "react";
-import { FiBell, FiX } from "react-icons/fi";
+import { FiBell, FiTrash2, FiX } from "react-icons/fi";
 import type { DisconnectReason, SessionPaneNode } from "@/types";
 import Tooltip from "@/components/ui/menu/Tooltip";
 
@@ -64,6 +64,8 @@ type TerminalPaneTreeProps = {
     left: number;
   } | null;
   onApplyAutocompleteSuggestion: (command?: string) => void;
+  onRemoveAutocompleteSuggestion: (command: string) => void;
+  autocompleteRemoveLabel: string;
 };
 
 /** 会话 pane 树。 */
@@ -111,6 +113,8 @@ function PaneNodeView({
   autocomplete,
   autocompleteAnchor,
   onApplyAutocompleteSuggestion,
+  onRemoveAutocompleteSuggestion,
+  autocompleteRemoveLabel,
   hasSplitPanes,
 }: PaneNodeViewProps) {
   if (node.kind === "split") {
@@ -141,6 +145,8 @@ function PaneNodeView({
             autocomplete={autocomplete}
             autocompleteAnchor={autocompleteAnchor}
             onApplyAutocompleteSuggestion={onApplyAutocompleteSuggestion}
+            onRemoveAutocompleteSuggestion={onRemoveAutocompleteSuggestion}
+            autocompleteRemoveLabel={autocompleteRemoveLabel}
             hasSplitPanes={hasSplitPanes}
           />
         </div>
@@ -175,6 +181,8 @@ function PaneNodeView({
             autocomplete={autocomplete}
             autocompleteAnchor={autocompleteAnchor}
             onApplyAutocompleteSuggestion={onApplyAutocompleteSuggestion}
+            onRemoveAutocompleteSuggestion={onRemoveAutocompleteSuggestion}
+            autocompleteRemoveLabel={autocompleteRemoveLabel}
             hasSplitPanes={hasSplitPanes}
           />
         </div>
@@ -203,6 +211,8 @@ function PaneNodeView({
       autocomplete={autocomplete}
       autocompleteAnchor={autocompleteAnchor}
       onApplyAutocompleteSuggestion={onApplyAutocompleteSuggestion}
+      onRemoveAutocompleteSuggestion={onRemoveAutocompleteSuggestion}
+      autocompleteRemoveLabel={autocompleteRemoveLabel}
       hasSplitPanes={hasSplitPanes}
     />
   );
@@ -241,6 +251,8 @@ function LeafPaneView({
   autocomplete,
   autocompleteAnchor,
   onApplyAutocompleteSuggestion,
+  onRemoveAutocompleteSuggestion,
+  autocompleteRemoveLabel,
   hasSplitPanes,
 }: LeafPaneViewProps) {
   const [dragPreview, setDragPreview] = useState<TabDragPreview | null>(null);
@@ -464,24 +476,41 @@ function LeafPaneView({
                   }}
                 >
                   {paneAutocomplete.items.map((item, index) => (
-                    <button
+                    <div
                       key={item.command}
-                      type="button"
                       className={`terminal-autocomplete-item ${
                         index === paneAutocomplete.selectedIndex ? "active" : ""
                       }`}
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        onApplyAutocompleteSuggestion(item.command);
-                      }}
                     >
-                      <span className="terminal-autocomplete-command">
-                        {item.command}
-                      </span>
-                      <span className="terminal-autocomplete-meta">
-                        {item.useCount}
-                      </span>
-                    </button>
+                      <button
+                        type="button"
+                        className="terminal-autocomplete-apply"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          onApplyAutocompleteSuggestion(item.command);
+                        }}
+                      >
+                        <span className="terminal-autocomplete-command">
+                          {item.command}
+                        </span>
+                        <span className="terminal-autocomplete-meta">
+                          {item.useCount}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="terminal-autocomplete-remove"
+                        data-ui="terminal-autocomplete-remove"
+                        aria-label={autocompleteRemoveLabel}
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onRemoveAutocompleteSuggestion(item.command);
+                        }}
+                      >
+                        <FiTrash2 />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}

@@ -87,6 +87,7 @@ type TerminalWidgetProps = {
     left: number;
   } | null;
   onApplyAutocompleteSuggestion: (command?: string) => void;
+  onRemoveAutocompleteSuggestion: (command: string) => void;
   onDismissAutocomplete: () => void;
   isLocalSession: (sessionId: string | null) => boolean;
   onSwitchSession: (sessionId: string) => void;
@@ -157,6 +158,7 @@ export default function TerminalWidget({
   autocomplete,
   autocompleteAnchor,
   onApplyAutocompleteSuggestion,
+  onRemoveAutocompleteSuggestion,
   onDismissAutocomplete,
   isLocalSession,
   onSwitchSession,
@@ -338,6 +340,8 @@ export default function TerminalWidget({
             autocomplete={autocomplete}
             autocompleteAnchor={autocompleteAnchor}
             onApplyAutocompleteSuggestion={onApplyAutocompleteSuggestion}
+            onRemoveAutocompleteSuggestion={onRemoveAutocompleteSuggestion}
+            autocompleteRemoveLabel={t("actions.remove")}
           />
         )}
         {!hasWorkspaceSessions && (

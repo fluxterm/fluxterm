@@ -258,6 +258,31 @@ export default function useCommandHistoryState({
     return true;
   }
 
+  /** 从全局历史中删除命令，用于清理不再需要的联想候选。 */
+  function removeGlobalCommand(command: string) {
+    const normalizedCommand = command.trim();
+    if (!normalizedCommand) return;
+    setStore((prev) => {
+      const bucket = prev.buckets[GLOBAL_SCOPE_KEY];
+      if (!bucket) return prev;
+      const nextItems = bucket.items.filter(
+        (item) => item.command !== normalizedCommand,
+      );
+      if (nextItems.length === bucket.items.length) return prev;
+      return {
+        ...prev,
+        buckets: {
+          ...prev.buckets,
+          [GLOBAL_SCOPE_KEY]: {
+            ...bucket,
+            updatedAt: Date.now(),
+            items: nextItems,
+          },
+        },
+      };
+    });
+  }
+
   return {
     loaded,
     searchQuery,
@@ -270,5 +295,6 @@ export default function useCommandHistoryState({
     recordCommand,
     updateLiveCapture,
     executeHistoryItem,
+    removeGlobalCommand,
   };
 }
