@@ -57,9 +57,9 @@ jobs:
         uses: ./.github/actions/setup-env
         with:
           node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Build web frontend
+        run: pnpm web:build
 
       - name: Run code checks
         run: pnpm check:all
-
-      - name: Build web frontend
-        run: pnpm web:build
