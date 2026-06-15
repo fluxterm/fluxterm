@@ -1,4 +1,5 @@
 import pkg from "../package.json";
+import { formatBuildTime } from "@/utils/format";
 
 type PackageJson = {
   version?: string;
@@ -30,8 +31,7 @@ const envBuildTime: unknown = import.meta.env.VITE_BUILD_TIME;
 
 export const COMMIT_HASH =
   typeof envGitHash === "string" ? envGitHash : "unknown";
-export const BUILD_TIME =
-  typeof envBuildTime === "string" ? envBuildTime : "unknown";
+export const BUILD_TIME = formatBuildTime(envBuildTime);
 export const PLATFORM_ARCH = "unknown";
 export const RUNTIME_INFO = `WebView ${detectWebViewVersion()}`;
 export const TECH_STACK_INFO = [
