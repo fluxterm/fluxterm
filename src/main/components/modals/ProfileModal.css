@@ -184,6 +184,39 @@
   flex: 1;
 }
 
+.profile-checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.profile-checkbox-line input {
+  margin: 0;
+}
+
+.profile-jump-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-jump-row {
+  display: grid;
+  grid-template-columns: var(--profile-form-label-width) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+}
+
+.profile-jump-row .select-menu {
+  min-width: 0;
+}
+
 .profile-name-field {
   display: flex;
   align-items: center;

@@ -1,5 +1,10 @@
 //! SSH 会话相关命令。
-use engine::{EngineError, ExpectedHostKey, HostProfile, Session, TerminalSize, probe_host_key};
+use std::collections::HashSet;
+
+use engine::{
+    EngineError, ExpectedHostKey, HostProfile, JumpHostProfile, JumpHostSpec, Session,
+    TerminalSize, probe_host_key,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
@@ -28,6 +33,13 @@ struct HostKeyVerificationRequiredPayload {
     policy: String,
 }
 
+/// 建立 SSH 连接前已解析完成的运行时计划。
+pub(crate) struct SshConnectPlan {
+    pub profile: HostProfile,
+    pub expected_host_key: Option<ExpectedHostKey>,
+    pub jump_spec: JumpHostSpec,
+}
+
 #[tauri::command]
 /// 建立 SSH 会话连接。
 pub async fn ssh_connect(
@@ -38,14 +50,16 @@ pub async fn ssh_connect(
     profile: HostProfile,
     size: TerminalSize,
 ) -> Result<Session, EngineError> {
-    let resolved_profile = resolve_connect_profile(&app, &security, &profile)?;
-    let expected_host_key = enforce_host_key_policy(&app, &resolved_profile).await?;
+    let plan = resolve_ssh_connect_plan(&app, &security, &profile).await?;
     let on_event = build_event_bridge(app.clone());
-    let session =
-        state
-            .engine
-            .connect(resolved_profile.clone(), expected_host_key, size, on_event)?;
-    register_remote_session(&ai_state, &session, &resolved_profile)?;
+    let session = state.engine.connect(
+        plan.profile.clone(),
+        plan.expected_host_key,
+        plan.jump_spec,
+        size,
+        on_event,
+    )?;
+    register_remote_session(&ai_state, &session, &plan.profile)?;
     Ok(session)
 }
 
@@ -103,9 +117,33 @@ pub fn ssh_host_key_confirm(
     trust_host_key(&app, &host, port, &key_algorithm, &public_key_base64)
 }
 
+pub(crate) async fn resolve_ssh_connect_plan(
+    app: &AppHandle,
+    security: &State<'_, SecurityState>,
+    requested_profile: &HostProfile,
+) -> Result<SshConnectPlan, EngineError> {
+    let resolved_profile = resolve_connect_profile(app, security, requested_profile)?;
+    let jump_profiles = resolve_jump_profiles(app, security, &resolved_profile)?;
+    let mut jump_spec = JumpHostSpec::default();
+    for jump_profile in jump_profiles {
+        let expected_host_key = enforce_host_key_policy(app, &jump_profile, &jump_spec).await?;
+        jump_spec.hosts.push(JumpHostProfile {
+            profile: jump_profile,
+            expected_host_key,
+        });
+    }
+    let expected_host_key = enforce_host_key_policy(app, &resolved_profile, &jump_spec).await?;
+    Ok(SshConnectPlan {
+        profile: resolved_profile,
+        expected_host_key,
+        jump_spec,
+    })
+}
+
 async fn enforce_host_key_policy(
     app: &AppHandle,
     profile: &HostProfile,
+    jump_spec: &JumpHostSpec,
 ) -> Result<Option<ExpectedHostKey>, EngineError> {
     let settings = read_session_settings(app)?;
     if settings.host_key_policy == HostKeyPolicy::Off {
@@ -115,7 +153,7 @@ async fn enforce_host_key_policy(
     // 连接建立前先做一次 Host Key 预检。
     // ask / strict 的分流都在这里完成，正式握手阶段只负责校验“当前连接拿到的公钥”
     // 是否与本次预检允许通过的公钥一致。
-    let probe = probe_host_key(profile).await?;
+    let probe = probe_host_key(profile, jump_spec).await?;
     let matched = match_host_key(
         app,
         &profile.host,
@@ -131,17 +169,17 @@ async fn enforce_host_key_policy(
         })),
         (HostKeyPolicy::Strict, HostKeyMatchStatus::Unknown) => Err(EngineError::new(
             "ssh_host_key_unknown",
-            "目标主机尚未被信任，当前 Host Key 策略禁止直接连接",
+            "Target host is not trusted and the current host key policy blocks the connection",
         )),
         (HostKeyPolicy::Strict, HostKeyMatchStatus::Mismatch) => Err(EngineError::new(
             "ssh_host_key_mismatch",
-            "目标主机指纹与本地记录不一致，连接已被阻断",
+            "Target host fingerprint does not match the local record; connection blocked",
         )),
         (HostKeyPolicy::Ask, HostKeyMatchStatus::Unknown) => {
             emit_host_key_required(app, profile, &probe, None, "ask")?;
             Err(EngineError::new(
                 "ssh_host_key_unknown",
-                "首次连接该主机，等待用户确认 Host Key",
+                "First connection to this host; waiting for host key confirmation",
             ))
         }
         (HostKeyPolicy::Ask, HostKeyMatchStatus::Mismatch) => {
@@ -154,7 +192,7 @@ async fn enforce_host_key_policy(
             )?;
             Err(EngineError::new(
                 "ssh_host_key_mismatch",
-                "目标主机指纹与本地记录不一致，等待用户确认",
+                "Target host fingerprint does not match the local record; waiting for confirmation",
             ))
         }
         (HostKeyPolicy::Off, _) => Ok(None),
@@ -186,7 +224,7 @@ fn emit_host_key_required(
     .map_err(|err| {
         EngineError::with_detail(
             "ssh_host_key_event_failed",
-            "无法发送 Host Key 确认事件",
+            "Failed to emit host key confirmation event",
             err.to_string(),
         )
     })
@@ -200,17 +238,61 @@ fn resolve_connect_profile(
     // 连接时必须回读磁盘中的 profile，再按当前安全状态解保护。
     // 这样在用户锁定后，即使前端仍保留旧的明文副本，也不能继续建立 SSH 连接。
     if requested_profile.id.trim().is_empty() {
-        return Err(EngineError::new("profile_not_found", "会话配置不存在"));
+        return Err(EngineError::new("profile_not_found", "Profile not found"));
     }
     let store = read_ssh_profiles(app)?;
     let encrypted_profile = store
         .profiles
         .into_iter()
         .find(|item| item.id == requested_profile.id)
-        .ok_or_else(|| EngineError::new("profile_not_found", "会话配置不存在"))?;
+        .ok_or_else(|| EngineError::new("profile_not_found", "Profile not found"))?;
     let security_config = read_security_config(app)?;
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     decrypt_profile_secrets(encrypted_profile, &secret_store)
+}
+
+fn resolve_jump_profiles(
+    app: &AppHandle,
+    security: &State<'_, SecurityState>,
+    profile: &HostProfile,
+) -> Result<Vec<HostProfile>, EngineError> {
+    let ids = profile.jump_profile_ids.clone().unwrap_or_default();
+    if ids.len() > 8 {
+        return Err(EngineError::with_detail(
+            "ssh_jump_depth_exceeded",
+            "Jump chain exceeds the maximum depth",
+            format!("maxDepth=8 actual={}", ids.len()),
+        ));
+    }
+    let mut seen = HashSet::new();
+    seen.insert(profile.id.clone());
+    for id in &ids {
+        if !seen.insert(id.clone()) {
+            return Err(EngineError::new(
+                "ssh_jump_cycle",
+                "Jump chain contains a cycle",
+            ));
+        }
+    }
+
+    let store = read_ssh_profiles(app)?;
+    let security_config = read_security_config(app)?;
+    let session = security.current_session();
+    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let secret_store = SecretStore::new(&crypto);
+    ids.into_iter()
+        .map(|id| {
+            let encrypted_profile = store
+                .profiles
+                .iter()
+                .find(|item| item.id == id)
+                .cloned()
+                .ok_or_else(|| {
+                    EngineError::new("ssh_jump_profile_missing", "Jump host profile not found")
+                })?;
+            decrypt_profile_secrets(encrypted_profile, &secret_store)
+        })
+        .collect()
 }

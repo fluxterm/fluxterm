@@ -13,6 +13,10 @@ pub fn encrypt_profile_secrets(
     profile.password_ref = secret_store.protect_optional_string(profile.password_ref)?;
     profile.private_key_passphrase_ref =
         secret_store.protect_optional_string(profile.private_key_passphrase_ref)?;
+    if let Some(proxy_config) = profile.proxy_config.as_mut() {
+        proxy_config.password_ref =
+            secret_store.protect_optional_string(proxy_config.password_ref.take())?;
+    }
     Ok(profile)
 }
 
@@ -24,6 +28,10 @@ pub fn decrypt_profile_secrets(
     profile.password_ref = secret_store.reveal_optional_string(profile.password_ref)?;
     profile.private_key_passphrase_ref =
         secret_store.reveal_optional_string(profile.private_key_passphrase_ref)?;
+    if let Some(proxy_config) = profile.proxy_config.as_mut() {
+        proxy_config.password_ref =
+            secret_store.reveal_optional_string(proxy_config.password_ref.take())?;
+    }
     Ok(profile)
 }
 

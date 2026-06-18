@@ -8,6 +8,7 @@ use russh::keys::{self, HashAlg, PublicKeyBase64};
 use tokio::time::timeout;
 
 use crate::error::EngineError;
+use crate::ssh_transport::{JumpHostSpec, connect_probe_client};
 use crate::types::HostProfile;
 
 /// Host Key 预检结果。
@@ -47,16 +48,17 @@ impl client::Handler for ProbeHandler {
 }
 
 /// 预检目标主机的 Host Key。
-pub async fn probe_host_key(profile: &HostProfile) -> Result<HostKeyProbe, EngineError> {
-    let addr = format!("{}:{}", profile.host, profile.port);
-    let config = Arc::new(client::Config::default());
+pub async fn probe_host_key(
+    profile: &HostProfile,
+    jump_spec: &JumpHostSpec,
+) -> Result<HostKeyProbe, EngineError> {
     let key = Arc::new(Mutex::new(None));
 
     let connect_result = timeout(
         Duration::from_secs(SSH_HOST_KEY_PROBE_TIMEOUT_SECS),
-        client::connect(
-            config,
-            addr,
+        connect_probe_client(
+            profile,
+            jump_spec,
             ProbeHandler {
                 key: Arc::clone(&key),
             },

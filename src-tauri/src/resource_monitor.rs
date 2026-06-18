@@ -24,17 +24,15 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use engine::{
-    EngineEvent, EventCallback, ExpectedHostKey, HostProfile, ResourceCpuSnapshot,
+    EngineEvent, EventCallback, ExpectedHostKey, HostProfile, JumpHostSpec, ResourceCpuSnapshot,
     ResourceMemorySnapshot, ResourceMonitorStatus, ResourceMonitorUnsupportedReason,
-    SessionResourceSnapshot, monitor::run_ssh_resource_monitor, probe_host_key, util::now_epoch,
+    SessionResourceSnapshot, monitor::run_ssh_resource_monitor, util::now_epoch,
 };
 use serde_json::json;
 use sysinfo::System;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
 
-use crate::session_settings::{HostKeyPolicy, read_session_settings};
-use crate::ssh_host_keys::{HostKeyMatchStatus, match_host_key};
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 pub const MIN_RESOURCE_MONITOR_INTERVAL_SEC: u64 = 3;
@@ -88,6 +86,8 @@ impl ResourceMonitorState {
         app: AppHandle,
         session_id: String,
         profile: HostProfile,
+        expected_host_key: Option<ExpectedHostKey>,
+        jump_spec: JumpHostSpec,
         interval_sec: u64,
     ) {
         self.stop(&session_id);
@@ -111,35 +111,11 @@ impl ResourceMonitorState {
         );
         tauri::async_runtime::spawn(async move {
             let on_event = build_resource_event_bridge(app.clone());
-            // 资源监控使用独立 SSH 连接，并执行主机身份校验。
-            // 未受信任时直接回传 unsupported。
-            let expected_host_key = match resolve_monitor_expected_host_key(&app, &profile).await {
-                Ok(expected_host_key) => expected_host_key,
-                Err(reason) => {
-                    log_telemetry(
-                        TelemetryLevel::Warn,
-                        "resource.monitor.ssh.failed",
-                        None,
-                        json!({
-                            "sessionId": session_id,
-                            "profileId": profile.id,
-                            "host": profile.host,
-                            "phase": "resolveExpectedHostKey",
-                            "error": {
-                                "code": "resource_monitor_host_key_untrusted",
-                                "message": "资源监控连接主机身份校验未通过",
-                                "detail": format!("{reason:?}"),
-                            }
-                        }),
-                    );
-                    emit_resource_monitor_unsupported(&app, &session_id, "ssh-linux", reason);
-                    return;
-                }
-            };
             if let Err(error) = run_ssh_resource_monitor(
                 session_id.clone(),
                 profile,
                 expected_host_key,
+                jump_spec,
                 interval_sec,
                 stop_rx,
                 on_event,
@@ -306,38 +282,6 @@ fn build_unsupported_resource_snapshot(
         uptime_seconds: None,
         cpu: None,
         memory: None,
-    }
-}
-
-async fn resolve_monitor_expected_host_key(
-    app: &AppHandle,
-    profile: &HostProfile,
-) -> Result<Option<ExpectedHostKey>, ResourceMonitorUnsupportedReason> {
-    let settings =
-        read_session_settings(app).map_err(|_| ResourceMonitorUnsupportedReason::ProbeFailed)?;
-    if settings.host_key_policy == HostKeyPolicy::Off {
-        return Ok(None);
-    }
-    // 为资源监控连接生成正式握手阶段使用的 ExpectedHostKey。
-    let probe = probe_host_key(profile)
-        .await
-        .map_err(|_| ResourceMonitorUnsupportedReason::ProbeFailed)?;
-    let matched = match_host_key(
-        app,
-        &profile.host,
-        profile.port,
-        &probe.key_algorithm,
-        &probe.public_key_base64,
-    )
-    .map_err(|_| ResourceMonitorUnsupportedReason::ProbeFailed)?;
-    match matched.status {
-        HostKeyMatchStatus::Trusted => Ok(Some(ExpectedHostKey {
-            public_key_base64: probe.public_key_base64,
-            fingerprint_sha256: probe.fingerprint_sha256,
-        })),
-        HostKeyMatchStatus::Unknown | HostKeyMatchStatus::Mismatch => {
-            Err(ResourceMonitorUnsupportedReason::HostKeyUntrusted)
-        }
     }
 }
 

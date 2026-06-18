@@ -3027,6 +3027,7 @@ export default function AppShell() {
             open={profileModalOpen}
             mode={profileModalMode}
             draft={profileDraft}
+            profiles={profiles}
             sshGroups={sshGroups}
             onDraftChange={setProfileDraft}
             onClose={closeProfileModal}

@@ -77,19 +77,23 @@ pub struct OpensshImportSummary {
 /// 导入只处理固定路径 `<home>/.ssh/config`，成功后直接写回现有 SSH 配置存储。
 pub fn import_openssh_config(app: &AppHandle) -> Result<OpensshImportSummary, EngineError> {
     let home = app.path().home_dir().map_err(|err| {
-        EngineError::with_detail("local_home_failed", "无法获取本机家目录", err.to_string())
+        EngineError::with_detail(
+            "local_home_failed",
+            "Failed to resolve local home directory",
+            err.to_string(),
+        )
     })?;
     let path = home.join(".ssh").join("config");
     if !path.exists() {
         return Err(EngineError::new(
             "ssh_config_not_found",
-            "未找到 SSH config 文件",
+            "SSH config file was not found",
         ));
     }
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "ssh_config_unreadable",
-            "无法读取 SSH config 文件",
+            "Failed to read SSH config file",
             err.to_string(),
         )
     })?;
@@ -105,7 +109,7 @@ pub fn import_openssh_config(app: &AppHandle) -> Result<OpensshImportSummary, En
     {
         return Err(EngineError::new(
             "ssh_config_import_empty",
-            "未发现可导入的 SSH 主机配置",
+            "No importable SSH host configuration found",
         ));
     }
     write_ssh_profiles(app, &store)?;
@@ -127,7 +131,7 @@ fn parse_openssh_config(content: &str) -> Result<ParsedOpensshConfig, EngineErro
         let Some((key, value)) = split_config_line(line) else {
             return Err(EngineError::new(
                 "ssh_config_parse_failed",
-                "SSH config 解析失败",
+                "Failed to parse SSH config",
             ));
         };
         if !key.eq_ignore_ascii_case("host") {
@@ -225,6 +229,7 @@ fn apply_import(
         summary.added_count += 1;
     }
 
+    resolve_imported_proxy_jump_ids(store);
     store.updated_at = now_epoch();
     Ok(summary)
 }
@@ -238,7 +243,7 @@ fn map_host_target_to_profile(
     let resolved = russh_config::parse(content, &target.alias).map_err(|err| {
         EngineError::with_detail(
             "ssh_config_parse_failed",
-            "SSH config 解析失败",
+            "Failed to parse SSH config",
             err.to_string(),
         )
     })?;
@@ -264,8 +269,11 @@ fn map_host_target_to_profile(
         private_key_passphrase_ref: None,
         password_ref: None,
         known_host: None,
+        proxy_mode: None,
+        proxy_config: None,
         proxy_command: resolved.host_config.proxy_command.clone(),
         proxy_jump: resolved.host_config.proxy_jump.clone(),
+        jump_profile_ids: None,
         add_keys_to_agent: resolved
             .host_config
             .add_keys_to_agent
@@ -286,6 +294,38 @@ fn map_host_target_to_profile(
         bell_cooldown_ms: None,
         description: None,
     })
+}
+
+/// 将已导入的 ProxyJump alias 尽量映射为 FluxTerm 内部 profile id 链。
+fn resolve_imported_proxy_jump_ids(store: &mut SshProfileStore) {
+    let name_to_id: std::collections::HashMap<String, String> = store
+        .profiles
+        .iter()
+        .map(|profile| (profile.name.to_ascii_lowercase(), profile.id.clone()))
+        .collect();
+    for profile in &mut store.profiles {
+        let Some(proxy_jump) = profile.proxy_jump.as_deref() else {
+            continue;
+        };
+        let ids = proxy_jump
+            .split(',')
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty())
+            .map(|item| {
+                item.split('@')
+                    .next_back()
+                    .unwrap_or(item)
+                    .split(':')
+                    .next()
+                    .unwrap_or(item)
+                    .to_ascii_lowercase()
+            })
+            .map(|name| name_to_id.get(&name).cloned())
+            .collect::<Option<Vec<_>>>();
+        if let Some(ids) = ids.filter(|ids| !ids.is_empty()) {
+            profile.jump_profile_ids = Some(ids);
+        }
+    }
 }
 
 /// 将配置前置的全局参数折叠成 `Host *`，规避 `russh-config` 对首个 `Host` 前参数的限制。
@@ -452,8 +492,11 @@ mod tests {
             private_key_passphrase_ref: None,
             password_ref: None,
             known_host: None,
+            proxy_mode: None,
+            proxy_config: None,
             proxy_command: None,
             proxy_jump: None,
+            jump_profile_ids: None,
             add_keys_to_agent: None,
             user_known_hosts_file: None,
             strict_host_key_checking: None,

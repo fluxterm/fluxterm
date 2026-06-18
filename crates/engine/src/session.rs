@@ -33,6 +33,7 @@ use crate::sftp::{
     next_transfer_id, sftp_download, sftp_download_dir, sftp_home, sftp_list, sftp_mkdir,
     sftp_remove, sftp_rename, sftp_resolve_path, sftp_stat, sftp_upload, sftp_upload_batch,
 };
+use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EngineEvent, EventCallback, HostProfile, SessionState, SftpEntry, SshTunnelKind,
@@ -215,7 +216,7 @@ impl client::Handler for ClientHandler {
         *self.host_key_state.lock_error()? = Some(EngineError::new(
             "ssh_host_key_untrusted",
             format!(
-                "SSH Host Key 校验失败：服务端指纹与预期不一致（预期 {}）",
+                "SSH host key verification failed: server fingerprint does not match expected value (expected {})",
                 expected.fingerprint_sha256
             ),
         ));
@@ -265,7 +266,7 @@ impl client::Handler for ClientHandler {
                         active_connections: 0,
                         last_error: Some(EngineError::new(
                             "ssh_tunnel_forward_failed",
-                            "远程转发连接本地目标失败",
+                            "Remote forwarding failed to connect to local target",
                         )),
                     }));
                 }
@@ -348,14 +349,14 @@ async fn open_local_or_dynamic_tunnel(
                     "tunnelId": tunnel_id.clone(),
                     "error": {
                         "code": "ssh_tunnel_bind_failed",
-                        "message": "隧道端口监听失败",
+                        "message": "Tunnel port listen failed",
                         "detail": err.to_string(),
                     }
                 }),
             );
             EngineError::with_detail(
                 "ssh_tunnel_bind_failed",
-                "隧道端口监听失败",
+                "Tunnel port listen failed",
                 err.to_string(),
             )
         })?;
@@ -422,7 +423,7 @@ async fn open_local_or_dynamic_tunnel(
                         let Ok(channel) = channel else {
                             let mut g = runtime_for_conn.lock().await;
                             g.active_connections = g.active_connections.saturating_sub(1);
-                            g.last_error = Some(EngineError::new("ssh_tunnel_open_failed", "无法创建 SSH 转发通道"));
+                            g.last_error = Some(EngineError::new("ssh_tunnel_open_failed", "Failed to create SSH forwarding channel"));
                             emit_tunnel_update(&on_event_for_conn, &g.clone());
                             return;
                         };
@@ -507,14 +508,14 @@ async fn open_remote_tunnel(
                     "tunnelId": tunnel_id.clone(),
                     "error": {
                         "code": "ssh_tunnel_open_failed",
-                        "message": "无法创建远程转发",
+                        "message": "Failed to create remote forwarding",
                         "detail": err.to_string(),
                     }
                 }),
             );
             EngineError::with_detail(
                 "ssh_tunnel_open_failed",
-                "无法创建远程转发",
+                "Failed to create remote forwarding",
                 err.to_string(),
             )
         })?;
@@ -580,28 +581,28 @@ async fn socks5_connect_handshake(
     stream.read_exact(&mut greeting).await.map_err(|err| {
         EngineError::with_detail(
             "ssh_tunnel_socks_handshake_failed",
-            "SOCKS 握手失败",
+            "SOCKS handshake failed",
             err.to_string(),
         )
     })?;
     if greeting[0] != 0x05 {
         return Err(EngineError::new(
             "ssh_tunnel_socks_handshake_failed",
-            "仅支持 SOCKS5",
+            "Only SOCKS5 is supported",
         ));
     }
     let mut methods = vec![0u8; greeting[1] as usize];
     stream.read_exact(&mut methods).await.map_err(|err| {
         EngineError::with_detail(
             "ssh_tunnel_socks_handshake_failed",
-            "SOCKS 握手失败",
+            "SOCKS handshake failed",
             err.to_string(),
         )
     })?;
     stream.write_all(&[0x05, 0x00]).await.map_err(|err| {
         EngineError::with_detail(
             "ssh_tunnel_socks_handshake_failed",
-            "SOCKS 握手失败",
+            "SOCKS handshake failed",
             err.to_string(),
         )
     })?;
@@ -610,7 +611,7 @@ async fn socks5_connect_handshake(
     stream.read_exact(&mut request_head).await.map_err(|err| {
         EngineError::with_detail(
             "ssh_tunnel_socks_handshake_failed",
-            "SOCKS 请求读取失败",
+            "Failed to read SOCKS request",
             err.to_string(),
         )
     })?;
@@ -620,7 +621,7 @@ async fn socks5_connect_handshake(
             .await;
         return Err(EngineError::new(
             "ssh_tunnel_socks_handshake_failed",
-            "仅支持 CONNECT 命令",
+            "Only CONNECT command is supported",
         ));
     }
     let atyp = request_head[3];
@@ -630,7 +631,7 @@ async fn socks5_connect_handshake(
             stream.read_exact(&mut ipv4).await.map_err(|err| {
                 EngineError::with_detail(
                     "ssh_tunnel_socks_handshake_failed",
-                    "SOCKS 地址读取失败",
+                    "Failed to read SOCKS address",
                     err.to_string(),
                 )
             })?;
@@ -641,7 +642,7 @@ async fn socks5_connect_handshake(
             stream.read_exact(&mut len).await.map_err(|err| {
                 EngineError::with_detail(
                     "ssh_tunnel_socks_handshake_failed",
-                    "SOCKS 域名读取失败",
+                    "Failed to read SOCKS domain",
                     err.to_string(),
                 )
             })?;
@@ -649,7 +650,7 @@ async fn socks5_connect_handshake(
             stream.read_exact(&mut domain).await.map_err(|err| {
                 EngineError::with_detail(
                     "ssh_tunnel_socks_handshake_failed",
-                    "SOCKS 域名读取失败",
+                    "Failed to read SOCKS domain",
                     err.to_string(),
                 )
             })?;
@@ -660,7 +661,7 @@ async fn socks5_connect_handshake(
             stream.read_exact(&mut ipv6).await.map_err(|err| {
                 EngineError::with_detail(
                     "ssh_tunnel_socks_handshake_failed",
-                    "SOCKS IPv6 读取失败",
+                    "Failed to read SOCKS IPv6 address",
                     err.to_string(),
                 )
             })?;
@@ -672,7 +673,7 @@ async fn socks5_connect_handshake(
                 .await;
             return Err(EngineError::new(
                 "ssh_tunnel_socks_handshake_failed",
-                "不支持的地址类型",
+                "Unsupported address type",
             ));
         }
     };
@@ -680,7 +681,7 @@ async fn socks5_connect_handshake(
     stream.read_exact(&mut port_buf).await.map_err(|err| {
         EngineError::with_detail(
             "ssh_tunnel_socks_handshake_failed",
-            "SOCKS 端口读取失败",
+            "Failed to read SOCKS port",
             err.to_string(),
         )
     })?;
@@ -691,7 +692,7 @@ async fn socks5_connect_handshake(
         .map_err(|err| {
             EngineError::with_detail(
                 "ssh_tunnel_socks_handshake_failed",
-                "SOCKS 响应发送失败",
+                "Failed to send SOCKS response",
                 err.to_string(),
             )
         })?;
@@ -703,24 +704,24 @@ pub async fn run_session_loop(
     session_id: String,
     profile: HostProfile,
     expected_host_key: Option<ExpectedHostKey>,
+    jump_spec: JumpHostSpec,
     size: TerminalSize,
     mut rx: mpsc::UnboundedReceiver<SessionCommand>,
     on_event: EventCallback,
 ) -> Result<(), EngineError> {
     // 正式 SSH 握手同样需要超时保护，覆盖 HostKeyPolicy::Off 等不走预检的路径。
     const SSH_CONNECT_TIMEOUT_SECS: u64 = 8;
-    let addr = format!("{}:{}", profile.host, profile.port);
-    let config = Arc::new(client::Config::default());
     let host_key_state = HostKeyCheckState {
         error: Arc::new(StdMutex::new(None)),
     };
     let remote_routes: Arc<RwLock<HashMap<u16, RemoteRoute>>> =
         Arc::new(RwLock::new(HashMap::new()));
-    let mut session = timeout(
+    let connection = timeout(
         Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
-        client::connect(
-            config,
-            addr,
+        connect_ssh_client(
+            &profile,
+            expected_host_key.clone(),
+            &jump_spec,
             ClientHandler {
                 expected_host_key,
                 host_key_state: host_key_state.clone(),
@@ -734,7 +735,7 @@ pub async fn run_session_loop(
     .map_err(|_| {
         EngineError::with_detail(
             "ssh_connect_failed",
-            "无法连接到目标主机（连接超时）",
+            "Failed to connect to target host (connection timed out)",
             format!(
                 "host={} port={} timeout={}s",
                 profile.host, profile.port, SSH_CONNECT_TIMEOUT_SECS
@@ -747,15 +748,16 @@ pub async fn run_session_loop(
         {
             return saved;
         }
-        EngineError::with_detail("ssh_connect_failed", "无法连接到目标主机", err.to_string())
+        err
     })?;
+    let mut session = connection.handle;
 
     authenticate(&mut session, &profile, AuthPurpose::Session).await?;
 
     let mut channel = session.channel_open_session().await.map_err(|err| {
         EngineError::with_detail(
             "ssh_channel_open_failed",
-            "无法打开会话通道",
+            "Failed to open session channel",
             err.to_string(),
         )
     })?;
@@ -771,10 +773,14 @@ pub async fn run_session_loop(
         )
         .await
         .map_err(|err| {
-            EngineError::with_detail("ssh_pty_failed", "无法请求终端 PTY", err.to_string())
+            EngineError::with_detail(
+                "ssh_pty_failed",
+                "Failed to request terminal PTY",
+                err.to_string(),
+            )
         })?;
     channel.request_shell(true).await.map_err(|err| {
-        EngineError::with_detail("ssh_shell_failed", "无法启动 shell", err.to_string())
+        EngineError::with_detail("ssh_shell_failed", "Failed to start shell", err.to_string())
     })?;
 
     // 只有在 PTY 和交互 shell 都就绪后，前端才应把会话视为真正可用。
@@ -935,7 +941,7 @@ pub async fn run_session_loop(
                             .await
                             .get(&transfer_id)
                             .cloned()
-                            .ok_or_else(|| EngineError::new("sftp_transfer_not_found", "传输任务不存在"))
+                            .ok_or_else(|| EngineError::new("sftp_transfer_not_found", "Transfer task not found"))
                             .map(|flag| {
                                 flag.store(true, Ordering::Relaxed);
                             });
@@ -1000,7 +1006,7 @@ pub async fn run_session_loop(
                         let result = if let Some(handle) = handle {
                             close_tunnel(handle).await
                         } else {
-                            Err(EngineError::new("ssh_tunnel_not_found", "隧道不存在"))
+                            Err(EngineError::new("ssh_tunnel_not_found", "Tunnel not found"))
                         };
                         let _ = respond_to.send(result);
                     }

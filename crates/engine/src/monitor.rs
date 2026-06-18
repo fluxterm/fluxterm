@@ -1,15 +1,15 @@
 //! 远端资源监控实现。
-use std::sync::Arc;
 use std::time::Duration;
 
 use regex::Regex;
 use russh::client;
 use serde_json::json;
-use tokio::sync::watch;
+use tokio::{sync::watch, time::timeout};
 
 use crate::auth::{AuthPurpose, authenticate};
 use crate::error::EngineError;
 use crate::session::{ClientHandler, ExpectedHostKey};
+use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EngineEvent, EventCallback, HostProfile, ResourceCpuSnapshot, ResourceMemorySnapshot,
@@ -19,6 +19,7 @@ use crate::util::now_epoch;
 
 const REMOTE_RESOURCE_COMMAND: &str = "cat /proc/stat 2>/dev/null; printf '\\n'; cat /proc/meminfo 2>/dev/null; printf '\\n'; cat /proc/uptime 2>/dev/null";
 const INITIAL_RESOURCE_SAMPLE_WINDOW: Duration = Duration::from_secs(1);
+const SSH_RESOURCE_MONITOR_CONNECT_TIMEOUT_SECS: u64 = 8;
 
 #[derive(Clone, Copy)]
 struct CpuCounters {
@@ -50,25 +51,35 @@ pub async fn run_ssh_resource_monitor(
     session_id: String,
     profile: HostProfile,
     expected_host_key: Option<ExpectedHostKey>,
+    jump_spec: JumpHostSpec,
     interval_sec: u64,
     mut stop_rx: watch::Receiver<bool>,
     on_event: EventCallback,
 ) -> Result<(), EngineError> {
-    let addr = format!("{}:{}", profile.host, profile.port);
-    let config = Arc::new(client::Config::default());
     let handler = match expected_host_key {
         Some(expected) => ClientHandler::with_expected(expected),
         None => ClientHandler::unchecked(),
     };
-    let mut session = client::connect(config, addr, handler)
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(
-                "resource_monitor_connect_failed",
-                "无法建立资源监控连接",
-                err.to_string(),
-            )
-        })?;
+    let connection = timeout(
+        Duration::from_secs(SSH_RESOURCE_MONITOR_CONNECT_TIMEOUT_SECS),
+        connect_ssh_client(&profile, None, &jump_spec, handler),
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            "resource_monitor_connect_failed",
+            "Failed to establish resource monitor connection",
+            err.to_string(),
+        )
+    })?
+    .map_err(|err| {
+        EngineError::with_detail(
+            "resource_monitor_connect_failed",
+            "Failed to establish resource monitor connection",
+            err.detail.unwrap_or(err.message),
+        )
+    })?;
+    let mut session = connection.handle;
 
     authenticate(&mut session, &profile, AuthPurpose::ResourceMonitor).await?;
 
@@ -177,7 +188,7 @@ async fn exec_remote_resource_command(
     let mut channel = session.channel_open_session().await.map_err(|err| {
         EngineError::with_detail(
             "resource_monitor_exec_failed",
-            "无法打开资源监控通道",
+            "Failed to open resource monitor channel",
             err.to_string(),
         )
     })?;
@@ -187,7 +198,7 @@ async fn exec_remote_resource_command(
         .map_err(|err| {
             EngineError::with_detail(
                 "resource_monitor_exec_failed",
-                "无法执行资源监控命令",
+                "Failed to execute resource monitor command",
                 err.to_string(),
             )
         })?;
@@ -211,7 +222,7 @@ async fn exec_remote_resource_command(
     if !stderr.trim().is_empty() {
         return Err(EngineError::with_detail(
             "resource_monitor_exec_failed",
-            "资源监控命令执行失败",
+            "Resource monitor command failed",
             stderr,
         ));
     }
@@ -224,7 +235,10 @@ fn parse_cpu_counters(output: &str) -> Result<CpuCounters, EngineError> {
         .lines()
         .find(|line| line.starts_with("cpu "))
         .ok_or_else(|| {
-            EngineError::new("resource_monitor_unsupported", "当前远端系统不支持资源监控")
+            EngineError::new(
+                "resource_monitor_unsupported",
+                "Remote system does not support resource monitoring",
+            )
         })?;
     let numbers: Vec<u64> = line
         .split_whitespace()
@@ -234,14 +248,14 @@ fn parse_cpu_counters(output: &str) -> Result<CpuCounters, EngineError> {
         .map_err(|err| {
             EngineError::with_detail(
                 "resource_monitor_parse_failed",
-                "无法解析 CPU 信息",
+                "Failed to parse CPU information",
                 err.to_string(),
             )
         })?;
     if numbers.len() < 8 {
         return Err(EngineError::new(
             "resource_monitor_unsupported",
-            "当前远端系统不支持资源监控",
+            "Remote system does not support resource monitoring",
         ));
     }
     Ok(CpuCounters {
@@ -260,7 +274,7 @@ fn parse_memory_snapshot(output: &str) -> Result<ResourceMemorySnapshot, EngineE
     let regex = Regex::new(r"^(?P<key>[A-Za-z_]+):\s+(?P<value>\d+)\s+kB$").map_err(|err| {
         EngineError::with_detail(
             "resource_monitor_parse_failed",
-            "无法初始化内存解析器",
+            "Failed to initialize memory parser",
             err.to_string(),
         )
     })?;
@@ -274,7 +288,7 @@ fn parse_memory_snapshot(output: &str) -> Result<ResourceMemorySnapshot, EngineE
             let value = captures["value"].parse::<u64>().map_err(|err| {
                 EngineError::with_detail(
                     "resource_monitor_parse_failed",
-                    "无法解析内存信息",
+                    "Failed to parse memory information",
                     err.to_string(),
                 )
             })?;
@@ -289,7 +303,10 @@ fn parse_memory_snapshot(output: &str) -> Result<ResourceMemorySnapshot, EngineE
     }
 
     let total_kb = total_kb.ok_or_else(|| {
-        EngineError::new("resource_monitor_unsupported", "当前远端系统不支持资源监控")
+        EngineError::new(
+            "resource_monitor_unsupported",
+            "Remote system does not support resource monitoring",
+        )
     })?;
     let free_kb = free_kb.unwrap_or(0);
     let available_kb = available_kb.unwrap_or(free_kb);
@@ -325,14 +342,14 @@ fn parse_logical_cpu_count(output: &str) -> Result<u32, EngineError> {
     if count == 0 {
         return Err(EngineError::new(
             "resource_monitor_unsupported",
-            "当前远端系统不支持资源监控",
+            "Remote system does not support resource monitoring",
         ));
     }
 
     u32::try_from(count).map_err(|err| {
         EngineError::with_detail(
             "resource_monitor_parse_failed",
-            "无法解析 CPU 数量",
+            "Failed to parse CPU count",
             err.to_string(),
         )
     })
@@ -350,20 +367,26 @@ fn parse_uptime_seconds(output: &str) -> Result<u64, EngineError> {
             )
         })
         .ok_or_else(|| {
-            EngineError::new("resource_monitor_unsupported", "当前远端系统不支持资源监控")
+            EngineError::new(
+                "resource_monitor_unsupported",
+                "Remote system does not support resource monitoring",
+            )
         })?;
 
     let seconds = line
         .split_whitespace()
         .next()
         .ok_or_else(|| {
-            EngineError::new("resource_monitor_unsupported", "当前远端系统不支持资源监控")
+            EngineError::new(
+                "resource_monitor_unsupported",
+                "Remote system does not support resource monitoring",
+            )
         })?
         .parse::<f64>()
         .map_err(|err| {
             EngineError::with_detail(
                 "resource_monitor_parse_failed",
-                "无法解析系统运行时长",
+                "Failed to parse system uptime",
                 err.to_string(),
             )
         })?;

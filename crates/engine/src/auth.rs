@@ -28,6 +28,7 @@ const SSH_AUTH_KEY_READ_FAILED: &str = "error.ssh.auth.keyReadFailed";
 #[derive(Clone, Copy)]
 pub enum AuthPurpose {
     Session,
+    Jump,
     ResourceMonitor,
 }
 
@@ -35,6 +36,7 @@ impl AuthPurpose {
     fn start_event(self) -> &'static str {
         match self {
             AuthPurpose::Session => "ssh.session.auth.start",
+            AuthPurpose::Jump => "ssh.jump.auth.start",
             AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.start",
         }
     }
@@ -42,6 +44,7 @@ impl AuthPurpose {
     fn success_event(self) -> &'static str {
         match self {
             AuthPurpose::Session => "ssh.session.auth.success",
+            AuthPurpose::Jump => "ssh.jump.auth.success",
             AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.success",
         }
     }
@@ -49,6 +52,7 @@ impl AuthPurpose {
     fn failed_event(self) -> &'static str {
         match self {
             AuthPurpose::Session => "ssh.session.auth.failed",
+            AuthPurpose::Jump => "ssh.jump.auth.failed",
             AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.failed",
         }
     }

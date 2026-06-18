@@ -33,8 +33,11 @@ pub struct HostProfile {
     pub private_key_passphrase_ref: Option<String>,
     pub password_ref: Option<String>,
     pub known_host: Option<String>,
+    pub proxy_mode: Option<SshProxyMode>,
+    pub proxy_config: Option<SshProxyConfig>,
     pub proxy_command: Option<String>,
     pub proxy_jump: Option<String>,
+    pub jump_profile_ids: Option<Vec<String>>,
     pub add_keys_to_agent: Option<String>,
     pub user_known_hosts_file: Option<String>,
     pub strict_host_key_checking: Option<bool>,
@@ -46,6 +49,37 @@ pub struct HostProfile {
     pub bell_mode: Option<String>,
     pub bell_cooldown_ms: Option<u32>,
     pub description: Option<String>,
+}
+
+/// SSH 出站代理模式。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SshProxyMode {
+    #[default]
+    Direct,
+    System,
+    Manual,
+}
+
+/// SSH 出站代理协议。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshProxyProtocol {
+    Http,
+    Socks5,
+}
+
+/// SSH 出站代理配置。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshProxyConfig {
+    pub protocol: SshProxyProtocol,
+    pub host: String,
+    pub port: u16,
+    pub username: Option<String>,
+    pub password_ref: Option<String>,
+    #[serde(default)]
+    pub use_proxy_dns: Option<bool>,
 }
 
 /// 会话状态。

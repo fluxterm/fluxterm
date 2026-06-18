@@ -8,12 +8,24 @@
 
 目标：为所有 SSH Profile 提供更完整的连接配置能力，使手动添加与导入生成的配置在连接行为上保持一致，并逐步支持跳板机、代理、主机密钥校验与多密钥等高级能力。
 
+当前进展：
+
+- 已支持 SSH 建连代理模式：直连、系统代理、手动 HTTP 代理、手动 SOCKS5 代理
+- 已支持手动代理认证信息保存，并接入现有 Profile 凭据加密流程
+- 已支持“使用代理执行 DNS 查询”开关，允许在代理侧或本机侧解析目标主机
+- 已支持从已有 SSH Profile 选择多级跳板机，并按顺序构建跳板链
+- 已将正式 SSH 连接、Host Key 预检、SSH 资源监控统一到同一套 transport 构建逻辑
+- 已支持 OpenSSH `ProxyJump` 原始字段保存，并尽量映射为 FluxTerm 内部跳板链
+- 已保留 OpenSSH `ProxyCommand` 原始字段，但当前不执行外部命令
+- 设计说明见 `docs/ssh-proxy-transport-design.md`
+
 下一步：
 
-- 明确需要纳入 SSH Profile 编辑界面的高级字段
-- 梳理高级字段从 Profile 到连接链路的传递与生效方式
-- 规划 `ProxyJump`、`ProxyCommand`、多 `IdentityFile`、`UserKnownHostsFile`、`StrictHostKeyChecking`、`AddKeysToAgent` 的分阶段支持范围
-- 补充独立设计文档
+- 补充 HTTP CONNECT、SOCKS5、系统代理解析和跳板链的模拟/集成测试
+- 继续完善 OpenSSH 高级字段：多 `IdentityFile`、`UserKnownHostsFile`、`StrictHostKeyChecking`、`AddKeysToAgent`
+- 评估 `ProxyCommand` 的安全模型与是否允许执行外部命令
+- 补充系统代理绕过规则在 macOS/Linux 上的更完整支持
+- 在 UI 中继续打磨跳板链编辑、代理清理和异常提示体验
 
 ### P2 串口功能
 

@@ -182,13 +182,13 @@ pub(crate) fn validate_profile_name(value: String) -> Result<String, EngineError
     if normalized.is_empty() {
         return Err(EngineError::new(
             "profile_name_required",
-            "会话名称不能为空",
+            "Profile name cannot be empty",
         ));
     }
     if normalized.chars().count() > PROFILE_NAME_MAX_LENGTH {
         return Err(EngineError::new(
             "profile_name_too_long",
-            "会话名称不能超过 14 个字符",
+            "Profile name cannot exceed 14 characters",
         ));
     }
     Ok(normalized.to_string())
@@ -205,7 +205,7 @@ pub(crate) fn validate_and_dedupe_groups(values: Vec<String>) -> Result<Vec<Stri
         if trimmed.chars().count() > GROUP_NAME_MAX_LENGTH {
             return Err(EngineError::new(
                 "group_name_too_long",
-                "分组名称不能超过 12 个字符",
+                "Group name cannot exceed 12 characters",
             ));
         }
         normalized.push(trimmed.to_string());
@@ -228,7 +228,7 @@ pub(crate) fn normalize_profile_tags(
     if normalized.chars().count() > GROUP_NAME_MAX_LENGTH {
         return Err(EngineError::new(
             "group_name_too_long",
-            "分组名称不能超过 12 个字符",
+            "Group name cannot exceed 12 characters",
         ));
     }
     Ok(Some(vec![normalized.to_string()]))
@@ -248,7 +248,10 @@ pub(crate) fn normalize_profile_icon_key(
     if ALLOWED_PROFILE_ICON_KEYS.contains(&normalized) {
         return Ok(Some(normalized.to_string()));
     }
-    Err(EngineError::new("profile_icon_invalid", "会话图标无效"))
+    Err(EngineError::new(
+        "profile_icon_invalid",
+        "Invalid profile icon",
+    ))
 }
 
 fn now_epoch() -> u64 {
@@ -261,6 +264,9 @@ fn now_epoch() -> u64 {
 fn redact_profile_secrets(mut profile: HostProfile) -> HostProfile {
     profile.password_ref = None;
     profile.private_key_passphrase_ref = None;
+    if let Some(proxy_config) = profile.proxy_config.as_mut() {
+        proxy_config.password_ref = None;
+    }
     profile
 }
 

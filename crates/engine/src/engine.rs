@@ -10,6 +10,7 @@ use uuid::Uuid;
 use crate::error::EngineError;
 use crate::proxy_backend::{BuiltinProxyBackend, ProxyBackend};
 use crate::session::{ExpectedHostKey, SessionCommand, SessionHandle, run_session_loop};
+use crate::ssh_transport::JumpHostSpec;
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EventCallback, HostProfile, ProxyRuntime, ProxySpec, Session, SessionState, SftpEntry,
@@ -46,6 +47,7 @@ impl Engine {
         &self,
         profile: HostProfile,
         expected_host_key: Option<ExpectedHostKey>,
+        jump_spec: JumpHostSpec,
         size: TerminalSize,
         on_event: EventCallback,
     ) -> Result<Session, EngineError> {
@@ -79,6 +81,7 @@ impl Engine {
                 session_id_clone.clone(),
                 profile_clone,
                 expected_host_key,
+                jump_spec,
                 size,
                 rx,
                 on_event_clone,
@@ -114,11 +117,13 @@ impl Engine {
             .lock()
             .unwrap()
             .remove(session_id)
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
-        handle
-            .tx
-            .send(SessionCommand::Disconnect)
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送断开命令"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+        handle.tx.send(SessionCommand::Disconnect).map_err(|_| {
+            EngineError::new(
+                "session_command_failed",
+                "Failed to send disconnect command",
+            )
+        })?;
         Ok(())
     }
 
@@ -130,11 +135,11 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::Write(data))
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送输入数据"))?;
+            .map_err(|_| EngineError::new("session_command_failed", "Failed to send input data"))?;
         Ok(())
     }
 
@@ -146,11 +151,11 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::Resize { cols, rows })
-            .map_err(|_| EngineError::new("session_command_failed", "无法调整终端尺寸"))?;
+            .map_err(|_| EngineError::new("session_command_failed", "Failed to resize terminal"))?;
         Ok(())
     }
 
@@ -163,15 +168,17 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpList {
                 path: path.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP 列表命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP 列表响应")
+            .map_err(|_| {
+                EngineError::new("session_command_failed", "Failed to send SFTP list command")
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP list response")
     }
 
     /// 获取远端文件信息。
@@ -183,7 +190,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpStat {
@@ -191,9 +198,9 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 文件信息命令")
+                EngineError::new("session_command_failed", "Failed to send SFTP stat command")
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 文件信息响应")
+        self.await_response(resp_rx, "Failed to receive SFTP stat response")
     }
 
     /// 获取远端家目录。
@@ -205,14 +212,16 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpHome {
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP Home 命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP Home 响应")
+            .map_err(|_| {
+                EngineError::new("session_command_failed", "Failed to send SFTP home command")
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP home response")
     }
 
     /// 解析远端路径到真实路径。
@@ -224,7 +233,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpResolvePath {
@@ -232,9 +241,12 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 路径解析命令")
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP path resolution command",
+                )
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 路径解析响应")
+        self.await_response(resp_rx, "Failed to receive SFTP path resolution response")
     }
 
     /// 上传本地文件到远端。
@@ -251,7 +263,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpUpload {
@@ -259,8 +271,13 @@ impl Engine {
                 remote_path: remote_path.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP 上传命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP 上传响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP upload command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP upload response")
     }
 
     /// 批量上传本地文件或目录到远端目录。
@@ -277,7 +294,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpUploadBatch {
@@ -286,9 +303,12 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 批量上传命令")
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP batch upload command",
+                )
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 批量上传响应")
+        self.await_response(resp_rx, "Failed to receive SFTP batch upload response")
     }
 
     /// 下载远端文件到本地。
@@ -305,7 +325,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpDownload {
@@ -313,8 +333,13 @@ impl Engine {
                 local_path: local_path.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP 下载命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP 下载响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP download command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP download response")
     }
 
     /// 下载远端目录到本地目录。
@@ -331,7 +356,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpDownloadDir {
@@ -340,9 +365,15 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 目录下载命令")
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP directory download command",
+                )
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 目录下载响应")
+        self.await_response(
+            resp_rx,
+            "Failed to receive SFTP directory download response",
+        )
     }
 
     /// 取消指定传输任务。
@@ -358,7 +389,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpCancelTransfer {
@@ -366,9 +397,15 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 取消传输命令")
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP transfer cancellation command",
+                )
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 取消传输响应")
+        self.await_response(
+            resp_rx,
+            "Failed to receive SFTP transfer cancellation response",
+        )
     }
 
     /// 重命名远端文件或目录。
@@ -380,7 +417,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpRename {
@@ -388,8 +425,13 @@ impl Engine {
                 to: to.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP 重命名命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP 重命名响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP rename command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP rename response")
     }
 
     /// 删除远端文件。
@@ -401,15 +443,20 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpRemove {
                 path: path.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送 SFTP 删除命令"))?;
-        self.await_response(resp_rx, "无法接收 SFTP 删除响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP remove command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive SFTP remove response")
     }
 
     /// 创建远端目录。
@@ -421,7 +468,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpMkdir {
@@ -429,9 +476,12 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "无法发送 SFTP 创建目录命令")
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send SFTP mkdir command",
+                )
             })?;
-        self.await_response(resp_rx, "无法接收 SFTP 创建目录响应")
+        self.await_response(resp_rx, "Failed to receive SFTP mkdir response")
     }
 
     /// 打开 SSH 隧道。
@@ -447,15 +497,20 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelOpen {
                 spec,
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送隧道创建命令"))?;
-        self.await_response(resp_rx, "无法接收隧道创建响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send tunnel create command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive tunnel create response")
     }
 
     /// 关闭 SSH 隧道。
@@ -467,15 +522,20 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelClose {
                 tunnel_id: tunnel_id.to_string(),
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送隧道关闭命令"))?;
-        self.await_response(resp_rx, "无法接收隧道关闭响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send tunnel close command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive tunnel close response")
     }
 
     /// 列出会话下所有 SSH 隧道。
@@ -487,14 +547,19 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelList {
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送隧道列表命令"))?;
-        self.await_response(resp_rx, "无法接收隧道列表响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send tunnel list command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive tunnel list response")
     }
 
     /// 关闭会话下全部 SSH 隧道。
@@ -506,14 +571,19 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "会话不存在"))?;
+            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelCloseAll {
                 respond_to: resp_tx,
             })
-            .map_err(|_| EngineError::new("session_command_failed", "无法发送隧道批量关闭命令"))?;
-        self.await_response(resp_rx, "无法接收隧道批量关闭响应")
+            .map_err(|_| {
+                EngineError::new(
+                    "session_command_failed",
+                    "Failed to send tunnel batch close command",
+                )
+            })?;
+        self.await_response(resp_rx, "Failed to receive tunnel batch close response")
     }
 
     /// 创建全局代理实例。

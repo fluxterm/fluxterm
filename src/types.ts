@@ -3,6 +3,22 @@ import type { TranslationKey } from "./i18n";
 /** 认证方式。 */
 export type AuthType = "password" | "privateKey" | "agent";
 
+/** SSH 出站代理模式。 */
+export type SshProxyMode = "direct" | "system" | "manual";
+
+/** SSH 出站代理协议。 */
+export type SshProxyProtocol = "http" | "socks5";
+
+/** SSH 出站代理配置。 */
+export type SshProxyConfig = {
+  protocol: SshProxyProtocol;
+  host: string;
+  port: number;
+  username?: string | null;
+  passwordRef?: string | null;
+  useProxyDns?: boolean | null;
+};
+
 /** 终端 Bell 响应模式。 */
 export type TerminalBellMode = "silent" | "sound";
 
@@ -30,8 +46,11 @@ export type HostProfile = {
   privateKeyPassphraseRef?: string | null;
   passwordRef?: string | null;
   knownHost?: string | null;
+  proxyMode?: SshProxyMode | null;
+  proxyConfig?: SshProxyConfig | null;
   proxyCommand?: string | null;
   proxyJump?: string | null;
+  jumpProfileIds?: string[] | null;
   addKeysToAgent?: string | null;
   userKnownHostsFile?: string | null;
   strictHostKeyChecking?: boolean | null;

@@ -52,6 +52,9 @@ const defaultProfile: HostProfile = {
   privateKeyPassphraseRef: null,
   passwordRef: null,
   knownHost: null,
+  proxyMode: "direct",
+  proxyConfig: null,
+  jumpProfileIds: null,
   tags: null,
   wordSeparators: null,
   bellMode: DEFAULT_TERMINAL_BELL_MODE,
@@ -118,23 +121,29 @@ export default function useProfiles(): UseProfilesResult {
     ]);
     const normalized: HostProfile[] = list.map((profile) => {
       const rawAuth = profile.authType as string;
+      const base = {
+        ...profile,
+        proxyMode: profile.proxyMode ?? "direct",
+        proxyConfig: profile.proxyConfig ?? null,
+        jumpProfileIds: profile.jumpProfileIds ?? null,
+      } satisfies HostProfile;
       if (
         rawAuth === "key" ||
         rawAuth === "public_key" ||
         rawAuth === "publicKey"
       ) {
         return {
-          ...profile,
+          ...base,
           authType: "privateKey",
         } satisfies HostProfile;
       }
       if (rawAuth === "agent") {
         return {
-          ...profile,
+          ...base,
           authType: "privateKey",
         } satisfies HostProfile;
       }
-      return profile;
+      return base;
     });
     // 分组来源同时包含持久化分组和主机条目里已有的 tags，避免两边数据临时不一致。
     const discoveredGroups = normalized
