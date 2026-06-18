@@ -78,6 +78,8 @@ function normalizeWidgetKey(value: unknown): WidgetKey | null {
   if (value === "events") return "events";
   if (value === "history") return "history";
   if (value === "ai") return "ai";
+  if (value === "tunnels") return "tunnels";
+  if (value === "broadcast") return "broadcast";
   if (value === "logs") return "events";
   return null;
 }

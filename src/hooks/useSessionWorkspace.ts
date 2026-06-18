@@ -9,6 +9,7 @@ import {
   collectLeafPanes,
   collectWorkspaceSessionIds,
   createEmptyWorkspaceState,
+  getSessionGroupIdFromWorkspace,
   getActiveSessionIdFromWorkspace,
   sessionWorkspaceReducer,
 } from "@/features/session/core/workspaceReducer";
@@ -41,6 +42,8 @@ export default function useSessionWorkspace() {
       activeSessionId,
       getActivePaneId: () => workspace.activePaneId,
       getAllSessionIds: () => collectWorkspaceSessionIds(workspace),
+      getSessionGroupId: (sessionId: string) =>
+        getSessionGroupIdFromWorkspace(workspace, sessionId),
       attachSession: (
         sessionId: string,
         activate = true,
@@ -93,6 +96,19 @@ export default function useSessionWorkspace() {
       },
       resizeSplit: (paneId: SessionPaneId, ratio: number) => {
         dispatch({ type: "resize-split", paneId, ratio });
+      },
+      createSessionGroup: (name: string, sessionId: string) => {
+        const groupId = createWorkspaceId("pane").replace(/^pane-/, "group-");
+        dispatch({
+          type: "create-session-group",
+          groupId,
+          name,
+          sessionId,
+        });
+        return groupId;
+      },
+      moveSessionToGroup: (sessionId: string, groupId: string) => {
+        dispatch({ type: "move-session-to-group", sessionId, groupId });
       },
       getLeafPanes: () =>
         workspace.root ? collectLeafPanes(workspace.root) : [],

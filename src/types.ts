@@ -79,6 +79,18 @@ export type SessionInput =
 /** 会话窗格标识。 */
 export type SessionPaneId = string;
 
+/** 会话分组标识。 */
+export type SessionGroupId = string;
+
+/** 运行时会话分组。 */
+export type SessionGroup = {
+  id: SessionGroupId;
+  name: string;
+  sessionIds: string[];
+  color?: string;
+  builtIn?: boolean;
+};
+
 /** 会话窗格树节点。 */
 export type SessionPaneNode =
   | {
@@ -99,7 +111,11 @@ export type SessionPaneNode =
 export type SessionWorkspaceState = {
   root: SessionPaneNode | null;
   activePaneId: SessionPaneId | null;
+  groups: SessionGroup[];
 };
+
+/** 批量广播目标范围。 */
+export type BroadcastTargetScope = "current" | "group" | "all";
 
 /** SFTP 文件条目。 */
 export type SftpEntry = {
@@ -513,7 +529,8 @@ export type WidgetKey =
   | "events"
   | "history"
   | "ai"
-  | "tunnels";
+  | "tunnels"
+  | "broadcast";
 /** 功能面板区域。 */
 export type WidgetArea = "left" | "right" | "bottom";
 

@@ -16,7 +16,12 @@ import {
 } from "react-icons/fi";
 import type { Translate } from "@/i18n";
 import ContextMenu from "@/components/ui/menu/ContextMenu";
+import InputDialog from "@/components/ui/InputDialog";
+import Modal from "@/components/ui/modal/Modal";
+import Button from "@/components/ui/button";
 import SessionTabContextMenu from "@/widgets/terminal/components/SessionTabContextMenu";
+import type { SessionGroup } from "@/types";
+import { DEFAULT_SESSION_GROUP_ID } from "@/constants/sessionGroups";
 
 type TerminalContextMenuProps = {
   activeSessionId: string | null;
@@ -48,6 +53,10 @@ type TerminalContextMenuProps = {
     sessionId: string,
   ) => Promise<void>;
   onCloseAllSessionsInPane: (paneId: string) => Promise<void>;
+  sessionGroups: SessionGroup[];
+  getSessionGroupId: (sessionId: string) => string;
+  onMoveSessionToGroup: (sessionId: string, groupId: string) => void;
+  onCreateSessionGroup: (name: string, sessionId: string) => string;
   t: Translate;
 };
 
@@ -83,10 +92,38 @@ export default function useTerminalMenus({
   onCloseOtherSessionsInPane,
   onCloseSessionsToRightInPane,
   onCloseAllSessionsInPane,
+  sessionGroups,
+  getSessionGroupId,
+  onMoveSessionToGroup,
+  onCreateSessionGroup,
   t,
 }: TerminalContextMenuProps) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
+  const [groupDialogSessionId, setGroupDialogSessionId] = useState<
+    string | null
+  >(null);
+  const [groupDialogError, setGroupDialogError] = useState<string | null>(null);
+  const [groupPickerSessionId, setGroupPickerSessionId] = useState<
+    string | null
+  >(null);
+  const [groupPickerQuery, setGroupPickerQuery] = useState("");
+
+  const groupPickerActiveGroupId = groupPickerSessionId
+    ? getSessionGroupId(groupPickerSessionId)
+    : "";
+  const groupPickerGroups = sessionGroups
+    .filter((group) => {
+      const query = groupPickerQuery.trim().toLocaleLowerCase();
+      if (!query) return true;
+      if (group.id === DEFAULT_SESSION_GROUP_ID) {
+        return t("terminal.tabMenu.group.default")
+          .toLocaleLowerCase()
+          .includes(query);
+      }
+      return group.name.toLocaleLowerCase().includes(query);
+    })
+    .sort((left, right) => Number(!!right.builtIn) - Number(!!left.builtIn));
 
   function closeMenu() {
     setMenu(null);
@@ -222,9 +259,112 @@ export default function useTerminalMenus({
               ).catch(() => {});
               setSessionMenu(null);
             }}
+            sessionGroups={sessionGroups}
+            activeGroupId={getSessionGroupId(sessionMenu.sessionId)}
+            onMoveToGroup={(groupId) => {
+              onMoveSessionToGroup(sessionMenu.sessionId, groupId);
+              setSessionMenu(null);
+            }}
+            onCreateGroup={() => {
+              setGroupDialogError(null);
+              setGroupDialogSessionId(sessionMenu.sessionId);
+              setSessionMenu(null);
+            }}
+            onOpenMoreGroups={() => {
+              setGroupPickerQuery("");
+              setGroupPickerSessionId(sessionMenu.sessionId);
+              setSessionMenu(null);
+            }}
             t={t}
           />
         )}
+        <InputDialog
+          open={!!groupDialogSessionId}
+          title={t("terminal.tabMenu.group.createTitle")}
+          label={t("terminal.tabMenu.group.name")}
+          placeholder={t("terminal.tabMenu.group.namePlaceholder")}
+          maxLength={32}
+          errorText={groupDialogError}
+          confirmText={t("actions.confirm")}
+          cancelText={t("actions.cancel")}
+          closeText={t("actions.close")}
+          onClose={() => {
+            setGroupDialogSessionId(null);
+            setGroupDialogError(null);
+          }}
+          onValueChange={() => setGroupDialogError(null)}
+          onConfirm={(value) => {
+            const trimmed = value.trim();
+            if (!trimmed) {
+              setGroupDialogError(t("terminal.tabMenu.group.nameRequired"));
+              return;
+            }
+            if (
+              sessionGroups.some(
+                (group) =>
+                  group.name.trim().toLocaleLowerCase() ===
+                  trimmed.toLocaleLowerCase(),
+              )
+            ) {
+              setGroupDialogError(t("terminal.tabMenu.group.nameDuplicate"));
+              return;
+            }
+            if (!groupDialogSessionId) return;
+            onCreateSessionGroup(trimmed, groupDialogSessionId);
+            setGroupDialogSessionId(null);
+            setGroupDialogError(null);
+          }}
+        />
+        <Modal
+          open={!!groupPickerSessionId}
+          title={t("terminal.tabMenu.group.selectTitle")}
+          closeLabel={t("actions.close")}
+          onClose={() => {
+            setGroupPickerSessionId(null);
+            setGroupPickerQuery("");
+          }}
+        >
+          <div className="input-dialog-body">
+            <input
+              value={groupPickerQuery}
+              placeholder={t("terminal.tabMenu.group.searchPlaceholder")}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) => setGroupPickerQuery(event.target.value)}
+            />
+            {groupPickerGroups.length ? (
+              groupPickerGroups.map((group) => {
+                const isDefaultGroup = group.id === DEFAULT_SESSION_GROUP_ID;
+                const disabled = group.id === groupPickerActiveGroupId;
+                return (
+                  <Button
+                    key={group.id}
+                    variant="ghost"
+                    size="sm"
+                    disabled={disabled}
+                    onClick={() => {
+                      if (!groupPickerSessionId) return;
+                      onMoveSessionToGroup(groupPickerSessionId, group.id);
+                      setGroupPickerSessionId(null);
+                      setGroupPickerQuery("");
+                    }}
+                  >
+                    {isDefaultGroup
+                      ? t("terminal.tabMenu.group.default")
+                      : t("terminal.tabMenu.group.join", {
+                          name: group.name,
+                        })}
+                  </Button>
+                );
+              })
+            ) : (
+              <div className="input-dialog-error">
+                {t("terminal.tabMenu.group.noMatch")}
+              </div>
+            )}
+          </div>
+        </Modal>
         {activeLinkMenu && (
           <ContextMenu
             x={activeLinkMenu.x}

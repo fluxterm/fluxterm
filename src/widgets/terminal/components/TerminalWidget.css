@@ -124,6 +124,14 @@ button.session-tab {
   padding: 0;
 }
 
+.session-tab-group-color {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 14%, transparent);
+}
+
 .session-tab .session-tab-trigger {
   flex: 1 1 auto;
   min-width: 0;

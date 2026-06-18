@@ -12,9 +12,11 @@ import type {
   HostProfile,
   LocalSessionMeta,
   Session,
+  SessionGroup,
   SessionStateUi,
   SessionWorkspaceState,
 } from "@/types";
+import { DEFAULT_SESSION_GROUP_ID } from "@/constants/sessionGroups";
 import TerminalPaneTree from "@/widgets/terminal/components/TerminalPaneTree";
 import useTerminalMenus from "@/widgets/terminal/components/useTerminalMenus";
 import useTerminalSearchBar from "@/widgets/terminal/components/TerminalSearchBar";
@@ -52,6 +54,7 @@ type TerminalWidgetProps = {
   autoReconnectOnPoweroff: boolean;
   autoReconnectOnReboot: boolean;
   bellPendingBySession: Record<string, boolean>;
+  sessionGroups: SessionGroup[];
   registerTerminalContainer: (
     sessionId: string,
     element: HTMLDivElement | null,
@@ -106,6 +109,9 @@ type TerminalWidgetProps = {
     options?: { suppressDisconnectBanner?: boolean },
   ) => Promise<void>;
   onResizePaneSplit: (paneId: string, ratio: number) => void;
+  onCreateSessionGroup: (name: string, sessionId: string) => string;
+  onMoveSessionToGroup: (sessionId: string, groupId: string) => void;
+  getSessionGroupId: (sessionId: string) => string;
   onCloseOtherSessionsInPane: (
     paneId: string,
     sessionId: string,
@@ -135,6 +141,7 @@ export default function TerminalWidget({
   autoReconnectOnPoweroff,
   autoReconnectOnReboot,
   bellPendingBySession,
+  sessionGroups,
   registerTerminalContainer,
   isTerminalReady,
   getTerminalTitle,
@@ -169,6 +176,9 @@ export default function TerminalWidget({
   onSplitActivePane,
   onClosePaneSession,
   onResizePaneSplit,
+  onCreateSessionGroup,
+  onMoveSessionToGroup,
+  getSessionGroupId,
   onCloseOtherSessionsInPane,
   onCloseSessionsToRightInPane,
   onCloseAllSessionsInPane,
@@ -197,6 +207,14 @@ export default function TerminalWidget({
 
   function resolveSessionState(sessionId: string) {
     return sessionStates[sessionId] ?? "connecting";
+  }
+
+  function resolveSessionGroupColor(sessionId: string) {
+    const group = sessionGroups.find((item) =>
+      item.sessionIds.includes(sessionId),
+    );
+    if (!group || group.id === DEFAULT_SESSION_GROUP_ID) return null;
+    return group.color ?? null;
   }
 
   function resolveSessionReason(sessionId: string) {
@@ -295,6 +313,10 @@ export default function TerminalWidget({
       onCloseOtherSessionsInPane,
       onCloseSessionsToRightInPane,
       onCloseAllSessionsInPane,
+      sessionGroups,
+      getSessionGroupId,
+      onMoveSessionToGroup,
+      onCreateSessionGroup,
       t,
     },
   );
@@ -311,6 +333,7 @@ export default function TerminalWidget({
             getTerminalTitle={getTerminalTitle}
             getSessionLabel={resolveSessionLabel}
             getSessionState={resolveSessionState}
+            getSessionGroupColor={resolveSessionGroupColor}
             getSessionReason={resolveSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}

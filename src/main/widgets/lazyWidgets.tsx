@@ -26,3 +26,6 @@ export const AiWidget = lazy(() => import("@/widgets/ai/components/AiWidget"));
 export const TunnelWidget = lazy(
   () => import("@/widgets/tunnels/components/TunnelWidget"),
 );
+export const BroadcastWidget = lazy(
+  () => import("@/widgets/broadcast/components/BroadcastWidget"),
+);

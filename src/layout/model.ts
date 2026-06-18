@@ -21,6 +21,7 @@ export const widgetKeys: WidgetKey[] = [
   "history",
   "ai",
   "tunnels",
+  "broadcast",
 ];
 
 /** 默认小组件布局。 */
@@ -319,6 +320,7 @@ function normalizeWidgetKey(value: unknown): WidgetKey | null {
   if (value === "history") return "history";
   if (value === "ai") return "ai";
   if (value === "tunnels") return "tunnels";
+  if (value === "broadcast") return "broadcast";
   if (value === "logs") return "events";
   return null;
 }

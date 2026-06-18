@@ -105,6 +105,11 @@ import {
   type FloatingEventsMessage,
   type FloatingEventsSnapshot,
 } from "@/features/session/core/widgetEventsSync";
+import {
+  WIDGET_BROADCAST_CHANNEL,
+  type FloatingBroadcastMessage,
+  type FloatingBroadcastSnapshot,
+} from "@/features/session/core/widgetBroadcastSync";
 import { themePresets } from "@/main/theme/themePresets";
 import { buildTerminalTheme } from "@/main/theme/buildTerminalTheme";
 import { buildWidgets } from "@/main/widgets/buildWidgets";
@@ -158,6 +163,7 @@ const widgetLabelKeys: Record<WidgetKey, TranslationKey> = {
   history: "widget.history",
   ai: "widget.ai",
   tunnels: "widget.tunnels",
+  broadcast: "widget.broadcast",
 };
 const BACKGROUND_IMAGE_TERMINAL_CANVAS_ALPHA = 0;
 const ConfigModal = lazy(() => import("@/components/layout/ConfigModal"));
@@ -291,6 +297,12 @@ function decodeQuickCommandEscapes(input: string) {
 function normalizeQuickCommandForSubmit(input: string) {
   // 在终端交互里，提交命令应使用 CR。将用户写的 LF/CRLF 统一折叠为 CR。
   return input.replace(/\r\n/g, "\r").replace(/\n/g, "\r");
+}
+
+/** 规范广播命令并确保最终提交执行。 */
+function normalizeBroadcastCommandForSubmit(input: string) {
+  const normalized = normalizeQuickCommandForSubmit(input);
+  return normalized.endsWith("\r") ? normalized : `${normalized}\r`;
 }
 
 /** 应用主界面编排层。 */
@@ -562,6 +574,7 @@ export default function AppShell() {
     if (value === "history") return "history";
     if (value === "ai") return "ai";
     if (value === "tunnels") return "tunnels";
+    if (value === "broadcast") return "broadcast";
     if (value === "logs") return "events";
     return null;
   }, []);
@@ -602,6 +615,8 @@ export default function AppShell() {
     useState<FloatingAiSnapshot | null>(null);
   const [floatingTunnelsSnapshot, setFloatingTunnelsSnapshot] =
     useState<FloatingTunnelsSnapshot | null>(null);
+  const [floatingBroadcastSnapshot, setFloatingBroadcastSnapshot] =
+    useState<FloatingBroadcastSnapshot | null>(null);
   const [bellPendingBySession, setBellPendingBySession] = useState<
     Record<string, boolean>
   >({});
@@ -753,6 +768,7 @@ export default function AppShell() {
       history: t(widgetLabelKeys.history),
       ai: t(widgetLabelKeys.ai),
       tunnels: t(widgetLabelKeys.tunnels),
+      broadcast: t(widgetLabelKeys.broadcast),
     }),
     [t],
   );
@@ -984,6 +1000,7 @@ export default function AppShell() {
   const isFloatingHistoryWidget = floatingWidgetKey === "history";
   const isFloatingAiWidget = floatingWidgetKey === "ai";
   const isFloatingTunnelsWidget = floatingWidgetKey === "tunnels";
+  const isFloatingBroadcastWidget = floatingWidgetKey === "broadcast";
 
   const {
     showGroupTitle,
@@ -1724,6 +1741,92 @@ export default function AppShell() {
     sessionActions.writeToSession(sessionId, normalized).catch(() => {});
   }
 
+  const handleBroadcastCommand = useCallback(
+    async (sessionIds: string[], command: string) => {
+      const normalized = normalizeBroadcastCommandForSubmit(command);
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (const sessionId of sessionIds) {
+        const localMeta = sessionState.localSessionMeta[sessionId] ?? null;
+        const clearInputSequence =
+          sessionActions.isLocalSession(sessionId) &&
+          localMeta?.shellKind !== "wsl"
+            ? "\u001b"
+            : "\u0015";
+        try {
+          await sessionActions.writeToSession(sessionId, clearInputSequence);
+          await sessionActions.writeToSession(sessionId, normalized);
+          successCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      return { successCount, failedCount };
+    },
+    [sessionActions, sessionState.localSessionMeta],
+  );
+
+  useFloatingWidgetSnapshotSync<FloatingBroadcastMessage>({
+    channelName: WIDGET_BROADCAST_CHANNEL,
+    floatingWidgetKey,
+    isFloatingWidget: isFloatingBroadcastWidget,
+    broadcastSnapshot: (channel) => {
+      const payload: FloatingBroadcastSnapshot = {
+        activeSessionId: sessionState.activeSessionId,
+        sessions: sessionState.sessions,
+        sessionGroups: sessionState.sessionGroups,
+        sessionStates: sessionState.sessionStates,
+      };
+      channel.postMessage({
+        type: "broadcast:snapshot",
+        payload,
+      } satisfies FloatingBroadcastMessage);
+    },
+    onMainWindowMessage: (message, channel) => {
+      switch (message.type) {
+        case "broadcast:request-snapshot": {
+          const payload: FloatingBroadcastSnapshot = {
+            activeSessionId: sessionState.activeSessionId,
+            sessions: sessionState.sessions,
+            sessionGroups: sessionState.sessionGroups,
+            sessionStates: sessionState.sessionStates,
+          };
+          channel.postMessage({
+            type: "broadcast:snapshot",
+            payload,
+          } satisfies FloatingBroadcastMessage);
+          break;
+        }
+        case "broadcast:send":
+          handleBroadcastCommand(message.sessionIds, message.command).catch(
+            () => {},
+          );
+          break;
+        case "broadcast:snapshot":
+          break;
+      }
+    },
+    onFloatingWindowMessage: (message) => {
+      if (message.type === "broadcast:snapshot") {
+        setFloatingBroadcastSnapshot(message.payload);
+      }
+    },
+    requestSnapshot: (channel) => {
+      channel.postMessage({
+        type: "broadcast:request-snapshot",
+      } satisfies FloatingBroadcastMessage);
+    },
+    deps: [
+      handleBroadcastCommand,
+      sessionState.activeSessionId,
+      sessionState.sessions,
+      sessionState.sessionGroups,
+      sessionState.sessionStates,
+    ],
+  });
+
   const handleConnectProfile = useCallback(
     async (profileInput: HostProfile) => {
       if (!profileInput.host || !profileInput.username) {
@@ -2031,6 +2134,11 @@ export default function AppShell() {
     useFloatingWidgetMessagePoster<FloatingTunnelsMessage>(
       WIDGET_TUNNELS_CHANNEL,
       isFloatingTunnelsWidget,
+    );
+  const postFloatingBroadcastMessage =
+    useFloatingWidgetMessagePoster<FloatingBroadcastMessage>(
+      WIDGET_BROADCAST_CHANNEL,
+      isFloatingBroadcastWidget,
     );
 
   // 主窗口直接读取本地 SFTP 状态；浮动文件面板则消费主窗口同步过来的只读快照。
@@ -2442,6 +2550,18 @@ export default function AppShell() {
         rdpConnectingProfiles: {},
         availableShells,
         activeSessionId: AiWidgetState.activeSessionId,
+        broadcastActiveSessionId: isFloatingBroadcastWidget
+          ? (floatingBroadcastSnapshot?.activeSessionId ?? null)
+          : sessionState.activeSessionId,
+        sessions: isFloatingBroadcastWidget
+          ? (floatingBroadcastSnapshot?.sessions ?? [])
+          : sessionState.sessions,
+        sessionGroups: isFloatingBroadcastWidget
+          ? (floatingBroadcastSnapshot?.sessionGroups ?? [])
+          : sessionState.sessionGroups,
+        sessionStates: isFloatingBroadcastWidget
+          ? (floatingBroadcastSnapshot?.sessionStates ?? {})
+          : sessionState.sessionStates,
         isRemoteSession: filesWidgetState.isRemoteSession,
         isRemoteConnected: filesWidgetState.isRemoteConnected,
         transferProgress: TransfersWidgetState.progress,
@@ -2544,6 +2664,16 @@ export default function AppShell() {
         onOpenTunnel: TunnelsWidgetActions.open,
         onCloseTunnel: TunnelsWidgetActions.close,
         onCloseAllTunnels: TunnelsWidgetActions.closeAll,
+        onBroadcastCommand: isFloatingBroadcastWidget
+          ? (sessionIds, command) => {
+              postFloatingBroadcastMessage({
+                type: "broadcast:send",
+                sessionIds,
+                command,
+              });
+              return Promise.resolve({ successCount: 0, failedCount: 0 });
+            }
+          : handleBroadcastCommand,
       }),
     [
       profiles,
@@ -2554,11 +2684,17 @@ export default function AppShell() {
       connectingSshProfiles,
       activeRdpProfileId,
       availableShells,
+      sessionState.activeSessionId,
+      sessionState.sessions,
+      sessionState.sessionGroups,
+      sessionState.sessionStates,
       AiWidgetActions,
       AiWidgetState,
       isFloatingAiWidget,
+      isFloatingBroadcastWidget,
       isFloatingTransfersWidget,
       EventsWidgetState,
+      floatingBroadcastSnapshot,
       filesWidgetState.isRemoteSession,
       filesWidgetState.isRemoteConnected,
       TransfersWidgetActions,
@@ -2583,6 +2719,9 @@ export default function AppShell() {
       handleCancelConnectProfile,
       handleConnectRdpProfile,
       handleRemoveRdpProfile,
+      handleBroadcastCommand,
+      postFloatingBroadcastMessage,
+      sessionActions,
       addRdpGroup,
       renameRdpGroup,
       removeRdpGroup,
@@ -2593,7 +2732,6 @@ export default function AppShell() {
       openLocalShellProfile,
       refreshAvailableShells,
       removeProfile,
-      sessionActions,
       filesWidgetActions,
       TunnelsWidgetActions,
       TunnelsWidgetState,
@@ -2731,6 +2869,7 @@ export default function AppShell() {
                 autoReconnectOnPoweroff={autoReconnectOnPoweroff}
                 autoReconnectOnReboot={autoReconnectOnReboot}
                 bellPendingBySession={bellPendingBySession}
+                sessionGroups={sessionState.sessionGroups}
                 registerTerminalContainer={
                   terminalActions.registerTerminalContainer
                 }
@@ -2796,6 +2935,9 @@ export default function AppShell() {
                 onSplitActivePane={sessionActions.splitActivePane}
                 onClosePaneSession={sessionActions.closePaneSession}
                 onResizePaneSplit={sessionActions.resizePaneSplit}
+                onCreateSessionGroup={sessionActions.createSessionGroup}
+                onMoveSessionToGroup={sessionActions.moveSessionToGroup}
+                getSessionGroupId={sessionActions.getSessionGroupId}
                 onCloseOtherSessionsInPane={
                   sessionActions.closeOtherSessionsInPane
                 }

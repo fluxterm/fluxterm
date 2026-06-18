@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import type React from "react";
 import {
   AiWidget,
+  BroadcastWidget,
   CommandHistoryWidget,
   EventsWidget,
   HostWidget,
@@ -26,6 +27,8 @@ import type {
   RdpProfile,
   SshConnectStateMap,
   WidgetKey,
+  Session,
+  SessionGroup,
   SessionStateUi,
   SftpAvailability,
   SftpEntry,
@@ -45,6 +48,10 @@ type buildWidgetsProps = {
   rdpConnectingProfiles: ConnectingProfileMap;
   availableShells: LocalShellProfile[];
   activeSessionId: string | null;
+  broadcastActiveSessionId: string | null;
+  sessions: Session[];
+  sessionGroups: SessionGroup[];
+  sessionStates: Record<string, SessionStateUi>;
   isRemoteSession: boolean;
   isRemoteConnected: boolean;
   transferProgress: SftpProgress | null;
@@ -131,6 +138,10 @@ type buildWidgetsProps = {
   onOpenTunnel: (spec: SshTunnelSpec) => Promise<void>;
   onCloseTunnel: (tunnelId: string) => Promise<void>;
   onCloseAllTunnels: () => Promise<void>;
+  onBroadcastCommand: (
+    sessionIds: string[],
+    command: string,
+  ) => Promise<{ successCount: number; failedCount: number }>;
 };
 
 /** 构建工作区面板集合。 */
@@ -148,6 +159,10 @@ export function buildWidgets(
     rdpConnectingProfiles,
     availableShells,
     activeSessionId,
+    broadcastActiveSessionId,
+    sessions,
+    sessionGroups,
+    sessionStates,
     isRemoteSession,
     isRemoteConnected,
     transferProgress,
@@ -223,6 +238,7 @@ export function buildWidgets(
     onOpenTunnel,
     onCloseTunnel,
     onCloseAllTunnels,
+    onBroadcastCommand,
   } = props;
 
   return {
@@ -382,6 +398,18 @@ export function buildWidgets(
           onOpenTunnel={onOpenTunnel}
           onCloseTunnel={onCloseTunnel}
           onCloseAll={onCloseAllTunnels}
+          t={t}
+        />
+      </Suspense>
+    ),
+    broadcast: (
+      <Suspense fallback={null}>
+        <BroadcastWidget
+          sessions={sessions}
+          activeSessionId={broadcastActiveSessionId}
+          sessionGroups={sessionGroups}
+          sessionStates={sessionStates}
+          onSend={onBroadcastCommand}
           t={t}
         />
       </Suspense>

@@ -6,10 +6,24 @@
  * - activePaneId 负责把全局活动会话锚定到具体区域
  */
 import type {
+  SessionGroup,
+  SessionGroupId,
   SessionPaneId,
   SessionPaneNode,
   SessionWorkspaceState,
 } from "@/types";
+import { DEFAULT_SESSION_GROUP_ID } from "@/constants/sessionGroups";
+
+const sessionGroupPalette = [
+  "#38bdf8",
+  "#22c55e",
+  "#f59e0b",
+  "#a78bfa",
+  "#f472b6",
+  "#2dd4bf",
+  "#fb7185",
+  "#84cc16",
+];
 
 type SplitAxis = "horizontal" | "vertical";
 
@@ -55,10 +69,25 @@ export type SessionWorkspaceAction =
       type: "resize-split";
       paneId: SessionPaneId;
       ratio: number;
+    }
+  | {
+      type: "create-session-group";
+      groupId: SessionGroupId;
+      name: string;
+      sessionId: string;
+    }
+  | {
+      type: "move-session-to-group";
+      sessionId: string;
+      groupId: SessionGroupId;
     };
 
 export function createEmptyWorkspaceState(): SessionWorkspaceState {
-  return { root: null, activePaneId: null };
+  return {
+    root: null,
+    activePaneId: null,
+    groups: [createDefaultSessionGroup()],
+  };
 }
 
 /** 单根工作区的最小可用形态：一个 pane 承载一个活动会话。 */
@@ -141,6 +170,17 @@ export function collectLeafPanes(
   return [...collectLeafPanes(node.first), ...collectLeafPanes(node.second)];
 }
 
+/** 获取指定会话所在分组。 */
+export function getSessionGroupIdFromWorkspace(
+  state: SessionWorkspaceState,
+  sessionId: string,
+) {
+  return (
+    state.groups.find((group) => group.sessionIds.includes(sessionId))?.id ??
+    DEFAULT_SESSION_GROUP_ID
+  );
+}
+
 export function sessionWorkspaceReducer(
   state: SessionWorkspaceState,
   action: SessionWorkspaceAction,
@@ -154,6 +194,7 @@ export function sessionWorkspaceReducer(
         return {
           root: createSinglePaneRoot(action.sessionId, action.paneId),
           activePaneId: action.paneId,
+          groups: appendSessionToDefaultGroup(state.groups, action.sessionId),
         };
       }
       const targetPaneId = action.paneId ?? state.activePaneId;
@@ -161,6 +202,7 @@ export function sessionWorkspaceReducer(
       return {
         root: appendSessionToPane(state.root, targetPaneId, action.sessionId),
         activePaneId: targetPaneId,
+        groups: appendSessionToDefaultGroup(state.groups, action.sessionId),
       };
     }
     case "activate-session": {
@@ -170,6 +212,7 @@ export function sessionWorkspaceReducer(
       return {
         root: setPaneActiveSession(state.root, leaf.paneId, action.sessionId),
         activePaneId: leaf.paneId,
+        groups: state.groups,
       };
     }
     case "focus-pane": {
@@ -185,6 +228,7 @@ export function sessionWorkspaceReducer(
           ? setPaneActiveSession(state.root, action.paneId, nextActiveSessionId)
           : state.root,
         activePaneId: action.paneId,
+        groups: state.groups,
       };
     }
     case "split-pane": {
@@ -197,6 +241,7 @@ export function sessionWorkspaceReducer(
           axis: action.axis,
         }),
         activePaneId: action.nextPaneId,
+        groups: appendSessionToDefaultGroup(state.groups, action.nextSessionId),
       };
     }
     case "replace-session": {
@@ -208,12 +253,22 @@ export function sessionWorkspaceReducer(
           action.oldSessionId,
           action.nextSessionId,
         ),
+        groups: replaceSessionIdInGroups(
+          state.groups,
+          action.oldSessionId,
+          action.nextSessionId,
+        ),
       };
     }
     case "detach-session": {
       if (!state.root) return state;
       const nextRoot = removeSessionFromNode(state.root, action.sessionId);
-      if (!nextRoot) return createEmptyWorkspaceState();
+      const nextGroups = removeSessionFromGroups(
+        state.groups,
+        action.sessionId,
+      );
+      if (!nextRoot)
+        return { ...createEmptyWorkspaceState(), groups: nextGroups };
       // pane 可能因最后一个会话被关闭而被折叠，这里需要重新选出仍然存在的活动 pane。
       const activeLeaf =
         (state.activePaneId
@@ -222,6 +277,7 @@ export function sessionWorkspaceReducer(
       return {
         root: nextRoot,
         activePaneId: activeLeaf?.paneId ?? null,
+        groups: nextGroups,
       };
     }
     case "reorder-pane-sessions": {
@@ -238,9 +294,72 @@ export function sessionWorkspaceReducer(
         root: updateSplitRatio(state.root, action.paneId, action.ratio),
       };
     }
+    case "create-session-group": {
+      const trimmed = action.name.trim();
+      if (
+        !trimmed ||
+        !containsSessionIdInGroups(state.groups, action.sessionId)
+      ) {
+        return state;
+      }
+      if (
+        state.groups.some(
+          (group) =>
+            group.name.trim().toLocaleLowerCase() ===
+            trimmed.toLocaleLowerCase(),
+        )
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        groups: cleanupSessionGroups([
+          ...removeSessionFromAllGroups(state.groups, action.sessionId),
+          {
+            id: action.groupId,
+            name: trimmed,
+            sessionIds: [action.sessionId],
+            color: resolveSessionGroupColor(action.groupId),
+          },
+        ]),
+      };
+    }
+    case "move-session-to-group": {
+      if (!containsSessionIdInGroups(state.groups, action.sessionId)) {
+        return state;
+      }
+      if (!state.groups.some((group) => group.id === action.groupId)) {
+        return state;
+      }
+      return {
+        ...state,
+        groups: moveSessionToGroup(
+          state.groups,
+          action.sessionId,
+          action.groupId,
+        ),
+      };
+    }
     default:
       return state;
   }
+}
+
+function createDefaultSessionGroup(): SessionGroup {
+  return {
+    id: DEFAULT_SESSION_GROUP_ID,
+    name: "Default",
+    sessionIds: [],
+    builtIn: true,
+  };
+}
+
+function resolveSessionGroupColor(groupId: string) {
+  let hash = 0;
+  for (let index = 0; index < groupId.length; index += 1) {
+    hash = (hash * 31 + groupId.charCodeAt(index)) >>> 0;
+  }
+  return sessionGroupPalette[hash % sessionGroupPalette.length];
 }
 
 function collectNodeSessionIds(node: SessionPaneNode): string[] {
@@ -249,6 +368,78 @@ function collectNodeSessionIds(node: SessionPaneNode): string[] {
     ...collectNodeSessionIds(node.first),
     ...collectNodeSessionIds(node.second),
   ];
+}
+
+function ensureDefaultSessionGroup(groups: SessionGroup[]) {
+  if (groups.some((group) => group.id === DEFAULT_SESSION_GROUP_ID)) {
+    return groups;
+  }
+  return [createDefaultSessionGroup(), ...groups];
+}
+
+function cleanupSessionGroups(groups: SessionGroup[]) {
+  return ensureDefaultSessionGroup(groups).filter(
+    (group) => group.id === DEFAULT_SESSION_GROUP_ID || group.sessionIds.length,
+  );
+}
+
+function removeSessionFromAllGroups(groups: SessionGroup[], sessionId: string) {
+  return ensureDefaultSessionGroup(groups).map((group) => ({
+    ...group,
+    sessionIds: group.sessionIds.filter((item) => item !== sessionId),
+  }));
+}
+
+function appendSessionToDefaultGroup(
+  groups: SessionGroup[],
+  sessionId: string,
+) {
+  const cleaned = removeSessionFromAllGroups(groups, sessionId);
+  return cleanupSessionGroups(
+    cleaned.map((group) =>
+      group.id === DEFAULT_SESSION_GROUP_ID
+        ? { ...group, sessionIds: group.sessionIds.concat(sessionId) }
+        : group,
+    ),
+  );
+}
+
+function removeSessionFromGroups(groups: SessionGroup[], sessionId: string) {
+  return cleanupSessionGroups(removeSessionFromAllGroups(groups, sessionId));
+}
+
+function replaceSessionIdInGroups(
+  groups: SessionGroup[],
+  oldSessionId: string,
+  nextSessionId: string,
+) {
+  return cleanupSessionGroups(
+    ensureDefaultSessionGroup(groups).map((group) => ({
+      ...group,
+      sessionIds: group.sessionIds.map((item) =>
+        item === oldSessionId ? nextSessionId : item,
+      ),
+    })),
+  );
+}
+
+function containsSessionIdInGroups(groups: SessionGroup[], sessionId: string) {
+  return groups.some((group) => group.sessionIds.includes(sessionId));
+}
+
+function moveSessionToGroup(
+  groups: SessionGroup[],
+  sessionId: string,
+  groupId: SessionGroupId,
+) {
+  const removed = removeSessionFromAllGroups(groups, sessionId);
+  return cleanupSessionGroups(
+    removed.map((group) =>
+      group.id === groupId
+        ? { ...group, sessionIds: group.sessionIds.concat(sessionId) }
+        : group,
+    ),
+  );
 }
 
 function appendSessionToPane(

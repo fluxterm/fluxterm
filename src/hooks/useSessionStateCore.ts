@@ -18,6 +18,7 @@ import type {
   LocalSessionMeta,
   LocalShellProfile,
   Session,
+  SessionGroup,
   SessionInput,
   SessionStateUi,
   SessionWorkspaceState,
@@ -96,6 +97,7 @@ type UseSessionStateProps = {
 type UseSessionStateResult = {
   sessions: Session[];
   workspace: SessionWorkspaceState;
+  sessionGroups: SessionGroup[];
   activeSessionId: string | null;
   sessionStates: Record<string, SessionStateUi>;
   sessionReasons: Record<string, DisconnectReason>;
@@ -162,6 +164,9 @@ type UseSessionStateResult = {
     options?: ClosePaneSessionOptions,
   ) => Promise<void>;
   resizePaneSplit: (paneId: string, ratio: number) => void;
+  createSessionGroup: (name: string, sessionId: string) => string;
+  moveSessionToGroup: (sessionId: string, groupId: string) => void;
+  getSessionGroupId: (sessionId: string) => string;
   closeOtherSessionsInPane: (
     paneId: string,
     sessionId: string,
@@ -991,6 +996,18 @@ export default function useSessionState({
     sessionWorkspace.resizeSplit(paneId, ratio);
   }
 
+  function createSessionGroup(name: string, sessionId: string) {
+    return sessionWorkspace.createSessionGroup(name, sessionId);
+  }
+
+  function moveSessionToGroup(sessionId: string, groupId: string) {
+    sessionWorkspace.moveSessionToGroup(sessionId, groupId);
+  }
+
+  function getSessionGroupId(sessionId: string) {
+    return sessionWorkspace.getSessionGroupId(sessionId);
+  }
+
   async function splitActivePane(axis: "horizontal" | "vertical") {
     const activePaneId = sessionWorkspace.getActivePaneId();
     const activeSessionId = sessionWorkspace.activeSessionId;
@@ -1126,6 +1143,7 @@ export default function useSessionState({
   return {
     sessions,
     workspace: sessionWorkspace.workspace,
+    sessionGroups: sessionWorkspace.workspace.groups,
     activeSessionId,
     sessionStates,
     sessionReasons,
@@ -1168,6 +1186,9 @@ export default function useSessionState({
     splitActivePane,
     closePaneSession,
     resizePaneSplit,
+    createSessionGroup,
+    moveSessionToGroup,
+    getSessionGroupId,
     closeOtherSessionsInPane,
     closeSessionsToRightInPane,
     closeAllSessionsInPane,

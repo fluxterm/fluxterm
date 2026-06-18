@@ -22,6 +22,7 @@ type TerminalPaneTreeProps = {
   getTerminalTitle: (sessionId: string) => string | null;
   getSessionLabel: (sessionId: string) => string;
   getSessionState: (sessionId: string) => string;
+  getSessionGroupColor: (sessionId: string) => string | null;
   getSessionReason: (sessionId: string) => DisconnectReason | null;
   bellPendingBySession: Record<string, boolean>;
   getSessionBanner: (sessionId: string) => string | null;
@@ -99,6 +100,7 @@ function PaneNodeView({
   getTerminalTitle,
   getSessionLabel,
   getSessionState,
+  getSessionGroupColor,
   getSessionReason,
   bellPendingBySession,
   getSessionBanner,
@@ -131,6 +133,7 @@ function PaneNodeView({
             getTerminalTitle={getTerminalTitle}
             getSessionLabel={getSessionLabel}
             getSessionState={getSessionState}
+            getSessionGroupColor={getSessionGroupColor}
             getSessionReason={getSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}
@@ -167,6 +170,7 @@ function PaneNodeView({
             getTerminalTitle={getTerminalTitle}
             getSessionLabel={getSessionLabel}
             getSessionState={getSessionState}
+            getSessionGroupColor={getSessionGroupColor}
             getSessionReason={getSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}
@@ -199,6 +203,7 @@ function PaneNodeView({
       getTerminalTitle={getTerminalTitle}
       getSessionLabel={getSessionLabel}
       getSessionState={getSessionState}
+      getSessionGroupColor={getSessionGroupColor}
       bellPendingBySession={bellPendingBySession}
       getSessionBanner={getSessionBanner}
       onFocusPane={onFocusPane}
@@ -239,6 +244,7 @@ function LeafPaneView({
   getTerminalTitle,
   getSessionLabel,
   getSessionState,
+  getSessionGroupColor,
   bellPendingBySession,
   getSessionBanner,
   onFocusPane,
@@ -345,6 +351,7 @@ function LeafPaneView({
             const dragging = dragPreview?.sourceSessionId === sessionId;
             const dropTarget = dragPreview?.targetSessionId === sessionId;
             const terminalTitle = getTerminalTitle(sessionId);
+            const groupColor = getSessionGroupColor(sessionId);
             // 标签序号按当前 pane 内顺序独立计算，分屏后各区域都从 1 开始。
             const sessionLabel = `${index + 1}. ${getSessionLabel(sessionId)}`;
             return (
@@ -403,6 +410,13 @@ function LeafPaneView({
                     });
                   }}
                 >
+                  {groupColor ? (
+                    <span
+                      className="session-tab-group-color"
+                      style={{ backgroundColor: groupColor }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="session-tab-trigger"

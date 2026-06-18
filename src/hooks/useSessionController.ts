@@ -17,6 +17,7 @@ export default function useSessionController(
     sessionState: {
       sessions: raw.sessions,
       workspace: raw.workspace,
+      sessionGroups: raw.sessionGroups,
       activeSessionId: raw.activeSessionId,
       sessionStates: raw.sessionStates,
       sessionReasons: raw.sessionReasons,
@@ -63,6 +64,9 @@ export default function useSessionController(
       splitActivePane: raw.splitActivePane,
       closePaneSession: raw.closePaneSession,
       resizePaneSplit: raw.resizePaneSplit,
+      createSessionGroup: raw.createSessionGroup,
+      moveSessionToGroup: raw.moveSessionToGroup,
+      getSessionGroupId: raw.getSessionGroupId,
       closeOtherSessionsInPane: raw.closeOtherSessionsInPane,
       closeSessionsToRightInPane: raw.closeSessionsToRightInPane,
       closeAllSessionsInPane: raw.closeAllSessionsInPane,
