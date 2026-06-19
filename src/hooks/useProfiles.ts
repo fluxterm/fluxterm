@@ -175,9 +175,10 @@ export default function useProfiles(): UseProfilesResult {
       const nextGroups = dedupeGroups([...sshGroups, groupName]);
       await persistGroups(nextGroups).catch(() => {});
     }
-    const nextProfiles = profiles
-      .filter((item) => item.id !== saved.id)
-      .concat(saved);
+    const exists = profiles.some((item) => item.id === saved.id);
+    const nextProfiles = exists
+      ? profiles.map((item) => (item.id === saved.id ? saved : item))
+      : profiles.concat(saved);
     setProfiles(nextProfiles);
     setActiveProfileId(saved.id);
     setEditingProfile(saved);

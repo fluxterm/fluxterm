@@ -9,13 +9,11 @@ import {
   FiEye,
   FiFolder,
   FiFolderPlus,
-  FiLoader,
   FiPlus,
   FiRefreshCw,
   FiServer,
   FiTerminal,
   FiTrash2,
-  FiX,
 } from "react-icons/fi";
 import type {
   HostProfile,
@@ -34,7 +32,11 @@ import Button from "@/components/ui/button";
 import InputDialog from "@/components/ui/InputDialog";
 import PathViewDialog from "@/components/ui/PathViewDialog";
 import Select from "@/components/ui/select";
-import { resolveProfileIcon } from "@/features/profile/profileIcons";
+import HostProfileRow from "@/widgets/profiles/components/HostProfileRow";
+import {
+  buildHostProfileGroups,
+  getRootHostProfiles,
+} from "@/widgets/profiles/components/hostWidgetModel";
 import "@/widgets/profiles/components/HostWidget.css";
 
 const GROUP_NAME_MAX_LENGTH = 12;
@@ -93,35 +95,13 @@ export default function HostWidget({
 }: HostWidgetProps) {
   const localShellKey = LOCAL_SHELL_GROUP_VALUE;
   const localShellLabel = t("host.shellGroup");
-  // 自定义分组以“分组名 -> 主机列表”的结构整理，便于统一渲染和筛选。
-  const customGroups = useMemo(() => {
-    const map = new Map<string, { label: string; items: HostProfile[] }>();
-    sshGroups.forEach((group) => {
-      const label = group.trim();
-      if (!label) return;
-      map.set(label.toLowerCase(), { label, items: [] });
-    });
-    profiles.forEach((profile) => {
-      const label = (profile.tags?.[0] ?? "").trim();
-      if (!label) return;
-      const key = label.toLowerCase();
-      const group = map.get(key) ?? { label, items: [] };
-      group.items.push(profile);
-      map.set(key, group);
-    });
-    return Array.from(map.values()).sort((a, b) =>
-      a.label.localeCompare(b.label),
-    );
-  }, [profiles, sshGroups]);
-  // 未设置分组的 SSH 会话直接挂在根级，不再包裹默认 SSH 分组。
-  const rootProfiles = useMemo(
-    () =>
-      profiles.filter((profile) => {
-        const tag = profile.tags?.[0]?.trim() ?? "";
-        return !tag;
-      }),
-    [profiles],
+  // 自定义分组与组内主机统一使用显式展示排序，避免依赖配置文件数组顺序。
+  const customGroups = useMemo(
+    () => buildHostProfileGroups(profiles, sshGroups),
+    [profiles, sshGroups],
   );
+  // 未设置分组的 SSH 会话直接挂在根级，并固定排在所有分组之后。
+  const rootProfiles = useMemo(() => getRootHostProfiles(profiles), [profiles]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(),
   );
@@ -545,42 +525,6 @@ export default function HostWidget({
     ];
   }
 
-  function renderConnectingChip(profileId: string) {
-    if (!sshConnectingProfiles[profileId]) return null;
-    return (
-      <span className="host-connecting-chip">
-        <FiLoader className="host-connecting-icon" />
-        <span
-          className="host-connecting-cancel"
-          role="button"
-          aria-label={t("actions.cancel")}
-          title={t("actions.cancel")}
-          tabIndex={0}
-          onMouseDown={(event) => {
-            event.stopPropagation();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onCancelSshConnectProfile(profileId);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" && event.key !== " ") return;
-            event.preventDefault();
-            event.stopPropagation();
-            onCancelSshConnectProfile(profileId);
-          }}
-        >
-          <FiX />
-        </span>
-      </span>
-    );
-  }
-
-  function renderProfileIcon(profile: HostProfile) {
-    const Icon = resolveProfileIcon(profile.iconKey);
-    return <Icon className="host-row-icon" />;
-  }
-
   return (
     <div className="host-widget">
       <div className="host-list">
@@ -671,55 +615,42 @@ export default function HostWidget({
               {(queryActive || expandedGroups.has(group.label)) && (
                 <div className="host-group-list host-group-list--nested">
                   {group.items.map((profile) => (
-                    <Button
+                    <HostProfileRow
                       key={profile.id}
-                      className={profile.id === activeProfileId ? "active" : ""}
-                      variant="ghost"
-                      size="sm"
-                      onContextMenu={(event) =>
-                        openMenu(event, buildGroupedProfileMenuItems(profile))
+                      profile={profile}
+                      active={profile.id === activeProfileId}
+                      sshConnectingProfiles={sshConnectingProfiles}
+                      onOpenMenu={(event, targetProfile) =>
+                        openMenu(
+                          event,
+                          buildGroupedProfileMenuItems(targetProfile),
+                        )
                       }
-                      onClick={() => onPick(profile.id)}
-                      onDoubleClick={() => {
-                        if (sshConnectingProfiles[profile.id]) return;
-                        onConnectProfile(profile);
-                      }}
-                    >
-                      <span className="host-row-label">
-                        {renderProfileIcon(profile)}
-                        <span>{profile.name || profile.host}</span>
-                        {renderConnectingChip(profile.id)}
-                      </span>
-                    </Button>
+                      onPick={onPick}
+                      onConnectProfile={onConnectProfile}
+                      onCancelSshConnectProfile={onCancelSshConnectProfile}
+                      t={t}
+                    />
                   ))}
                 </div>
               )}
             </div>
           ))}
           {filteredRootProfiles.map((profile) => (
-            <Button
+            <HostProfileRow
               key={profile.id}
-              className={`host-root-profile${
-                profile.id === activeProfileId ? " active" : ""
-              }`}
-              variant="ghost"
-              size="sm"
-              onContextMenu={(event) =>
-                openMenu(event, buildRootProfileMenuItems(profile))
+              profile={profile}
+              active={profile.id === activeProfileId}
+              root
+              sshConnectingProfiles={sshConnectingProfiles}
+              onOpenMenu={(event, targetProfile) =>
+                openMenu(event, buildRootProfileMenuItems(targetProfile))
               }
-              onClick={() => onPick(profile.id)}
-              onDoubleClick={() => {
-                if (sshConnectingProfiles[profile.id]) return;
-                onConnectProfile(profile);
-              }}
-            >
-              {/* 根级会话固定排在所有分组之后。 */}
-              <span className="host-row-label">
-                {renderProfileIcon(profile)}
-                <span>{profile.name || profile.host}</span>
-                {renderConnectingChip(profile.id)}
-              </span>
-            </Button>
+              onPick={onPick}
+              onConnectProfile={onConnectProfile}
+              onCancelSshConnectProfile={onCancelSshConnectProfile}
+              t={t}
+            />
           ))}
           {!profiles.length && localShells.length === 0 && (
             <div className="empty-hint">{t("host.empty")}</div>
