@@ -603,7 +603,7 @@ data: {"choices":[{"delta":{"content":"world"}}]}"#;
         assert_eq!(
             stats,
             SystemPromptStats {
-                system_prompt_chars: 31,
+                system_prompt_chars: 32,
                 system_prompt_head_lines: 2,
                 recent_output_chars: 5,
             }

@@ -247,7 +247,16 @@ mod tests {
         .expect("session chat input should build");
 
         assert_eq!(input.context.session_label, "PowerShell");
-        assert_eq!(input.context.platform.as_deref(), Some("windows"));
+        let expected_platform = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "linux") {
+            "linux"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else {
+            "unknown"
+        };
+        assert_eq!(input.context.platform.as_deref(), Some(expected_platform));
         assert_eq!(input.messages.len(), 1);
     }
 

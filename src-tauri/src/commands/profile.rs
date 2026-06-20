@@ -322,11 +322,22 @@ mod tests {
             .iter()
             .map(|item| item.to_string())
             .collect::<Vec<_>>();
+        let frontend_key_set = frontend_keys.iter().collect::<HashSet<_>>();
+        let backend_key_set = backend_keys.iter().collect::<HashSet<_>>();
 
-        assert_eq!(frontend_keys, backend_keys);
         assert_eq!(
             frontend_keys.len(),
-            frontend_keys.iter().collect::<HashSet<_>>().len()
+            frontend_key_set.len(),
+            "frontend profile icon keys should not contain duplicates"
+        );
+        assert_eq!(
+            backend_keys.len(),
+            backend_key_set.len(),
+            "backend profile icon keys should not contain duplicates"
+        );
+        assert_eq!(
+            frontend_key_set, backend_key_set,
+            "backend profile icon keys should match frontend manifest keys"
         );
     }
 }
