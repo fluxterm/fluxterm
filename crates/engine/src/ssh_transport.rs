@@ -3,6 +3,7 @@
 //! 本模块只负责把目标 SSH 握手需要的字节流准备好。Profile 存储、凭据解密和
 //! Host Key 信任策略仍由调用方负责，避免 engine 反向依赖 Tauri 存储层。
 use std::net::IpAddr;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::process::Command;
 use std::sync::Arc;
 
@@ -780,6 +781,11 @@ fn parse_proxy_url(value: &str) -> Option<SshProxyConfig> {
     parse_proxy_host_port(host_port, protocol)
 }
 
+#[cfg(any(
+    test,
+    target_os = "windows",
+    all(not(target_os = "windows"), not(target_os = "macos"))
+))]
 fn parse_proxy_host_port(value: &str, protocol: SshProxyProtocol) -> Option<SshProxyConfig> {
     let (host, port) = value.rsplit_once(':')?;
     Some(SshProxyConfig {
