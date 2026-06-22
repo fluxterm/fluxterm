@@ -335,6 +335,8 @@ export default function AppShell() {
     setBackgroundVideoReplayMode,
     backgroundVideoReplayIntervalSec,
     setBackgroundVideoReplayIntervalSec,
+    appFontSize,
+    setAppFontSize,
     availableShells,
     refreshAvailableShells,
     settingsLoaded,
@@ -383,6 +385,7 @@ export default function AppShell() {
     autoReconnectOnReboot,
     cursorStyle,
     terminalFontFamilyMode,
+    terminalFontSize,
     wordSeparators: sessionWordSeparators,
     scrollback,
     terminalPathSyncEnabled,
@@ -396,6 +399,7 @@ export default function AppShell() {
     setAutoReconnectOnReboot,
     setCursorStyle,
     setTerminalFontFamilyMode,
+    setTerminalFontSize,
     setScrollback,
     setTerminalPathSyncEnabled,
     setResourceMonitorEnabled,
@@ -870,6 +874,7 @@ export default function AppShell() {
     selectionAutoCopyEnabled,
     cursorStyle,
     terminalFontFamilyMode,
+    terminalFontSize,
     scrollback,
     activeSessionId: sessionState.activeSessionId,
     activeSession: sessionState.activeSession,
@@ -3088,6 +3093,7 @@ export default function AppShell() {
             backgroundVideoReplayIntervalSec={
               normalizedBackgroundVideoReplayIntervalSec
             }
+            appFontSize={appFontSize}
             aiSelectionMaxChars={aiSelectionMaxChars}
             aiSessionRecentOutputMaxChars={aiSessionRecentOutputMaxChars}
             aiRequestTimeoutMs={aiRequestTimeoutMs}
@@ -3104,6 +3110,7 @@ export default function AppShell() {
             autoReconnectOnReboot={autoReconnectOnReboot}
             cursorStyle={cursorStyle}
             terminalFontFamilyMode={terminalFontFamilyMode}
+            terminalFontSize={terminalFontSize}
             scrollback={scrollback}
             terminalPathSyncEnabled={terminalPathSyncEnabled}
             resourceMonitorEnabled={resourceMonitorEnabled}
@@ -3123,6 +3130,7 @@ export default function AppShell() {
             onBackgroundVideoReplayIntervalSecChange={
               setBackgroundVideoReplayIntervalSec
             }
+            onAppFontSizeChange={setAppFontSize}
             onAiSelectionMaxCharsChange={setAiSelectionMaxChars}
             onAiSessionRecentOutputMaxCharsChange={
               setAiSessionRecentOutputMaxChars
@@ -3176,6 +3184,7 @@ export default function AppShell() {
             onAutoReconnectOnRebootChange={setAutoReconnectOnReboot}
             onCursorStyleChange={setCursorStyle}
             onTerminalFontFamilyModeChange={setTerminalFontFamilyMode}
+            onTerminalFontSizeChange={setTerminalFontSize}
             onScrollbackChange={setScrollback}
             onTerminalPathSyncEnabledChange={setTerminalPathSyncEnabled}
             onResourceMonitorEnabledChange={setResourceMonitorEnabled}

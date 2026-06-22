@@ -150,6 +150,9 @@ export const enUsTranslations = {
   "config.app.backgroundImageSurfaceAlpha": "Background Surface Transparency",
   "config.app.backgroundImageSurfaceAlphaHint":
     "Controls unified transparency for the title bar, widgets, terminal, and footer surfaces.",
+  "config.app.fontSize": "Application Font Size",
+  "config.app.fontSizeHint":
+    "Adjusts the base font size for the main UI, settings, and widgets.",
   "config.ai.selectionMaxChars": "Selection Max Length",
   "config.ai.selectionMaxCharsHint":
     "Limits how many characters can be sent by Send to AI from the terminal selection menu.",
@@ -281,6 +284,9 @@ export const enUsTranslations = {
   "config.session.cursorStyle.bar": "Bar",
   "config.session.cursorStyle.underline": "Underline",
   "config.session.terminalFontFamily": "Terminal Font",
+  "config.session.terminalFontSize": "Terminal Font Size",
+  "config.session.terminalFontSizeHint":
+    "Adjusts the character size inside terminal content.",
   "config.session.terminalFontFamily.system": "Follow System",
   "config.session.terminalFontFamily.jetbrains-mono": "JetBrains Mono",
   "config.session.terminalFontFamily.cascadia-mono": "Cascadia Mono",

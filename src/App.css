@@ -41,7 +41,7 @@ html[data-window-surface="detached"][data-window-appearance="pending"] #root {
     "Cascadia Mono", "SF Mono", Menlo, Consolas, "Ubuntu Mono",
     "DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC",
     "JetBrains Mono", monospace;
-  font-size: 15px;
+  font-size: var(--app-font-size, 15px);
   line-height: 1.5;
   font-weight: 400;
   font-family: var(--font-family-body);

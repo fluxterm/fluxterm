@@ -45,6 +45,7 @@ type SessionSettings = {
   autoReconnectOnReboot?: boolean;
   cursorStyle?: TerminalCursorStyle;
   terminalFontFamilyMode?: TerminalFontFamilyMode;
+  terminalFontSize?: number;
   wordSeparators?: string;
   scrollback?: number;
   terminalPathSyncEnabled?: boolean;
@@ -65,6 +66,7 @@ type UseSessionSettingsResult = {
   autoReconnectOnReboot: boolean;
   cursorStyle: TerminalCursorStyle;
   terminalFontFamilyMode: TerminalFontFamilyMode;
+  terminalFontSize: number;
   wordSeparators: string;
   scrollback: number;
   terminalPathSyncEnabled: boolean;
@@ -80,6 +82,7 @@ type UseSessionSettingsResult = {
   setTerminalFontFamilyMode: React.Dispatch<
     React.SetStateAction<TerminalFontFamilyMode>
   >;
+  setTerminalFontSize: React.Dispatch<React.SetStateAction<number>>;
   setWordSeparators: React.Dispatch<React.SetStateAction<string>>;
   setScrollback: React.Dispatch<React.SetStateAction<number>>;
   setTerminalPathSyncEnabled: React.Dispatch<React.SetStateAction<boolean>>;
@@ -95,6 +98,10 @@ type UseSessionSettingsResult = {
 /** 终端回滚行数阈值：100 - 50,000。 */
 export const MIN_SCROLLBACK = 100;
 export const MAX_SCROLLBACK = 50000;
+/** 终端内容字号阈值：10 - 24。 */
+export const MIN_TERMINAL_FONT_SIZE = 10;
+export const MAX_TERMINAL_FONT_SIZE = 24;
+export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 /** 资源监控最小间隔：3 秒。 */
 export const MIN_RESOURCE_MONITOR_INTERVAL_SEC = 3;
 export const DEFAULT_RESOURCE_MONITOR_INTERVAL_SEC = 5;
@@ -102,6 +109,15 @@ export const DEFAULT_RESOURCE_MONITOR_INTERVAL_SEC = 5;
 /** 归一化回滚行数。 */
 function normalizeScrollback(value: number) {
   return Math.max(MIN_SCROLLBACK, Math.min(MAX_SCROLLBACK, Math.round(value)));
+}
+
+/** 归一化终端内容字号。 */
+export function normalizeTerminalFontSize(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_TERMINAL_FONT_SIZE;
+  return Math.max(
+    MIN_TERMINAL_FONT_SIZE,
+    Math.min(MAX_TERMINAL_FONT_SIZE, Math.round(value)),
+  );
 }
 
 /** 归一化资源监控间隔。 */
@@ -120,6 +136,7 @@ const defaultSessionSettings: Required<
     | "autoReconnectOnReboot"
     | "cursorStyle"
     | "terminalFontFamilyMode"
+    | "terminalFontSize"
     | "wordSeparators"
     | "scrollback"
     | "terminalPathSyncEnabled"
@@ -135,6 +152,7 @@ const defaultSessionSettings: Required<
   autoReconnectOnReboot: true,
   cursorStyle: DEFAULT_TERMINAL_CURSOR_STYLE,
   terminalFontFamilyMode: DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  terminalFontSize: DEFAULT_TERMINAL_FONT_SIZE,
   wordSeparators: DEFAULT_TERMINAL_WORD_SEPARATORS,
   scrollback: 3000,
   terminalPathSyncEnabled: true,
@@ -170,6 +188,9 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     useState<TerminalFontFamilyMode>(
       defaultSessionSettings.terminalFontFamilyMode,
     );
+  const [terminalFontSize, setTerminalFontSize] = useState(
+    defaultSessionSettings.terminalFontSize,
+  );
   const [wordSeparators, setWordSeparators] = useState(
     defaultSessionSettings.wordSeparators,
   );
@@ -246,6 +267,9 @@ export default function useSessionSettings(): UseSessionSettingsResult {
         if (nextFontFamilyMode) {
           setTerminalFontFamilyMode(nextFontFamilyMode);
         }
+      }
+      if (typeof parsed?.terminalFontSize === "number") {
+        setTerminalFontSize(normalizeTerminalFontSize(parsed.terminalFontSize));
       }
       if (typeof parsed?.wordSeparators === "string") {
         setWordSeparators(
@@ -333,6 +357,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
       terminalFontFamilyMode:
         normalizeTerminalFontFamilyMode(terminalFontFamilyMode) ??
         defaultSessionSettings.terminalFontFamilyMode,
+      terminalFontSize: normalizeTerminalFontSize(terminalFontSize),
       wordSeparators:
         normalizeTerminalWordSeparators(wordSeparators) ??
         defaultSessionSettings.wordSeparators,
@@ -397,6 +422,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     autoReconnectOnReboot,
     cursorStyle,
     terminalFontFamilyMode,
+    terminalFontSize,
     wordSeparators,
     scrollback,
     terminalPathSyncEnabled,
@@ -423,6 +449,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     terminalFontFamilyMode:
       normalizeTerminalFontFamilyMode(terminalFontFamilyMode) ??
       defaultSessionSettings.terminalFontFamilyMode,
+    terminalFontSize: normalizeTerminalFontSize(terminalFontSize),
     wordSeparators:
       normalizeTerminalWordSeparators(wordSeparators) ??
       defaultSessionSettings.wordSeparators,
@@ -440,6 +467,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     setAutoReconnectOnReboot,
     setCursorStyle,
     setTerminalFontFamilyMode,
+    setTerminalFontSize,
     setWordSeparators,
     setScrollback,
     setTerminalPathSyncEnabled,

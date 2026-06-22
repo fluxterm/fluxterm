@@ -57,6 +57,10 @@ import {
   resolveTerminalFontFamily,
   type TerminalFontFamilyMode,
 } from "@/constants/terminalFontFamily";
+import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  normalizeTerminalFontSize,
+} from "@/hooks/useSessionSettings";
 import { resolveTerminalHostKeyAction } from "@/hooks/terminalHostShortcuts";
 import { isMacOS } from "@/utils/platform";
 import type { ResolvedTerminalTheme } from "@/main/theme/buildTerminalTheme";
@@ -68,6 +72,7 @@ type UseTerminalRuntimeProps = {
   scrollback?: number;
   cursorStyle?: TerminalCursorStyle;
   terminalFontFamilyMode?: TerminalFontFamilyMode;
+  terminalFontSize?: number;
   resolveWordSeparators?: (sessionId: string) => string | null | undefined;
   activeSessionId: string | null;
   activeSession: Session | null;
@@ -470,6 +475,7 @@ export default function useTerminalRuntime({
   scrollback = DEFAULT_TERMINAL_SCROLLBACK,
   cursorStyle = DEFAULT_TERMINAL_CURSOR_STYLE,
   terminalFontFamilyMode = DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE,
   resolveWordSeparators,
   activeSessionId,
   activeSession,
@@ -1444,7 +1450,7 @@ export default function useTerminalRuntime({
         terminalFontFamilyMode === "system"
           ? terminalFontFamily
           : configuredTerminalFontFamily,
-      fontSize: 13,
+      fontSize: normalizeTerminalFontSize(terminalFontSize),
       cursorBlink: true,
       cursorStyle: normalizedCursorStyle,
       scrollback,
@@ -2028,6 +2034,14 @@ export default function useTerminalRuntime({
       safeFit(bundle.fitAddon, bundle.host);
     });
   }, [terminalFontFamilyMode]);
+
+  useEffect(() => {
+    const nextFontSize = normalizeTerminalFontSize(terminalFontSize);
+    Object.values(terminalsRef.current).forEach((bundle) => {
+      bundle.terminal.options.fontSize = nextFontSize;
+      safeFit(bundle.fitAddon, bundle.host);
+    });
+  }, [terminalFontSize]);
 
   useEffect(() => {
     if (!activeSessionId || !activeSession) return;

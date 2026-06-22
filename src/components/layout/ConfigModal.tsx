@@ -27,10 +27,13 @@ import type { AiProviderVendor, AiProviderView } from "@/features/ai/types";
 import type { SecurityStatus } from "@/features/security/types";
 import {
   DEFAULT_RESOURCE_MONITOR_INTERVAL_SEC,
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
   type HostKeyPolicy,
   MAX_SCROLLBACK,
   MIN_RESOURCE_MONITOR_INTERVAL_SEC,
   MIN_SCROLLBACK,
+  MIN_TERMINAL_FONT_SIZE,
 } from "@/hooks/useSessionSettings";
 import {
   DEFAULT_TERMINAL_CURSOR_STYLE,
@@ -43,6 +46,9 @@ import {
 } from "@/constants/terminalFontFamily";
 import {
   MAX_BACKGROUND_IMAGE_SURFACE_ALPHA,
+  DEFAULT_APP_FONT_SIZE,
+  MAX_APP_FONT_SIZE,
+  MIN_APP_FONT_SIZE,
   MIN_BACKGROUND_IMAGE_SURFACE_ALPHA,
 } from "@/hooks/useAppSettings";
 import type { ThemeId } from "@/types";
@@ -108,6 +114,7 @@ type ConfigModalProps = {
   backgroundRenderMode?: BackgroundRenderMode;
   backgroundVideoReplayMode?: BackgroundVideoReplayMode;
   backgroundVideoReplayIntervalSec?: number;
+  appFontSize?: number;
   aiSelectionMaxChars?: number;
   aiSessionRecentOutputMaxChars?: number;
   aiRequestTimeoutMs?: number;
@@ -124,6 +131,7 @@ type ConfigModalProps = {
   autoReconnectOnReboot?: boolean;
   cursorStyle?: TerminalCursorStyle;
   terminalFontFamilyMode?: TerminalFontFamilyMode;
+  terminalFontSize?: number;
   scrollback?: number;
   terminalPathSyncEnabled?: boolean;
   resourceMonitorEnabled?: boolean;
@@ -143,6 +151,7 @@ type ConfigModalProps = {
     value: BackgroundVideoReplayMode,
   ) => void;
   onBackgroundVideoReplayIntervalSecChange?: (value: number) => void;
+  onAppFontSizeChange?: (value: number) => void;
   onAiSelectionMaxCharsChange?: (value: number) => void;
   onAiSessionRecentOutputMaxCharsChange?: (value: number) => void;
   onAiRequestTimeoutMsChange?: (value: number) => void;
@@ -189,6 +198,7 @@ type ConfigModalProps = {
   onAutoReconnectOnRebootChange?: (enabled: boolean) => void;
   onCursorStyleChange?: (value: TerminalCursorStyle) => void;
   onTerminalFontFamilyModeChange?: (value: TerminalFontFamilyMode) => void;
+  onTerminalFontSizeChange?: (value: number) => void;
   onScrollbackChange?: (value: number) => void;
   onTerminalPathSyncEnabledChange?: (enabled: boolean) => void;
   onResourceMonitorEnabledChange?: (enabled: boolean) => void;
@@ -271,6 +281,7 @@ export default function ConfigModal({
   backgroundRenderMode = "cover",
   backgroundVideoReplayMode = "loop",
   backgroundVideoReplayIntervalSec = 8,
+  appFontSize = DEFAULT_APP_FONT_SIZE,
   aiSelectionMaxChars = 1500,
   aiSessionRecentOutputMaxChars = 1200,
   aiRequestTimeoutMs = 20000,
@@ -291,6 +302,7 @@ export default function ConfigModal({
   autoReconnectOnReboot = true,
   cursorStyle = DEFAULT_TERMINAL_CURSOR_STYLE,
   terminalFontFamilyMode = DEFAULT_TERMINAL_FONT_FAMILY_MODE,
+  terminalFontSize = DEFAULT_TERMINAL_FONT_SIZE,
   scrollback = 3000,
   terminalPathSyncEnabled = true,
   resourceMonitorEnabled = false,
@@ -308,6 +320,7 @@ export default function ConfigModal({
   onBackgroundRenderModeChange,
   onBackgroundVideoReplayModeChange,
   onBackgroundVideoReplayIntervalSecChange,
+  onAppFontSizeChange,
   onAiSelectionMaxCharsChange,
   onAiSessionRecentOutputMaxCharsChange,
   onAiRequestTimeoutMsChange,
@@ -335,6 +348,7 @@ export default function ConfigModal({
   onAutoReconnectOnRebootChange,
   onCursorStyleChange,
   onTerminalFontFamilyModeChange,
+  onTerminalFontSizeChange,
   onScrollbackChange,
   onTerminalPathSyncEnabledChange,
   onResourceMonitorEnabledChange,
@@ -1075,6 +1089,30 @@ export default function ConfigModal({
                 aria-label={t("settings.theme")}
               />
             </div>
+          </label>
+          <label className="config-toggle-card config-range-setting">
+            <div className="config-toggle-copy">
+              <span className="config-toggle-title">
+                {t("config.app.fontSize")}
+              </span>
+              <span className="config-toggle-desc">
+                {t("config.app.fontSizeHint")}
+              </span>
+            </div>
+            <span className="config-range-control">
+              <input
+                type="range"
+                min={MIN_APP_FONT_SIZE}
+                max={MAX_APP_FONT_SIZE}
+                step={1}
+                value={appFontSize}
+                onChange={(event) =>
+                  onAppFontSizeChange?.(Number(event.currentTarget.value))
+                }
+                aria-label={t("config.app.fontSize")}
+              />
+              <span className="config-range-value">{appFontSize}px</span>
+            </span>
           </label>
           <label className="config-toggle-card config-range-setting">
             <div className="config-toggle-copy">
@@ -2380,6 +2418,32 @@ export default function ConfigModal({
                   aria-label={t("config.session.terminalFontFamily")}
                 />
               </div>
+            </label>
+            <label className="config-toggle-head config-range-setting">
+              <div className="config-toggle-copy">
+                <span className="config-toggle-title">
+                  {t("config.session.terminalFontSize")}
+                </span>
+                <span className="config-toggle-desc">
+                  {t("config.session.terminalFontSizeHint")}
+                </span>
+              </div>
+              <span className="config-range-control">
+                <input
+                  type="range"
+                  min={MIN_TERMINAL_FONT_SIZE}
+                  max={MAX_TERMINAL_FONT_SIZE}
+                  step={1}
+                  value={terminalFontSize}
+                  onChange={(event) =>
+                    onTerminalFontSizeChange?.(
+                      Number(event.currentTarget.value),
+                    )
+                  }
+                  aria-label={t("config.session.terminalFontSize")}
+                />
+                <span className="config-range-value">{terminalFontSize}px</span>
+              </span>
             </label>
           </div>
         </div>

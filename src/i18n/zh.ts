@@ -138,6 +138,8 @@ export const zhCnTranslations = {
   "config.app.backgroundImageSurfaceAlpha": "背景覆盖层透明度",
   "config.app.backgroundImageSurfaceAlphaHint":
     "控制标题栏、组件区、终端区和底栏的统一透明度。",
+  "config.app.fontSize": "应用字号",
+  "config.app.fontSizeHint": "调整主界面、配置面板和组件区域的基础字号。",
   "config.ai.selectionMaxChars": "选中文本最大长度",
   "config.ai.selectionMaxCharsHint":
     "限制右键“发送给 AI”时允许发送的选中文本字符数。",
@@ -259,6 +261,8 @@ export const zhCnTranslations = {
   "config.session.cursorStyle.bar": "竖线",
   "config.session.cursorStyle.underline": "下划线",
   "config.session.terminalFontFamily": "终端字体",
+  "config.session.terminalFontSize": "终端字号",
+  "config.session.terminalFontSizeHint": "调整终端内容区域的字符大小。",
   "config.session.terminalFontFamily.system": "跟随系统",
   "config.session.terminalFontFamily.jetbrains-mono": "JetBrains Mono",
   "config.session.terminalFontFamily.cascadia-mono": "Cascadia Mono",

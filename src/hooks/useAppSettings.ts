@@ -51,12 +51,17 @@ type AppSettings = {
   backgroundRenderMode?: BackgroundRenderMode;
   backgroundVideoReplayMode?: BackgroundVideoReplayMode;
   backgroundVideoReplayIntervalSec?: number;
+  appFontSize?: number;
 };
 
 /** 背景图表面透明度阈值。 */
 export const MIN_BACKGROUND_IMAGE_SURFACE_ALPHA = 0;
 export const MAX_BACKGROUND_IMAGE_SURFACE_ALPHA = 1;
 export const DEFAULT_BACKGROUND_IMAGE_SURFACE_ALPHA = 0.52;
+/** 应用 UI 基准字号阈值。 */
+export const MIN_APP_FONT_SIZE = 13;
+export const MAX_APP_FONT_SIZE = 18;
+export const DEFAULT_APP_FONT_SIZE = 15;
 
 /** useAppSettings 返回的操作接口。 */
 type UseAppSettingsResult = {
@@ -96,6 +101,8 @@ type UseAppSettingsResult = {
   setBackgroundVideoReplayIntervalSec: React.Dispatch<
     React.SetStateAction<number>
   >;
+  appFontSize: number;
+  setAppFontSize: React.Dispatch<React.SetStateAction<number>>;
   availableShells: LocalShellProfile[];
   refreshAvailableShells: () => Promise<void>;
   settingsLoaded: boolean;
@@ -110,6 +117,15 @@ function clampBackgroundImageSurfaceAlpha(value: number) {
   return Math.min(
     MAX_BACKGROUND_IMAGE_SURFACE_ALPHA,
     Math.max(MIN_BACKGROUND_IMAGE_SURFACE_ALPHA, value),
+  );
+}
+
+/** 限制应用 UI 基准字号范围。 */
+export function normalizeAppFontSize(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_APP_FONT_SIZE;
+  return Math.min(
+    MAX_APP_FONT_SIZE,
+    Math.max(MIN_APP_FONT_SIZE, Math.round(value)),
   );
 }
 
@@ -176,6 +192,7 @@ export default function useAppSettings({
     backgroundVideoReplayIntervalSec,
     setBackgroundVideoReplayIntervalSec,
   ] = useState(DEFAULT_BACKGROUND_VIDEO_REPLAY_INTERVAL_SEC);
+  const [appFontSize, setAppFontSize] = useState(DEFAULT_APP_FONT_SIZE);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -265,6 +282,9 @@ export default function useAppSettings({
           ),
         );
       }
+      if (typeof parsed?.appFontSize === "number") {
+        setAppFontSize(normalizeAppFontSize(parsed.appFontSize));
+      }
       const normalizedThemeId = normalizeThemeId(parsed?.themeId);
       if (normalizedThemeId && themeIds.includes(normalizedThemeId)) {
         setThemeId(normalizedThemeId);
@@ -326,6 +346,14 @@ export default function useAppSettings({
     document.documentElement.lang = locale;
   }, [locale]);
 
+  // 同步应用 UI 基准字号。
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--app-font-size",
+      `${normalizeAppFontSize(appFontSize)}px`,
+    );
+  }, [appFontSize]);
+
   // 启动流水线：加载设置 -> 拉取 Shell 列表 -> 完成就绪标记。
   useEffect(() => {
     let active = true;
@@ -375,6 +403,7 @@ export default function useAppSettings({
       backgroundVideoReplayIntervalSec: clampBackgroundVideoReplayIntervalSec(
         backgroundVideoReplayIntervalSec,
       ),
+      appFontSize: normalizeAppFontSize(appFontSize),
     };
 
     const settingsStr = JSON.stringify(currentSettings);
@@ -435,6 +464,7 @@ export default function useAppSettings({
     backgroundRenderMode,
     backgroundVideoReplayMode,
     backgroundVideoReplayIntervalSec,
+    appFontSize,
     settingsLoaded,
     saveRetryToken,
   ]);
@@ -471,6 +501,8 @@ export default function useAppSettings({
     setBackgroundVideoReplayMode,
     backgroundVideoReplayIntervalSec,
     setBackgroundVideoReplayIntervalSec,
+    appFontSize: normalizeAppFontSize(appFontSize),
+    setAppFontSize,
     availableShells,
     refreshAvailableShells,
     settingsLoaded,
