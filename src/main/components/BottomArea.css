@@ -89,7 +89,7 @@
 
 .quickbar-menu-section-title {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.04em;
   padding: 4px 4px 6px;
 }
@@ -115,7 +115,7 @@
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 3px 4px;
   white-space: nowrap;
 }
@@ -129,7 +129,7 @@
 
 .quickbar-group-name {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   white-space: nowrap;
 }
 
@@ -145,7 +145,7 @@
 
 .quickbar-empty {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .statusbar {
@@ -155,7 +155,7 @@
   align-items: center;
   gap: 10px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   min-width: 0;
 }
 
@@ -355,7 +355,7 @@
 }
 
 .statusbar-resource-title {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
 
@@ -420,7 +420,7 @@
 
 .qm-title {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-md);
 }
 
 .qm-command-list {
@@ -509,7 +509,7 @@
 
 .qm-detail-form label span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .qm-detail-form textarea {
@@ -528,7 +528,7 @@
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-md);
   line-height: 16px;
 }
 
@@ -545,14 +545,14 @@
 
 .qm-empty {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 8px;
 }
 
 .qm-delete-confirm {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-size-md);
 }
 
 @media (max-width: 980px) {

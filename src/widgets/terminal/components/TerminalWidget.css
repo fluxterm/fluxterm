@@ -50,7 +50,7 @@
 }
 
 .terminal-status {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border-input);
@@ -92,7 +92,7 @@
 
 button.session-tab {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .session-tab.active {
@@ -120,7 +120,7 @@ button.session-tab {
   border: none;
   color: inherit;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 0;
 }
 
@@ -314,7 +314,7 @@ button.session-tab {
   display: block;
   max-width: 360px;
   font-family: var(--font-family-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -439,7 +439,7 @@ button.session-tab {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--font-size-body);
 }
 
 .terminal-banner {
@@ -452,7 +452,7 @@ button.session-tab {
   border-radius: 10px;
   background: var(--terminal-banner-disconnect-bg);
   color: var(--accent-contrast);
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 600;
   text-align: center;
   box-shadow: var(--shadow-strong);
@@ -484,7 +484,7 @@ button.session-tab {
   background: var(--chrome-input-bg);
   color: var(--input-text);
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-autocomplete {
@@ -554,13 +554,13 @@ button.session-tab {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-family-mono);
-  font-size: 13px;
+  font-size: var(--font-size-md);
 }
 
 .terminal-autocomplete-meta {
   flex: 0 0 auto;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-autocomplete-remove {
@@ -611,7 +611,7 @@ button.session-tab {
   background: var(--button-bg);
   color: var(--button-text);
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-search-bar button:hover {
@@ -644,7 +644,7 @@ button.session-tab {
   border: 1px solid var(--border-input);
   background: var(--terminal-surface-strong-bg);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .terminal-search-icon-button {

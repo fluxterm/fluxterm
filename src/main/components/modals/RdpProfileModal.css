@@ -27,7 +27,7 @@
 
 .rdp-profile-modal-error {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .rdp-profile-group-body {

@@ -100,14 +100,14 @@
 
 .profile-settings-section-header h4 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   color: var(--text-primary);
 }
 
 .profile-settings-section-header p {
   margin: 4px 0 0;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.6;
 }
 
@@ -149,14 +149,14 @@
 .profile-form-error {
   grid-column: 2;
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.4;
 }
 
 .profile-form-hint {
   grid-column: 2;
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
 }
 
@@ -191,7 +191,7 @@
   min-height: 34px;
   min-width: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.4;
 }
 
@@ -312,7 +312,7 @@
 }
 
 .profile-icon-option-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.4;
   text-align: center;
   word-break: break-word;
@@ -334,7 +334,7 @@
 .profile-modal-placeholder h4 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 1rem;
 }
 
 .profile-modal-placeholder p {

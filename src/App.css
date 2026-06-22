@@ -41,6 +41,15 @@ html[data-window-surface="detached"][data-window-appearance="pending"] #root {
     "Cascadia Mono", "SF Mono", Menlo, Consolas, "Ubuntu Mono",
     "DejaVu Sans Mono", "Noto Sans Mono CJK SC", "Source Han Sans SC",
     "JetBrains Mono", monospace;
+  /* 字号 token 基于应用根字号缩放，避免组件内继续硬编码 px。 */
+  --font-size-2xs: 0.667rem; /* 极小辅助标记，如窄控件箭头。 */
+  --font-size-xs: 0.733rem; /* 次级标签、分组标题和紧凑说明。 */
+  --font-size-sm: 0.8rem; /* 辅助文本、状态信息和小型按钮。 */
+  --font-size-md: 0.867rem; /* 常规控件文本和列表项。 */
+  --font-size-body: 0.933rem; /* 正文内容和普通说明文本。 */
+  --font-size-lg: 1.067rem; /* 弹窗标题、强调文本和图标按钮字号。 */
+  --font-size-xl: 1.2rem; /* 页面区域标题和品牌标题。 */
+  --font-size-2xl: 1.333rem; /* 大标题或关键空状态标题。 */
   font-size: var(--app-font-size, 15px);
   line-height: 1.5;
   font-weight: 400;
@@ -371,7 +380,7 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   letter-spacing: 0.06em;
   user-select: none;
@@ -447,7 +456,7 @@ select {
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   display: flex;
   align-items: center;
   min-height: 34px;
@@ -482,7 +491,7 @@ select {
 .menu-sub-section-title {
   padding: 6px 10px 2px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   letter-spacing: 0.04em;
 }
 
@@ -518,7 +527,7 @@ select {
   border-color: transparent;
   background: var(--button-bg);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: var(--font-size-lg);
 }
 
 .window-control:hover {
@@ -592,7 +601,7 @@ input[type="number"] {
 }
 
 .empty-hint {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-quiet);
   padding: 12px 10px;
 }
@@ -679,7 +688,7 @@ input[type="number"] {
 
 .ghost.mini {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .floating-shell {

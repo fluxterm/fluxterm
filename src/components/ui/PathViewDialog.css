@@ -10,7 +10,7 @@
   background: var(--surface-alt);
   color: var(--text-primary);
   font-family: var(--font-family-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.5;
   word-break: break-all;
 }

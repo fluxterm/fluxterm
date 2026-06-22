@@ -6,5 +6,5 @@
 
 .input-dialog-error {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }

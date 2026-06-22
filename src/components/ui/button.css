@@ -113,12 +113,12 @@
 }
 
 .ui-button--sm {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   padding: 6px 10px;
 }
 
 .ui-button--md {
-  font-size: 13px;
+  font-size: var(--font-size-md);
   padding: 8px 14px;
 }
 

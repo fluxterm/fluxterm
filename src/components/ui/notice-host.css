@@ -39,7 +39,7 @@
 }
 
 .toast-item strong {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   letter-spacing: 0.04em;
 }
 
@@ -91,14 +91,14 @@
 }
 
 .dialog-title {
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text-primary);
   text-align: center;
 }
 
 .dialog-body {
-  font-size: 14px;
+  font-size: var(--font-size-body);
   color: var(--text-secondary);
   line-height: 1.6;
   text-align: center;
@@ -142,7 +142,7 @@
 
 .dialog-body__fingerprint {
   font-family: var(--font-family-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.7;
 }
 
