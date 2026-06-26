@@ -542,6 +542,7 @@ export default function useTerminalRuntime({
   const promptUsernameBySessionRef = useRef<Record<string, string | null>>({});
   const osc7SeenDuringWriteRef = useRef<Record<string, boolean>>({});
   const autocompleteInputBufferRef = useRef<Record<string, string>>({});
+  const autocompleteSuppressedInputRef = useRef<Record<string, string>>({});
   const commandCaptureMetaRef = useRef<Record<string, CommandCaptureMeta>>({});
   const commandCaptureTimersRef = useRef<Record<string, number>>({});
   const lastBellAtBySessionRef = useRef<Record<string, number>>({});
@@ -737,6 +738,9 @@ export default function useTerminalRuntime({
     anchorCursorCol?: number | null,
   ) {
     autocompleteInputBufferRef.current[sessionId] = input;
+    if (autocompleteSuppressedInputRef.current[sessionId] !== input) {
+      delete autocompleteSuppressedInputRef.current[sessionId];
+    }
     if (activeSessionIdRef.current !== sessionId) {
       setActiveAutocomplete((prev) =>
         prev?.sessionId === sessionId ? null : prev,
@@ -750,6 +754,13 @@ export default function useTerminalRuntime({
     }
     const normalizedInput = input.trim();
     if (!normalizedInput) {
+      delete autocompleteSuppressedInputRef.current[sessionId];
+      setActiveAutocomplete((prev) =>
+        prev?.sessionId === sessionId ? null : prev,
+      );
+      return;
+    }
+    if (autocompleteSuppressedInputRef.current[sessionId] === input) {
       setActiveAutocomplete((prev) =>
         prev?.sessionId === sessionId ? null : prev,
       );
@@ -945,9 +956,21 @@ export default function useTerminalRuntime({
       data: `${deleteSequence}${selectedCommand}`,
     });
     autocompleteInputBufferRef.current[sessionId] = selectedCommand;
+    delete autocompleteSuppressedInputRef.current[sessionId];
     scheduleCommandCaptureRefresh(sessionId);
     setActiveAutocomplete(null);
     return true;
+  }
+
+  /** 记录用户主动关闭联想时的输入，避免方向键等无输入变化操作立即重新弹出。 */
+  function suppressAutocompleteForCurrentInput(sessionId: string) {
+    const currentInput = autocompleteInputBufferRef.current[sessionId] ?? "";
+    if (currentInput.trim()) {
+      autocompleteSuppressedInputRef.current[sessionId] = currentInput;
+    }
+    setActiveAutocomplete((prev) =>
+      prev?.sessionId === sessionId ? null : prev,
+    );
   }
 
   function handleTerminalBell(sessionId: string) {
@@ -1764,9 +1787,7 @@ export default function useTerminalRuntime({
           return;
         }
         if (effectiveData === "\u001b") {
-          setActiveAutocomplete((prev) =>
-            prev?.sessionId === sessionId ? null : prev,
-          );
+          suppressAutocompleteForCurrentInput(sessionId);
           // Esc 既要关闭联想面板，也必须透传到 PTY，保证 vim 等 TUI 能正确退出插入模式。
           handlersRef.current
             .sendSessionInput(sessionId, { kind: "text", data: effectiveData })
