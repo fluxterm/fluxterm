@@ -216,7 +216,8 @@ pub async fn run_ironrdp_session(
             "sessionId": &session_id,
             "host": &profile.host,
             "port": profile.port,
-            "username": &profile.username,
+            "hasUsername": !profile.username.trim().is_empty(),
+            "hasDomain": profile.domain.as_deref().is_some_and(|domain| !domain.trim().is_empty()),
         }),
     );
     let result = connect_and_run(&sessions, &sender, &session_id, &profile, &mut command_rx).await;
@@ -285,10 +286,9 @@ async fn connect_and_run(
             "sessionId": session_id,
             "host": &prepared_connection.host,
             "port": prepared_connection.port,
-            "username": &prepared_connection.username,
-            "domain": prepared_connection.domain.as_deref().unwrap_or(""),
-            "serverName": &prepared_connection.server_name,
-            "clientHostname": prepared_connection.client_hostname.as_deref().unwrap_or(""),
+            "hasUsername": !prepared_connection.username.trim().is_empty(),
+            "hasDomain": prepared_connection.domain.is_some(),
+            "hasClientHostname": prepared_connection.client_hostname.is_some(),
         }),
     );
     socket
@@ -364,10 +364,11 @@ async fn connect_and_run(
     .await
     .map_err(|error| {
         format!(
-            "connect_finalize failed for principal {} on {}:{}: {error:?}",
-            prepared_connection.principal(),
+            "connect_finalize failed on {}:{} (has_username={}, has_domain={}): {error:?}",
             prepared_connection.host,
             prepared_connection.port,
+            !prepared_connection.username.trim().is_empty(),
+            prepared_connection.domain.is_some(),
         )
     })?;
 
@@ -1544,15 +1545,6 @@ impl PreparedConnection {
             client_hostname,
             kerberos_config,
         })
-    }
-
-    /// 用于日志的认证主体描述。
-    fn principal(&self) -> String {
-        self.domain
-            .as_deref()
-            .filter(|domain| !domain.is_empty())
-            .map(|domain| format!("{domain}\\{}", self.username))
-            .unwrap_or_else(|| self.username.clone())
     }
 }
 
