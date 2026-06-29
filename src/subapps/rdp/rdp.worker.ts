@@ -55,10 +55,18 @@ type MainMessage =
       type: "bridge-state";
       sessionId: string;
       state: "open" | "closed" | "error";
+      details?: Record<string, unknown>;
     }
   | { type: "wire-event"; sessionId: string; payload: RdpWireEvent }
   | { type: "frame-presented"; sessionId: string; frameVersion: number }
-  | { type: "perf-snapshot"; sessionId: string; perf: WorkerPerfSnapshot };
+  | { type: "perf-snapshot"; sessionId: string; perf: WorkerPerfSnapshot }
+  | {
+      type: "diagnostic";
+      level: "debug" | "info" | "warn" | "error";
+      event: string;
+      sessionId?: string;
+      fields?: Record<string, unknown>;
+    };
 
 type WorkerPerfSnapshot = {
   frameMessages: number;
@@ -70,6 +78,48 @@ type WorkerPerfSnapshot = {
   avgUploadRectCpuMs: number;
   windowMs: number;
 };
+
+function getErrorFields(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+    };
+  }
+  return { message: String(error) };
+}
+
+function getSafeUrlFields(url: string) {
+  try {
+    const parsed = new URL(url);
+    return {
+      wsUrlProtocol: parsed.protocol,
+      wsUrlHost: parsed.host,
+      wsUrlPathname: parsed.pathname,
+      hasToken: parsed.searchParams.has("token"),
+    };
+  } catch (error) {
+    return {
+      wsUrlInvalid: true,
+      error: getErrorFields(error),
+    };
+  }
+}
+
+function postDiagnostic(
+  level: "debug" | "info" | "warn" | "error",
+  event: string,
+  fields?: Record<string, unknown>,
+  sessionId?: string,
+) {
+  self.postMessage({
+    type: "diagnostic",
+    level,
+    event,
+    sessionId,
+    fields,
+  } satisfies MainMessage);
+}
 
 class RdpWorkerContext {
   private renderer: RdpWebGLRenderer | null = null;
@@ -140,6 +190,10 @@ class RdpWorkerContext {
         type: "bridge-state",
         sessionId,
         state: "open",
+        details: {
+          readyState: ws.readyState,
+          ...getSafeUrlFields(url),
+        },
       } satisfies MainMessage);
     };
     ws.onmessage = (event) => {
@@ -155,8 +209,16 @@ class RdpWorkerContext {
             sessionId,
             payload,
           } satisfies MainMessage);
-        } catch {
-          // ignore
+        } catch (error) {
+          postDiagnostic(
+            "warn",
+            "rdp.worker.websocket.message.invalid",
+            {
+              dataLength: event.data.length,
+              error: getErrorFields(error),
+            },
+            sessionId,
+          );
         }
         return;
       }
@@ -164,16 +226,24 @@ class RdpWorkerContext {
         this.queueFrame(sessionId, event.data);
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       const currentSession = this.sessions.get(sessionId);
       if (!currentSession || currentSession.ws !== ws) {
         return;
       }
       currentSession.ws = null;
+      const details = {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+        readyState: ws.readyState,
+        ...getSafeUrlFields(url),
+      };
       self.postMessage({
         type: "bridge-state",
         sessionId,
         state: "closed",
+        details,
       } satisfies MainMessage);
     };
     ws.onerror = () => {
@@ -185,7 +255,20 @@ class RdpWorkerContext {
         type: "bridge-state",
         sessionId,
         state: "error",
+        details: {
+          readyState: ws.readyState,
+          ...getSafeUrlFields(url),
+        },
       } satisfies MainMessage);
+      postDiagnostic(
+        "warn",
+        "rdp.worker.websocket.error",
+        {
+          readyState: ws.readyState,
+          ...getSafeUrlFields(url),
+        },
+        sessionId,
+      );
     };
     session.ws = ws;
   }
@@ -458,7 +541,18 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
 
   switch (data.type) {
     case "init":
-      context = new RdpWorkerContext(data.canvas);
+      try {
+        context = new RdpWorkerContext(data.canvas);
+        postDiagnostic("info", "rdp.worker.init.success", {
+          canvasWidth: data.canvas.width,
+          canvasHeight: data.canvas.height,
+        });
+      } catch (error) {
+        postDiagnostic("error", "rdp.worker.init.failed", {
+          error: getErrorFields(error),
+        });
+        throw error;
+      }
       break;
     case "set-active":
       context?.setActiveSession(data.sessionId);

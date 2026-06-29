@@ -23,7 +23,7 @@ import {
 } from "@/subapps/core/lifecycle";
 import SubAppTitleBar from "@/subapps/components/SubAppTitleBar";
 import Tooltip from "@/components/ui/menu/Tooltip";
-import { isMacOS } from "@/utils/platform";
+import { isLinuxOS, isMacOS } from "@/utils/platform";
 import {
   connectRdpSession,
   createRdpSession,
@@ -34,6 +34,7 @@ import {
   sendRdpInput,
   setRdpClipboard,
 } from "@/features/rdp/core/commands";
+import { RdpMainThreadBridge } from "@/subapps/rdp/RdpMainThreadBridge";
 import "./RdpSubApp.css";
 
 type RdpSubAppProps = {
@@ -72,6 +73,41 @@ type RdpWorkerPerfSnapshot = {
   avgUploadRectCpuMs: number;
   windowMs: number;
 };
+
+type RdpWorkerMessage =
+  | {
+      type: "bridge-state";
+      sessionId: string;
+      state?: "open" | "closed" | "error";
+      details?: Record<string, unknown>;
+    }
+  | {
+      type: "wire-event";
+      sessionId: string;
+      payload?: RdpWireEvent;
+    }
+  | {
+      type: "frame-presented";
+      sessionId: string;
+      frameVersion?: number;
+    }
+  | {
+      type: "perf-snapshot";
+      sessionId: string;
+      perf?: RdpWorkerPerfSnapshot;
+    }
+  | {
+      type: "diagnostic";
+      sessionId?: string;
+      level?: TelemetryLevel;
+      event?: string;
+      fields?: Record<string, unknown>;
+    };
+
+type RdpRendererControlMessage =
+  | { type: "set-active"; sessionId: string | null }
+  | { type: "connect"; sessionId: string; url: string }
+  | { type: "disconnect"; sessionId: string };
 
 type RdpSessionTab = {
   session: RdpSessionSnapshot;
@@ -152,6 +188,40 @@ function logRdpSubAppEvent(
   fields?: Record<string, unknown>,
 ) {
   void logTelemetry(level, event, fields);
+}
+
+function getErrorFields(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      name: error.name,
+    };
+  }
+  return { message: String(error) };
+}
+
+function getSafeWsUrlFields(url: string | null | undefined) {
+  if (!url) {
+    return {
+      hasWsUrl: false,
+    };
+  }
+  try {
+    const parsed = new URL(url);
+    return {
+      hasWsUrl: true,
+      wsUrlProtocol: parsed.protocol,
+      wsUrlHost: parsed.host,
+      wsUrlPathname: parsed.pathname,
+      hasToken: parsed.searchParams.has("token"),
+    };
+  } catch (error) {
+    return {
+      hasWsUrl: true,
+      wsUrlInvalid: true,
+      error: getErrorFields(error),
+    };
+  }
 }
 
 /** 读取当前 RDP 视口尺寸，并做基础下限收敛。 */
@@ -257,12 +327,14 @@ function getCanvasObjectFit(strategy: RdpDisplayStrategy) {
 /** RDP 子应用。 */
 export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   const isMac = useMemo(() => isMacOS(), []);
+  const isLinux = useMemo(() => isLinuxOS(), []);
   const windowLabel = useMemo(() => createSubAppWindowLabel(id), [id]);
   const closingRef = useRef(false);
   const cleanupInFlightRef = useRef<Promise<void> | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  const mainThreadBridgeRef = useRef<RdpMainThreadBridge | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const lastSyncTextRef = useRef<string | null>(null);
@@ -488,6 +560,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         const isTerminalState =
           payload.state === "error" || payload.state === "disconnected";
         if (isTerminalState) {
+          mainThreadBridgeRef.current?.disconnect(sessionId);
           workerRef.current?.postMessage({
             type: "disconnect",
             sessionId,
@@ -576,126 +649,253 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     };
   }, [locale, t, updateSessionTab, handleWireEvent, resetPresentedFpsSampler]);
 
+  /** 统一处理 Worker 与主线程 fallback 的渲染通道事件。 */
+  const handleRendererMessage = useCallback((message: RdpWorkerMessage) => {
+    const { type } = message;
+    const current = handlersRef.current;
+
+    if (type === "bridge-state") {
+      const { sessionId, state } = message;
+      const traceId =
+        sessionsRef.current.find((tab) => tab.session.sessionId === sessionId)
+          ?.traceId ?? null;
+      if (state === "open") {
+        logRdpSubAppEvent("info", "rdp.bridge.open", {
+          traceId,
+          sessionId,
+          ...(message.details ?? {}),
+        });
+      } else if (state === "error") {
+        logRdpSubAppEvent("warn", "rdp.bridge.failed", {
+          traceId,
+          sessionId,
+          ...(message.details ?? {}),
+        });
+      } else {
+        logRdpSubAppEvent("info", "rdp.bridge.close", {
+          traceId,
+          sessionId,
+          ...(message.details ?? {}),
+        });
+      }
+      current.updateSessionTab(sessionId, (tab) => ({
+        ...tab,
+        perf: {
+          ...tab.perf,
+          bridgeState: state === "error" ? "closed" : (state ?? "closed"),
+        },
+      }));
+      if (state !== "open") {
+        current.resetPresentedFpsSampler(
+          activeSessionIdRef.current === sessionId ? sessionId : null,
+        );
+      }
+      return;
+    }
+
+    if (type === "wire-event" && message.payload) {
+      current.handleWireEvent(message.sessionId, message.payload);
+      return;
+    }
+
+    if (
+      type === "frame-presented" &&
+      typeof message.frameVersion === "number"
+    ) {
+      frameVersionBySessionRef.current[message.sessionId] =
+        message.frameVersion;
+      return;
+    }
+
+    if (type === "perf-snapshot" && message.perf) {
+      const tab = sessionsRef.current.find(
+        (item) => item.session.sessionId === message.sessionId,
+      );
+      logRdpSubAppEvent("debug", RDP_WORKER_PERF_SNAPSHOT_EVENT, {
+        traceId: tab?.traceId ?? null,
+        sessionId: message.sessionId,
+        frameMessages: message.perf.frameMessages,
+        rectUploads: message.perf.rectUploads,
+        uploadedPixels: message.perf.uploadedPixels,
+        queueHighWatermark: message.perf.queueHighWatermark,
+        presentCount: message.perf.presentCount,
+        avgPresentCpuMs: message.perf.avgPresentCpuMs,
+        avgUploadRectCpuMs: message.perf.avgUploadRectCpuMs,
+        windowMs: message.perf.windowMs,
+      });
+      return;
+    }
+
+    if (type === "diagnostic") {
+      const traceId = message.sessionId
+        ? (sessionsRef.current.find(
+            (tab) => tab.session.sessionId === message.sessionId,
+          )?.traceId ?? null)
+        : null;
+      logRdpSubAppEvent(
+        message.level ?? "debug",
+        message.event ?? "rdp.renderer.diagnostic",
+        {
+          traceId,
+          sessionId: message.sessionId ?? null,
+          ...(message.fields ?? {}),
+        },
+      );
+    }
+  }, []);
+
+  /** 向当前可用渲染通道发送控制消息。 */
+  const postRendererControl = useCallback(
+    (message: RdpRendererControlMessage) => {
+      const mainThreadBridge = mainThreadBridgeRef.current;
+      if (mainThreadBridge) {
+        if (message.type === "set-active") {
+          mainThreadBridge.setActiveSession(message.sessionId);
+        } else if (message.type === "connect") {
+          mainThreadBridge.connect(message.sessionId, message.url);
+        } else {
+          mainThreadBridge.disconnect(message.sessionId);
+        }
+        return true;
+      }
+
+      const worker = workerRef.current;
+      if (!worker) {
+        return false;
+      }
+      worker.postMessage(message);
+      return true;
+    },
+    [],
+  );
+
+  /** 返回当前渲染通道类型，便于日志定位是否使用 fallback。 */
+  const getRendererMode = useCallback(() => {
+    if (mainThreadBridgeRef.current) return "main-thread";
+    if (workerRef.current) return "worker";
+    return "none";
+  }, []);
+
   /** 初始化 Web Worker 和 OffscreenCanvas */
   useEffect(() => {
-    if (canvasRef.current && !workerRef.current) {
+    if (
+      canvasRef.current &&
+      !workerRef.current &&
+      !mainThreadBridgeRef.current
+    ) {
+      const canvas = canvasRef.current;
+      logRdpSubAppEvent("debug", "rdp.worker.init.start", {
+        hasCanvas: true,
+        hasTransferControlToOffscreen:
+          typeof canvas.transferControlToOffscreen === "function",
+        preferMainThreadFallback: isLinux,
+      });
+
+      const createMainThreadBridge = (reason: string) => {
+        try {
+          mainThreadBridgeRef.current = new RdpMainThreadBridge(canvas, {
+            onBridgeState: (event) =>
+              handleRendererMessage({
+                type: "bridge-state",
+                sessionId: event.sessionId,
+                state: event.state,
+                details: event.details,
+              }),
+            onWireEvent: (sessionId, payload) =>
+              handleRendererMessage({
+                type: "wire-event",
+                sessionId,
+                payload,
+              }),
+            onFramePresented: (sessionId, frameVersion) =>
+              handleRendererMessage({
+                type: "frame-presented",
+                sessionId,
+                frameVersion,
+              }),
+            onDiagnostic: (level, event, fields, sessionId) =>
+              handleRendererMessage({
+                type: "diagnostic",
+                level,
+                event,
+                sessionId,
+                fields,
+              }),
+          });
+          logRdpSubAppEvent("info", "rdp.renderer.fallback.ready", {
+            reason,
+            rendererMode: "main-thread",
+          });
+          return true;
+        } catch (error) {
+          logRdpSubAppEvent("error", "rdp.renderer.fallback.failed", {
+            reason,
+            error: getErrorFields(error),
+          });
+          return false;
+        }
+      };
+
+      // Linux Tauri 使用 WebKitGTK，部分发行版会在 Worker 内创建 WebGL 时失败。
+      // 一旦真实 canvas 被 transferControlToOffscreen() 转移，主线程就无法再复用它做回退渲染。
+      // 因此 Linux 先固定走主线程 WebGL fallback，避免“Worker 初始化失败后无法恢复”的空白状态。
+      if (isLinux && createMainThreadBridge("linux_webkitgtk")) {
+        return () => {
+          mainThreadBridgeRef.current?.terminate();
+          mainThreadBridgeRef.current = null;
+        };
+      }
+
       try {
-        const offscreen = canvasRef.current.transferControlToOffscreen();
+        const offscreen = canvas.transferControlToOffscreen();
         const worker = new Worker(new URL("./rdp.worker.ts", import.meta.url), {
           type: "module",
         });
 
-        worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
-
-        worker.onmessage = (
-          event: MessageEvent<{
-            type:
-              | "bridge-state"
-              | "wire-event"
-              | "frame-presented"
-              | "perf-snapshot";
-            sessionId: string;
-            state?: "open" | "closed" | "error";
-            payload?: RdpWireEvent;
-            frameVersion?: number;
-            perf?: RdpWorkerPerfSnapshot;
-          }>,
-        ) => {
-          const { type, sessionId, state, payload, frameVersion, perf } =
-            event.data;
-          const current = handlersRef.current;
-
-          if (type === "bridge-state") {
-            const traceId =
-              sessionsRef.current.find(
-                (tab) => tab.session.sessionId === sessionId,
-              )?.traceId ?? null;
-            if (state === "open") {
-              logRdpSubAppEvent("info", "rdp.bridge.open", {
-                traceId,
-                sessionId,
-              });
-            } else if (state === "error") {
-              logRdpSubAppEvent("warn", "rdp.bridge.failed", {
-                traceId,
-                sessionId,
-              });
-            } else {
-              logRdpSubAppEvent("info", "rdp.bridge.close", {
-                traceId,
-                sessionId,
-              });
-            }
-            current.updateSessionTab(sessionId, (tab) => ({
-              ...tab,
-              perf: {
-                ...tab.perf,
-                bridgeState: state === "error" ? "closed" : (state ?? "closed"),
-              },
-            }));
-            if (state !== "open") {
-              current.resetPresentedFpsSampler(
-                activeSessionIdRef.current === sessionId ? sessionId : null,
-              );
-            }
-          } else if (type === "wire-event" && payload) {
-            current.handleWireEvent(sessionId, payload);
-          } else if (
-            type === "frame-presented" &&
-            typeof frameVersion === "number"
-          ) {
-            frameVersionBySessionRef.current[sessionId] = frameVersion;
-          } else if (type === "perf-snapshot" && perf) {
-            const tab = sessionsRef.current.find(
-              (item) => item.session.sessionId === sessionId,
-            );
-            logRdpSubAppEvent("debug", RDP_WORKER_PERF_SNAPSHOT_EVENT, {
-              traceId: tab?.traceId ?? null,
-              sessionId,
-              frameMessages: perf.frameMessages,
-              rectUploads: perf.rectUploads,
-              uploadedPixels: perf.uploadedPixels,
-              queueHighWatermark: perf.queueHighWatermark,
-              presentCount: perf.presentCount,
-              avgPresentCpuMs: perf.avgPresentCpuMs,
-              avgUploadRectCpuMs: perf.avgUploadRectCpuMs,
-              windowMs: perf.windowMs,
-            });
-          }
+        worker.onmessage = (event: MessageEvent<RdpWorkerMessage>) => {
+          handleRendererMessage(event.data);
         };
 
+        worker.onerror = (event) => {
+          logRdpSubAppEvent("error", "rdp.worker.runtime.error", {
+            message: event.message,
+            filename: event.filename,
+            lineno: event.lineno,
+            colno: event.colno,
+          });
+        };
+        worker.onmessageerror = () => {
+          logRdpSubAppEvent("warn", "rdp.worker.message.error");
+        };
+        worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
         workerRef.current = worker;
       } catch (error) {
         logRdpSubAppEvent("error", "rdp.worker.init.failed", {
-          error:
-            error instanceof Error
-              ? {
-                  message: error.message,
-                  name: error.name,
-                }
-              : { message: String(error) },
+          hasTransferControlToOffscreen:
+            typeof canvas.transferControlToOffscreen === "function",
+          error: getErrorFields(error),
         });
+        createMainThreadBridge("worker_init_failed");
       }
     }
     return () => {
-      // 仅在组件真正销毁时关闭 Worker
-      if (closingRef.current || !workerRef.current) {
-        workerRef.current?.terminate();
-        workerRef.current = null;
-      }
+      workerRef.current?.terminate();
+      workerRef.current = null;
+      mainThreadBridgeRef.current?.terminate();
+      mainThreadBridgeRef.current = null;
     };
-  }, []);
+  }, [handleRendererMessage, isLinux]);
 
   useEffect(() => {
     const cancel = scheduleDeferredTask(() => {
-      workerRef.current?.postMessage({
+      postRendererControl({
         type: "set-active",
         sessionId: activeSessionId,
       });
       resetPresentedFpsSampler(activeSessionId);
     });
     return cancel;
-  }, [activeSessionId, resetPresentedFpsSampler]);
+  }, [activeSessionId, postRendererControl, resetPresentedFpsSampler]);
 
   useEffect(() => {
     const runtime = presentedFpsRuntimeRef.current;
@@ -765,36 +965,42 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
   /** 从标签栏移除会话，并在需要时切换到邻近会话。 */
   /** 关闭标签后优先切到相邻标签，避免 activeSessionId 悬空。 */
-  const removeSessionTab = useCallback((sessionId: string) => {
-    let nextActiveId: string | null = null;
-    setSessions((prev) => {
-      const index = prev.findIndex(
-        (tab) => tab.session.sessionId === sessionId,
+  const removeSessionTab = useCallback(
+    (sessionId: string) => {
+      let nextActiveId: string | null = null;
+      setSessions((prev) => {
+        const index = prev.findIndex(
+          (tab) => tab.session.sessionId === sessionId,
+        );
+        if (index === -1) return prev;
+        const nextTabs = prev.filter(
+          (tab) => tab.session.sessionId !== sessionId,
+        );
+        nextActiveId =
+          nextTabs[index]?.session.sessionId ??
+          nextTabs[index - 1]?.session.sessionId ??
+          nextTabs[0]?.session.sessionId ??
+          null;
+        return nextTabs;
+      });
+      setActiveSessionId((current) =>
+        current === sessionId ? nextActiveId : current,
       );
-      if (index === -1) return prev;
-      const nextTabs = prev.filter(
-        (tab) => tab.session.sessionId !== sessionId,
-      );
-      nextActiveId =
-        nextTabs[index]?.session.sessionId ??
-        nextTabs[index - 1]?.session.sessionId ??
-        nextTabs[0]?.session.sessionId ??
-        null;
-      return nextTabs;
-    });
-    setActiveSessionId((current) =>
-      current === sessionId ? nextActiveId : current,
-    );
-    workerRef.current?.postMessage({ type: "disconnect", sessionId });
-  }, []);
+      postRendererControl({ type: "disconnect", sessionId });
+    },
+    [postRendererControl],
+  );
 
   /** 关闭最后一个标签前先同步清空本地状态，避免统一关窗时重复断开同一会话。 */
-  const clearLastSessionTab = useCallback((sessionId: string) => {
-    setSessions([]);
-    setActiveSessionId(null);
-    sessionsRef.current = [];
-    workerRef.current?.postMessage({ type: "disconnect", sessionId });
-  }, []);
+  const clearLastSessionTab = useCallback(
+    (sessionId: string) => {
+      setSessions([]);
+      setActiveSessionId(null);
+      sessionsRef.current = [];
+      postRendererControl({ type: "disconnect", sessionId });
+    },
+    [postRendererControl],
+  );
 
   const resizeRuntimeRef = useRef<{
     timer: number | null;
@@ -910,14 +1116,44 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       return;
     }
     if (!canAttachBridge(activeTab.session)) {
-      workerRef.current?.postMessage({
+      logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
+        traceId: activeTab.traceId,
+        sessionId: activeTab.session.sessionId,
+        reason: "session_not_attachable",
+        sessionState: activeTab.session.state,
+        rendererMode: getRendererMode(),
+        bridgeState: activeTab.perf.bridgeState,
+        ...getSafeWsUrlFields(activeTab.session.wsUrl),
+      });
+      postRendererControl({
         type: "disconnect",
         sessionId: activeTab.session.sessionId,
       });
       return;
     }
 
-    workerRef.current?.postMessage({
+    if (getRendererMode() === "none") {
+      logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
+        traceId: activeTab.traceId,
+        sessionId: activeTab.session.sessionId,
+        reason: "renderer_unavailable",
+        sessionState: activeTab.session.state,
+        rendererMode: "none",
+        bridgeState: activeTab.perf.bridgeState,
+        ...getSafeWsUrlFields(activeTab.session.wsUrl),
+      });
+      return;
+    }
+
+    logRdpSubAppEvent("debug", "rdp.bridge.connect.dispatch", {
+      traceId: activeTab.traceId,
+      sessionId: activeTab.session.sessionId,
+      sessionState: activeTab.session.state,
+      rendererMode: getRendererMode(),
+      bridgeState: activeTab.perf.bridgeState,
+      ...getSafeWsUrlFields(activeTab.session.wsUrl),
+    });
+    postRendererControl({
       type: "connect",
       sessionId: activeTab.session.sessionId,
       url: activeTab.session.wsUrl,
@@ -1020,7 +1256,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
           } catch {
             // 忽略单个会话断开失败，尽量继续清理剩余会话。
           } finally {
-            workerRef.current?.postMessage({
+            postRendererControl({
               type: "disconnect",
               sessionId: session.sessionId,
             });
@@ -1039,7 +1275,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     } finally {
       cleanupInFlightRef.current = null;
     }
-  }, []);
+  }, [postRendererControl]);
 
   /** 统一执行子应用关闭，确保只触发一次异步清理。 */
   const requestWindowClose = useCallback(async () => {
