@@ -1189,7 +1189,7 @@ fn rects_near_or_overlap(left: &InclusiveRectangle, right: &InclusiveRectangle) 
     let right_right = i32::from(right.right);
     let right_bottom = i32::from(right.bottom);
 
-    // 允许 32 像素以内的间隙合并，显著降低拖动窗口时的离散 PDU 数量。
+    // 允许一定像素间隙内的矩形合并，减少拖动窗口时的离散 PDU 数量，但会增加局部 overdraw。
     left_left <= right_right + NEAR_RECT_THRESHOLD_PX
         && left_right + NEAR_RECT_THRESHOLD_PX >= right_left
         && left_top <= right_bottom + NEAR_RECT_THRESHOLD_PX
