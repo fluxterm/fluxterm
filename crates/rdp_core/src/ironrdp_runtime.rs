@@ -1121,6 +1121,63 @@ fn merge_update_rects(rects: Vec<InclusiveRectangle>) -> Vec<InclusiveRectangle>
     maybe_collapse_fragmented_rects(merged)
 }
 
+/// 为 Criterion benchmark 提供的矩形合并包装入口。
+pub fn benchmark_merge_update_rects(rects: &[(u16, u16, u16, u16)]) -> Vec<(u16, u16, u16, u16)> {
+    merge_update_rects(
+        rects
+            .iter()
+            .map(|&(left, top, right, bottom)| InclusiveRectangle {
+                left,
+                top,
+                right,
+                bottom,
+            })
+            .collect(),
+    )
+    .into_iter()
+    .map(|rect| (rect.left, rect.top, rect.right, rect.bottom))
+    .collect()
+}
+
+/// 为 Criterion benchmark 评估当前脏矩形策略的发送面积。
+pub fn benchmark_evaluate_overdraw_policy(
+    rects: &[(u16, u16, u16, u16)],
+    high_pressure: bool,
+) -> (usize, usize, u64, u64) {
+    let raw_pixels = rects
+        .iter()
+        .map(|&(left, top, right, bottom)| {
+            rect_area(&InclusiveRectangle {
+                left,
+                top,
+                right,
+                bottom,
+            })
+        })
+        .sum::<u64>();
+    let mut merged = merge_update_rects(
+        rects
+            .iter()
+            .map(|&(left, top, right, bottom)| InclusiveRectangle {
+                left,
+                top,
+                right,
+                bottom,
+            })
+            .collect(),
+    );
+    if high_pressure {
+        let perf_window = FramePerfWindow {
+            raw_rects: HIGH_PRESSURE_COLLAPSE_RAW_RECTS,
+            ..FramePerfWindow::default()
+        };
+        merged = maybe_collapse_flush_rects(merged, &perf_window);
+    }
+
+    let sent_pixels = merged.iter().map(rect_area).sum::<u64>();
+    (rects.len(), merged.len(), raw_pixels, sent_pixels)
+}
+
 /// 判断两个脏矩形是否相交、边缘相邻或距离非常接近。
 fn rects_near_or_overlap(left: &InclusiveRectangle, right: &InclusiveRectangle) -> bool {
     let left_left = i32::from(left.left);

@@ -22,3 +22,22 @@ ironrdp = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061
 ironrdp-tls = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-tls", features = ["rustls"] }
 ironrdp-tokio = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-tokio", features = ["reqwest"] }
 ironrdp-cliprdr = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-cliprdr" }
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "rect_merge_bench"
+harness = false
+
+[[bench]]
+name = "frame_message_bench"
+harness = false
+
+[[bench]]
+name = "overdraw_policy_bench"
+harness = false
+
+[[bench]]
+name = "bridge_binary_bench"
+harness = false

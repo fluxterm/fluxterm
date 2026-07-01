@@ -13,6 +13,105 @@ mod telemetry;
 
 use std::sync::Arc;
 
+#[doc(hidden)]
+pub mod benchmark_support {
+    //! RDP core 内部算法的基准测试入口。
+    //!
+    //! 该模块仅用于 `benches/` 中的 Criterion 测试，避免把运行时内部类型直接暴露给应用层。
+
+    /// 执行一次 RDP 图形脏矩形合并。
+    ///
+    /// # 参数
+    ///
+    /// * `rects` - `(left, top, right, bottom)` 形式的闭区间矩形列表。
+    ///
+    /// # 返回
+    ///
+    /// 返回合并后的同格式矩形列表。
+    pub fn merge_update_rects(rects: &[(u16, u16, u16, u16)]) -> Vec<(u16, u16, u16, u16)> {
+        crate::ironrdp_runtime::benchmark_merge_update_rects(rects)
+    }
+
+    /// 构造一张确定性的 RGBA 测试画面。
+    pub fn create_test_rgba_surface(width: u32, height: u32) -> Vec<u8> {
+        crate::session_manager::benchmark_create_test_rgba_surface(width, height)
+    }
+
+    /// 从测试画面中拷贝一个矩形区域到目标缓冲。
+    pub fn copy_rgba_rect(
+        surface: &[u8],
+        surface_width: u32,
+        rect: (u32, u32, u32, u32),
+        dest: &mut [u8],
+    ) {
+        crate::session_manager::benchmark_copy_rgba_rect(surface, surface_width, rect, dest);
+    }
+
+    /// 构造单矩形 RGBA 帧消息。
+    pub fn build_rgba_frame_message(
+        surface: &[u8],
+        surface_width: u32,
+        surface_height: u32,
+        rect: (u32, u32, u32, u32),
+    ) -> usize {
+        crate::session_manager::benchmark_build_rgba_frame_message(
+            surface,
+            surface_width,
+            surface_height,
+            rect,
+        )
+    }
+
+    /// 构造批量 RGBA 帧消息。
+    pub fn build_rgba_frame_batch_message(
+        surface: &[u8],
+        surface_width: u32,
+        surface_height: u32,
+        rects: &[(u32, u32, u32, u32)],
+    ) -> usize {
+        crate::session_manager::benchmark_build_rgba_frame_batch_message(
+            surface,
+            surface_width,
+            surface_height,
+            rects,
+        )
+    }
+
+    /// 脏矩形策略评估结果。
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct OverdrawStats {
+        /// 原始矩形数量。
+        pub raw_rects: usize,
+        /// 最终发送矩形数量。
+        pub final_rects: usize,
+        /// 原始矩形面积之和。
+        pub raw_pixels: u64,
+        /// 最终发送像素面积之和。
+        pub sent_pixels: u64,
+        /// 相对原始面积多发送的像素数。
+        pub overdraw_pixels: u64,
+        /// `sent_pixels / raw_pixels`。
+        pub overdraw_ratio: f64,
+    }
+
+    /// 评估当前脏矩形合并与高压 collapse 策略。
+    pub fn evaluate_overdraw_policy(
+        rects: &[(u16, u16, u16, u16)],
+        high_pressure: bool,
+    ) -> OverdrawStats {
+        let (raw_rects, final_rects, raw_pixels, sent_pixels) =
+            crate::ironrdp_runtime::benchmark_evaluate_overdraw_policy(rects, high_pressure);
+        OverdrawStats {
+            raw_rects,
+            final_rects,
+            raw_pixels,
+            sent_pixels,
+            overdraw_pixels: sent_pixels.saturating_sub(raw_pixels),
+            overdraw_ratio: sent_pixels as f64 / raw_pixels.max(1) as f64,
+        }
+    }
+}
+
 pub use protocol::{
     RuntimeConnectRequest, RuntimeInputEvent, RuntimePerformanceFlags, RuntimeSessionSnapshot,
 };

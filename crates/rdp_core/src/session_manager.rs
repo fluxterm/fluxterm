@@ -426,6 +426,79 @@ where
     Message::Binary(bytes.into())
 }
 
+/// 为 Criterion benchmark 构造确定性的 RGBA 测试画面。
+pub fn benchmark_create_test_rgba_surface(width: u32, height: u32) -> Vec<u8> {
+    let mut surface = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            surface.push((x & 0xff) as u8);
+            surface.push((y & 0xff) as u8);
+            surface.push(((x ^ y) & 0xff) as u8);
+            surface.push(0xff);
+        }
+    }
+    surface
+}
+
+/// 为 Criterion benchmark 从 RGBA 测试画面中拷贝一个矩形区域。
+pub fn benchmark_copy_rgba_rect(
+    surface: &[u8],
+    surface_width: u32,
+    rect: (u32, u32, u32, u32),
+    dest: &mut [u8],
+) {
+    let (x, y, width, height) = rect;
+    let stride = surface_width as usize * 4;
+    let row_bytes = width as usize * 4;
+    let total_bytes = row_bytes * height as usize;
+    debug_assert_eq!(dest.len(), total_bytes);
+
+    if x == 0 && row_bytes == stride {
+        let start = y as usize * stride;
+        let end = start + total_bytes;
+        dest.copy_from_slice(&surface[start..end]);
+        return;
+    }
+
+    let mut source_offset = y as usize * stride + x as usize * 4;
+    let mut dest_offset = 0;
+    for _ in 0..height {
+        dest[dest_offset..dest_offset + row_bytes]
+            .copy_from_slice(&surface[source_offset..source_offset + row_bytes]);
+        source_offset += stride;
+        dest_offset += row_bytes;
+    }
+}
+
+/// 为 Criterion benchmark 构造单矩形 RGBA 帧消息并返回消息字节数。
+pub fn benchmark_build_rgba_frame_message(
+    surface: &[u8],
+    surface_width: u32,
+    surface_height: u32,
+    rect: (u32, u32, u32, u32),
+) -> usize {
+    let (x, y, width, height) = rect;
+    let message =
+        build_rgba_frame_message(x, y, width, height, surface_width, surface_height, |dest| {
+            benchmark_copy_rgba_rect(surface, surface_width, rect, dest)
+        });
+    message.into_data().len()
+}
+
+/// 为 Criterion benchmark 构造批量 RGBA 帧消息并返回消息字节数。
+pub fn benchmark_build_rgba_frame_batch_message(
+    surface: &[u8],
+    surface_width: u32,
+    surface_height: u32,
+    rects: &[(u32, u32, u32, u32)],
+) -> usize {
+    let message =
+        build_rgba_frame_batch_message(surface_width, surface_height, rects, |index, dest| {
+            benchmark_copy_rgba_rect(surface, surface_width, rects[index], dest);
+        });
+    message.into_data().len()
+}
+
 /// 按最终长度一次性分配消息缓冲，避免构造阶段重复扩容和边界检查。
 ///
 /// 这里使用裸指针写入，是为了跳过零填充；调用方必须保证：
