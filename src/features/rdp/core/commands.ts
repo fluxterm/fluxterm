@@ -300,11 +300,10 @@ export function sendRdpInput(
   input: RdpInputEvent,
   options?: RdpCommandOptions,
 ) {
-  const traceId = resolveTraceId(options);
   return callTauri<void>("rdp_session_send_input", {
     sessionId,
     input,
-    traceId,
+    traceId: options?.traceId,
   });
 }
 

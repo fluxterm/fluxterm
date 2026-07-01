@@ -6,6 +6,8 @@
 
 import { RdpWebGLRenderer } from "./WebGLRenderer";
 
+const FRAME_PRESENTED_NOTIFY_INTERVAL_MS = 250;
+
 type WorkerSessionRuntime = {
   sessionId: string;
   ws: WebSocket | null;
@@ -16,19 +18,9 @@ type WorkerSessionRuntime = {
   pendingFrames: ArrayBuffer[];
   frameRequest: number | null;
   frameVersion: number;
+  pendingPresentedFrames: number;
+  lastFramePresentedNotifyAt: number;
   needsPresent: boolean;
-  perf: WorkerPerfCounters;
-};
-
-type WorkerPerfCounters = {
-  windowStartAt: number;
-  frameMessages: number;
-  rectUploads: number;
-  uploadedPixels: number;
-  queueHighWatermark: number;
-  presentCount: number;
-  presentCpuTimeMs: number;
-  uploadRectCpuTimeMs: number;
 };
 
 type RdpWireEvent =
@@ -58,8 +50,12 @@ type MainMessage =
       details?: Record<string, unknown>;
     }
   | { type: "wire-event"; sessionId: string; payload: RdpWireEvent }
-  | { type: "frame-presented"; sessionId: string; frameVersion: number }
-  | { type: "perf-snapshot"; sessionId: string; perf: WorkerPerfSnapshot }
+  | {
+      type: "frame-presented";
+      sessionId: string;
+      frameVersion: number;
+      presentedFrames: number;
+    }
   | {
       type: "diagnostic";
       level: "debug" | "info" | "warn" | "error";
@@ -67,17 +63,6 @@ type MainMessage =
       sessionId?: string;
       fields?: Record<string, unknown>;
     };
-
-type WorkerPerfSnapshot = {
-  frameMessages: number;
-  rectUploads: number;
-  uploadedPixels: number;
-  queueHighWatermark: number;
-  presentCount: number;
-  avgPresentCpuMs: number;
-  avgUploadRectCpuMs: number;
-  windowMs: number;
-};
 
 function getErrorFields(error: unknown) {
   if (error instanceof Error) {
@@ -312,8 +297,9 @@ class RdpWorkerContext {
         pendingFrames: [],
         frameRequest: null,
         frameVersion: 0,
+        pendingPresentedFrames: 0,
+        lastFramePresentedNotifyAt: 0,
         needsPresent: false,
-        perf: this.createPerfCounters(),
       };
       this.sessions.set(sessionId, session);
     }
@@ -325,11 +311,6 @@ class RdpWorkerContext {
     if (!session) return;
     session.pendingFrames.push(buffer);
     session.needsPresent = true;
-    session.perf.frameMessages += 1;
-    session.perf.queueHighWatermark = Math.max(
-      session.perf.queueHighWatermark,
-      session.pendingFrames.length,
-    );
     this.requestRender(sessionId);
   }
 
@@ -351,19 +332,14 @@ class RdpWorkerContext {
         session.texture &&
         this.renderer
       ) {
-        const commitStartedAt = performance.now();
         this.renderer.commit(
           session.texture,
           session.textureSize.width,
           session.textureSize.height,
         );
-        session.perf.presentCount += 1;
-        session.perf.presentCpuTimeMs += performance.now() - commitStartedAt;
         session.needsPresent = false;
         this.notifyFramePresented(session);
       }
-
-      this.flushPerfSnapshot(session);
     });
   }
 
@@ -373,10 +349,23 @@ class RdpWorkerContext {
    */
   private notifyFramePresented(session: WorkerSessionRuntime) {
     session.frameVersion += 1;
+    session.pendingPresentedFrames += 1;
+    const now = performance.now();
+    if (
+      now - session.lastFramePresentedNotifyAt <
+      FRAME_PRESENTED_NOTIFY_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    const presentedFrames = session.pendingPresentedFrames;
+    session.pendingPresentedFrames = 0;
+    session.lastFramePresentedNotifyAt = now;
     self.postMessage({
       type: "frame-presented",
       sessionId: session.sessionId,
       frameVersion: session.frameVersion,
+      presentedFrames,
     } satisfies MainMessage);
   }
 
@@ -408,7 +397,6 @@ class RdpWorkerContext {
         session.textureSize = { width: surfaceWidth, height: surfaceHeight };
       }
 
-      const uploadStartedAt = performance.now();
       this.renderer.uploadRect(
         session.texture,
         x,
@@ -416,12 +404,6 @@ class RdpWorkerContext {
         rectWidth,
         rectHeight,
         pixels,
-      );
-      this.recordRectUpload(
-        session,
-        rectWidth,
-        rectHeight,
-        performance.now() - uploadStartedAt,
       );
     } else if (messageType === 2 && view.byteLength >= 13) {
       const surfaceWidth = view.getUint32(1, true);
@@ -452,7 +434,6 @@ class RdpWorkerContext {
         const pixelBytes = rectWidth * rectHeight * 4;
         if (offset + pixelBytes > view.byteLength) break;
         const pixels = new Uint8Array(buffer, offset, pixelBytes);
-        const uploadStartedAt = performance.now();
         this.renderer.uploadRect(
           session.texture,
           x,
@@ -461,76 +442,9 @@ class RdpWorkerContext {
           rectHeight,
           pixels,
         );
-        this.recordRectUpload(
-          session,
-          rectWidth,
-          rectHeight,
-          performance.now() - uploadStartedAt,
-        );
         offset += pixelBytes;
       }
     }
-  }
-
-  /** 创建新的 Worker 侧性能计数窗口。 */
-  private createPerfCounters(): WorkerPerfCounters {
-    return {
-      windowStartAt: performance.now(),
-      frameMessages: 0,
-      rectUploads: 0,
-      uploadedPixels: 0,
-      queueHighWatermark: 0,
-      presentCount: 0,
-      presentCpuTimeMs: 0,
-      uploadRectCpuTimeMs: 0,
-    };
-  }
-
-  /** 记录一次纹理局部上传成本。 */
-  private recordRectUpload(
-    session: WorkerSessionRuntime,
-    rectWidth: number,
-    rectHeight: number,
-    cpuTimeMs: number,
-  ) {
-    session.perf.rectUploads += 1;
-    session.perf.uploadedPixels += rectWidth * rectHeight;
-    session.perf.uploadRectCpuTimeMs += cpuTimeMs;
-  }
-
-  /** 按时间窗口输出 Worker 渲染聚合快照，避免每帧打日志。 */
-  private flushPerfSnapshot(session: WorkerSessionRuntime) {
-    const now = performance.now();
-    const windowMs = now - session.perf.windowStartAt;
-    if (windowMs < 1000) {
-      return;
-    }
-
-    const avgPresentCpuMs =
-      session.perf.presentCount > 0
-        ? session.perf.presentCpuTimeMs / session.perf.presentCount
-        : 0;
-    const avgUploadRectCpuMs =
-      session.perf.rectUploads > 0
-        ? session.perf.uploadRectCpuTimeMs / session.perf.rectUploads
-        : 0;
-
-    self.postMessage({
-      type: "perf-snapshot",
-      sessionId: session.sessionId,
-      perf: {
-        frameMessages: session.perf.frameMessages,
-        rectUploads: session.perf.rectUploads,
-        uploadedPixels: session.perf.uploadedPixels,
-        queueHighWatermark: session.perf.queueHighWatermark,
-        presentCount: session.perf.presentCount,
-        avgPresentCpuMs: Number(avgPresentCpuMs.toFixed(3)),
-        avgUploadRectCpuMs: Number(avgUploadRectCpuMs.toFixed(3)),
-        windowMs: Number(windowMs.toFixed(1)),
-      },
-    } satisfies MainMessage);
-
-    session.perf = this.createPerfCounters();
   }
 }
 

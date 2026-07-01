@@ -205,15 +205,12 @@ impl SessionManager {
 
     /// 向远端会话转发输入事件。
     pub fn send_input(&self, session_id: &str, input: RuntimeInputEvent) -> RuntimeResult<()> {
-        let inner = self.inner.lock().map_err(lock_error)?;
-        let runtime = inner.get(session_id).ok_or_else(session_not_found_error)?;
-        send_runtime_command(&runtime.command_tx, RuntimeCommand::Input(input.clone()));
-        let _ = runtime.sender.send(json_message(
-            "input-ack",
-            json!({
-                "kind": input.kind,
-            }),
-        ));
+        let command_tx = {
+            let inner = self.inner.lock().map_err(lock_error)?;
+            let runtime = inner.get(session_id).ok_or_else(session_not_found_error)?;
+            runtime.command_tx.clone()
+        };
+        send_runtime_command(&command_tx, RuntimeCommand::Input(input));
         Ok(())
     }
 

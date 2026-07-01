@@ -63,17 +63,6 @@ type RdpWireEvent =
   | { type: "input-ack"; kind: string }
   | { type: "error"; code: string; message: string };
 
-type RdpWorkerPerfSnapshot = {
-  frameMessages: number;
-  rectUploads: number;
-  uploadedPixels: number;
-  queueHighWatermark: number;
-  presentCount: number;
-  avgPresentCpuMs: number;
-  avgUploadRectCpuMs: number;
-  windowMs: number;
-};
-
 type RdpWorkerMessage =
   | {
       type: "bridge-state";
@@ -90,11 +79,7 @@ type RdpWorkerMessage =
       type: "frame-presented";
       sessionId: string;
       frameVersion?: number;
-    }
-  | {
-      type: "perf-snapshot";
-      sessionId: string;
-      perf?: RdpWorkerPerfSnapshot;
+      presentedFrames?: number;
     }
   | {
       type: "diagnostic";
@@ -108,6 +93,15 @@ type RdpRendererControlMessage =
   | { type: "set-active"; sessionId: string | null }
   | { type: "connect"; sessionId: string; url: string }
   | { type: "disconnect"; sessionId: string };
+
+type RdpCachedFrameRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  remoteWidth: number;
+  remoteHeight: number;
+};
 
 type RdpSessionTab = {
   session: RdpSessionSnapshot;
@@ -123,7 +117,6 @@ const EMPTY_PERF: RdpPerfSnapshot = {
   fps: 0,
   bridgeState: "idle",
 };
-const RDP_WORKER_PERF_SNAPSHOT_EVENT = "rdp.worker.perf.snapshot";
 
 function getProfileDisplayName(
   profile: Pick<RdpProfile, "name" | "host">,
@@ -348,6 +341,13 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   const activeSessionIdRef = useRef<string | null>(null);
   const statusPanelRef = useRef<HTMLDivElement | null>(null);
   const frameVersionBySessionRef = useRef<Record<string, number>>({});
+  const presentedFrameCountBySessionRef = useRef<Record<string, number>>({});
+  const cachedFrameRectRef = useRef<RdpCachedFrameRect | null>(null);
+  const pendingMouseMoveRef = useRef<{
+    sessionId: string;
+    input: RdpInputEvent;
+  } | null>(null);
+  const mouseMoveRafRef = useRef<number | null>(null);
   const presentedFpsRuntimeRef = useRef<{
     frameCount: number;
     windowStartAt: number;
@@ -512,7 +512,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       runtime.frameCount = 0;
       runtime.windowStartAt = performance.now();
       runtime.lastSeenFrameVersion = sessionId
-        ? (frameVersionBySessionRef.current[sessionId] ?? 0)
+        ? (presentedFrameCountBySessionRef.current[sessionId] ?? 0)
         : 0;
       runtime.lastReportedFps = -1;
       if (sessionId) {
@@ -704,25 +704,9 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     ) {
       frameVersionBySessionRef.current[message.sessionId] =
         message.frameVersion;
-      return;
-    }
-
-    if (type === "perf-snapshot" && message.perf) {
-      const tab = sessionsRef.current.find(
-        (item) => item.session.sessionId === message.sessionId,
-      );
-      logRdpSubAppEvent("debug", RDP_WORKER_PERF_SNAPSHOT_EVENT, {
-        traceId: tab?.traceId ?? null,
-        sessionId: message.sessionId,
-        frameMessages: message.perf.frameMessages,
-        rectUploads: message.perf.rectUploads,
-        uploadedPixels: message.perf.uploadedPixels,
-        queueHighWatermark: message.perf.queueHighWatermark,
-        presentCount: message.perf.presentCount,
-        avgPresentCpuMs: message.perf.avgPresentCpuMs,
-        avgUploadRectCpuMs: message.perf.avgUploadRectCpuMs,
-        windowMs: message.perf.windowMs,
-      });
+      presentedFrameCountBySessionRef.current[message.sessionId] =
+        (presentedFrameCountBySessionRef.current[message.sessionId] ?? 0) +
+        Math.max(1, message.presentedFrames ?? 1);
       return;
     }
 
@@ -753,7 +737,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
           mainThreadBridge.setActiveSession(message.sessionId);
         } else if (message.type === "connect") {
           mainThreadBridge.connect(message.sessionId, message.url);
-        } else {
+        } else if (message.type === "disconnect") {
           mainThreadBridge.disconnect(message.sessionId);
         }
         return true;
@@ -775,6 +759,43 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     if (workerRef.current) return "worker";
     return "none";
   }, []);
+
+  const refreshCachedFrameRect = useCallback(() => {
+    const surface = surfaceRef.current;
+    if (!surface || !activeTab) {
+      cachedFrameRectRef.current = null;
+      return null;
+    }
+    const surfaceRect = surface.getBoundingClientRect();
+    if (activeTab.session.width <= 0 || activeTab.session.height <= 0) {
+      cachedFrameRectRef.current = null;
+      return null;
+    }
+    const frameRect = resolveDisplayedFrameRect(
+      surfaceRect,
+      activeTab.session.width,
+      activeTab.session.height,
+      activeTab.profile.displayStrategy,
+    );
+    const cached = {
+      ...frameRect,
+      remoteWidth: activeTab.session.width,
+      remoteHeight: activeTab.session.height,
+    };
+    cachedFrameRectRef.current = cached;
+    return cached;
+  }, [activeTab]);
+
+  useEffect(() => {
+    refreshCachedFrameRect();
+  }, [
+    activeSessionId,
+    activeTab?.session.width,
+    activeTab?.session.height,
+    activeTab?.profile.displayStrategy,
+    isFullscreen,
+    refreshCachedFrameRect,
+  ]);
 
   /** 初始化 Web Worker 和 OffscreenCanvas */
   useEffect(() => {
@@ -887,6 +908,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   }, [handleRendererMessage, isLinux]);
 
   useEffect(() => {
+    pendingMouseMoveRef.current = null;
+    if (mouseMoveRafRef.current !== null) {
+      window.cancelAnimationFrame(mouseMoveRafRef.current);
+      mouseMoveRafRef.current = null;
+    }
     const cancel = scheduleDeferredTask(() => {
       postRendererControl({
         type: "set-active",
@@ -896,6 +922,16 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     });
     return cancel;
   }, [activeSessionId, postRendererControl, resetPresentedFpsSampler]);
+
+  useEffect(() => {
+    return () => {
+      pendingMouseMoveRef.current = null;
+      if (mouseMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(mouseMoveRafRef.current);
+        mouseMoveRafRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const runtime = presentedFpsRuntimeRef.current;
@@ -914,10 +950,12 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         document.visibilityState === "visible" &&
         activePerf.bridgeState === "open"
       ) {
-        const frameVersion = frameVersionBySessionRef.current[sessionId] ?? 0;
-        if (frameVersion !== runtime.lastSeenFrameVersion) {
-          runtime.lastSeenFrameVersion = frameVersion;
-          runtime.frameCount += 1;
+        const presentedFrameCount =
+          presentedFrameCountBySessionRef.current[sessionId] ?? 0;
+        if (presentedFrameCount !== runtime.lastSeenFrameVersion) {
+          runtime.frameCount +=
+            presentedFrameCount - runtime.lastSeenFrameVersion;
+          runtime.lastSeenFrameVersion = presentedFrameCount;
         }
 
         if (runtime.windowStartAt === 0) {
@@ -948,7 +986,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         runtime.frameCount = 0;
         runtime.windowStartAt = now;
         runtime.lastSeenFrameVersion =
-          frameVersionBySessionRef.current[sessionId] ?? 0;
+          presentedFrameCountBySessionRef.current[sessionId] ?? 0;
       }
 
       runtime.rafId = window.requestAnimationFrame(tick);
@@ -1076,6 +1114,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     const surface = surfaceRef.current;
     if (!surface || !activeTab) return;
     const observer = new ResizeObserver((entries) => {
+      refreshCachedFrameRect();
       const entry = entries[0];
       if (!entry || activeTab.profile.resolutionMode !== "window_sync") return;
       if (activePerf.bridgeState !== "open") return;
@@ -1089,6 +1128,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     activePerf.bridgeState,
     activeTab,
     activeTab?.profile.resolutionMode,
+    refreshCachedFrameRect,
     scheduleResize,
   ]);
 
@@ -1386,6 +1426,19 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     void sendRdpInput(activeTab.session.sessionId, input).catch(() => {});
   }
 
+  /** 将高频鼠标移动合并到下一帧，只发送最新坐标。 */
+  function scheduleMouseMoveInput(sessionId: string, input: RdpInputEvent) {
+    pendingMouseMoveRef.current = { sessionId, input };
+    if (mouseMoveRafRef.current !== null) return;
+    mouseMoveRafRef.current = window.requestAnimationFrame(() => {
+      mouseMoveRafRef.current = null;
+      const pending = pendingMouseMoveRef.current;
+      pendingMouseMoveRef.current = null;
+      if (!pending) return;
+      void sendRdpInput(pending.sessionId, pending.input).catch(() => {});
+    });
+  }
+
   /** 前端只做事件采集与字段透传，Unicode / 扫描码分流由后端运行时统一决定。 */
   function buildKeyboardInput(
     kind: "key_down" | "key_up",
@@ -1444,49 +1497,43 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       event.currentTarget.focus();
     }
 
-    const surface = surfaceRef.current;
-    const surfaceRect = surface?.getBoundingClientRect();
-    const frameRect =
-      surfaceRect && activeTab.session.width > 0 && activeTab.session.height > 0
-        ? resolveDisplayedFrameRect(
-            surfaceRect,
-            activeTab.session.width,
-            activeTab.session.height,
-            activeTab.profile.displayStrategy,
-          )
-        : null;
+    const frameRect = cachedFrameRectRef.current ?? refreshCachedFrameRect();
     const localX = frameRect ? event.clientX - frameRect.left : 0;
     const localY = frameRect ? event.clientY - frameRect.top : 0;
 
-    const x =
-      frameRect && activeTab.session.width > 0
-        ? Math.max(
-            0,
-            Math.min(
-              activeTab.session.width,
-              (localX / frameRect.width) * activeTab.session.width,
-            ),
-          )
-        : 0;
-    const y =
-      frameRect && activeTab.session.height > 0
-        ? Math.max(
-            0,
-            Math.min(
-              activeTab.session.height,
-              (localY / frameRect.height) * activeTab.session.height,
-            ),
-          )
-        : 0;
+    const x = frameRect
+      ? Math.max(
+          0,
+          Math.min(
+            frameRect.remoteWidth,
+            (localX / frameRect.width) * frameRect.remoteWidth,
+          ),
+        )
+      : 0;
+    const y = frameRect
+      ? Math.max(
+          0,
+          Math.min(
+            frameRect.remoteHeight,
+            (localY / frameRect.height) * frameRect.remoteHeight,
+          ),
+        )
+      : 0;
 
-    sendInput({
+    const input = {
       kind,
       x,
       y,
       button: "button" in event ? event.button : undefined,
       deltaX: "deltaX" in event ? event.deltaX : undefined,
       deltaY: "deltaY" in event ? event.deltaY : undefined,
-    });
+    };
+
+    if (kind === "mouse_move") {
+      scheduleMouseMoveInput(activeTab.session.sessionId, input);
+      return;
+    }
+    sendInput(input);
   }
 
   /** 响应运行时给出的证书决策请求。 */

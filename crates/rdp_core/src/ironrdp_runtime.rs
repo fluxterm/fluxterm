@@ -982,7 +982,7 @@ where
         if !graphics_rects.is_empty() {
             perf_window.cycles += 1;
             perf_window.raw_rects += u32::try_from(graphics_rects.len()).unwrap_or(u32::MAX);
-            pending_graphics_rects.extend(std::mem::take(&mut graphics_rects));
+            pending_graphics_rects.append(&mut graphics_rects);
             let flush_interval_ms =
                 select_adaptive_flush_interval_ms(&perf_window, pending_graphics_rects.len());
             perf_window.max_flush_interval_ms =
