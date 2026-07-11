@@ -325,6 +325,8 @@ export const enUsTranslations = {
   "about.updateCheckUpToDateToast": "FluxTerm is already up to date",
   "about.updateCheckFailedToast":
     "Update check failed. Please try again later.",
+  "about.updateRestartFailedToast":
+    "The update was installed. Please restart the application manually.",
   "about.copyDiagnostics": "Copy Diagnostics",
   "about.copyDiagnosticsDone": "Copied",
   "about.copyDiagnosticsFailed": "Copy Failed",

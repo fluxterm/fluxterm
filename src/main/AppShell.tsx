@@ -562,6 +562,7 @@ export default function AppShell() {
     },
     upToDateMessage: t("about.updateCheckUpToDateToast"),
     updateCheckFailedMessage: t("about.updateCheckFailedToast"),
+    restartFailedMessage: t("about.updateRestartFailedToast"),
   });
   const handleCloseAbout = useCallback(() => {
     setAboutOpen(false);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { error as logError, info as logInfo } from "@/shared/logging/telemetry";
 import {
   checkForAppUpdate,
@@ -26,6 +27,7 @@ type UseAppUpdaterOptions = {
   onToast?: (payload: AppUpdateToastPayload) => void;
   upToDateMessage?: string;
   updateCheckFailedMessage?: string;
+  restartFailedMessage?: string;
 };
 
 /** 主窗口更新编排状态。 */
@@ -44,7 +46,12 @@ export type AppUpdaterState = {
 export default function useAppUpdater(
   options: UseAppUpdaterOptions = {},
 ): AppUpdaterState {
-  const { onToast, upToDateMessage, updateCheckFailedMessage } = options;
+  const {
+    onToast,
+    upToDateMessage,
+    updateCheckFailedMessage,
+    restartFailedMessage,
+  } = options;
   const [status, setStatus] = useState<AppUpdaterStatus>("idle");
   const [indicator, setIndicator] = useState<AppUpdateIndicator>("none");
   const [downloadProgressPercent, setDownloadProgressPercent] = useState<
@@ -120,7 +127,22 @@ export default function useAppUpdater(
           event: "app.update.install",
           result: "success",
         }),
-      );
+      ).catch(() => {});
+      try {
+        await relaunch();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        onToast?.({
+          level: "error",
+          message: restartFailedMessage ?? message,
+        });
+        await logError(
+          JSON.stringify({
+            event: "app.update.relaunch.failed",
+            message,
+          }),
+        ).catch(() => {});
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatus("error");
@@ -145,6 +167,7 @@ export default function useAppUpdater(
     isDownloading,
     onToast,
     pendingUpdate,
+    restartFailedMessage,
   ]);
 
   const checkForUpdates = useCallback(async () => {

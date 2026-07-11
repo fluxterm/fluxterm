@@ -299,6 +299,7 @@ export const zhCnTranslations = {
   "about.updating": "下载中...",
   "about.updateCheckUpToDateToast": "当前已是最新版本",
   "about.updateCheckFailedToast": "检查更新失败，请稍后重试",
+  "about.updateRestartFailedToast": "更新已安装，请手动重启应用",
   "about.copyDiagnostics": "复制诊断信息",
   "about.copyDiagnosticsDone": "已复制",
   "about.copyDiagnosticsFailed": "复制失败",
