@@ -1,11 +1,16 @@
 //! 共享状态定义。
 use std::sync::{Arc, Mutex};
 
-use engine::Engine;
+use engine::{Engine, SerialManager};
 
 /// Tauri 共享状态，承载引擎实例。
 pub struct EngineState {
     pub engine: Arc<Engine>,
+}
+
+/// 串口运行时共享状态。
+pub struct SerialState {
+    pub manager: Arc<SerialManager>,
 }
 
 /// 已解锁的主密码会话。

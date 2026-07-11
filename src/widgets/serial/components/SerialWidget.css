@@ -1,0 +1,95 @@
+.serial-widget {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+.serial-widget-toolbar {
+  display: flex;
+  padding: 10px 10px 6px;
+}
+.serial-widget-search {
+  min-width: 0;
+  flex: 1;
+}
+.serial-widget-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: auto;
+  padding: 4px 8px 10px;
+}
+.serial-widget-list .ui-button {
+  width: 100%;
+  justify-content: space-between;
+}
+.serial-group-title em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+}
+.serial-group-list {
+  padding-left: 14px;
+}
+.serial-row-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+.serial-row-label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.serial-row-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+.serial-root-profile,
+.serial-profile-nested {
+  flex-shrink: 0;
+  border-color: transparent;
+}
+.serial-widget-list button.active {
+  border-color: var(--accent);
+  background: transparent;
+  color: var(--accent);
+}
+.serial-widget-list button.active .serial-row-icon {
+  color: var(--accent);
+}
+.serial-connecting-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.serial-widget-empty {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  place-items: center;
+  align-content: center;
+  padding: 18px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.serial-widget-error {
+  padding: 10px;
+  color: var(--danger);
+  font-size: 12px;
+  text-align: center;
+}
+.serial-spinning {
+  animation: serial-spin 0.9s linear infinite;
+}
+@keyframes serial-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

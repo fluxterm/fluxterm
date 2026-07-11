@@ -104,6 +104,7 @@ type UseTerminalRuntimeProps = {
     status: TerminalCwdSupport,
   ) => void;
   isLocalSession: (sessionId: string | null) => boolean;
+  isSerialSession: (sessionId: string | null) => boolean;
   reconnectSession: (sessionId: string) => Promise<void>;
   reconnectLocalShell: (sessionId: string) => Promise<void>;
   triggerScheduledReconnectNow: (sessionId: string) => Promise<void>;
@@ -490,6 +491,7 @@ export default function useTerminalRuntime({
   onWorkingDirectoryChange,
   onPathSyncSupportChange,
   isLocalSession,
+  isSerialSession,
   reconnectSession,
   reconnectLocalShell,
   triggerScheduledReconnectNow,
@@ -564,6 +566,7 @@ export default function useTerminalRuntime({
     onPathSyncSupportChange,
     resolveBellConfig,
     isLocalSession,
+    isSerialSession,
     reconnectSession,
     reconnectLocalShell,
     triggerScheduledReconnectNow,
@@ -660,6 +663,7 @@ export default function useTerminalRuntime({
       onPathSyncSupportChange,
       resolveBellConfig,
       isLocalSession,
+      isSerialSession,
       reconnectSession,
       reconnectLocalShell,
       triggerScheduledReconnectNow,
@@ -669,6 +673,7 @@ export default function useTerminalRuntime({
     };
   }, [
     isLocalSession,
+    isSerialSession,
     resolveBellConfig,
     reconnectLocalShell,
     reconnectSession,
@@ -1699,6 +1704,12 @@ export default function useTerminalRuntime({
             .catch(() => {});
           return;
         }
+        if (handlersRef.current.isSerialSession(sessionId)) {
+          handlersRef.current
+            .sendSessionInput(sessionId, { kind: "text", data: effectiveData })
+            .catch(() => {});
+          return;
+        }
         const autocomplete = activeAutocompleteRef.current;
         const activeAutocomplete =
           autocomplete?.sessionId === sessionId ? autocomplete : null;
@@ -1936,6 +1947,10 @@ export default function useTerminalRuntime({
   // 依赖的工具函数会在运行时按会话状态重建，这里保持注册回调稳定避免反复重绑容器。
   const registerTerminalContainer = useCallback(
     (sessionId: string, element: HTMLDivElement | null) => {
+      if (element && handlersRef.current.isSerialSession(sessionId)) {
+        containersRef.current[sessionId] = null;
+        return;
+      }
       containersRef.current[sessionId] = element;
       if (element) {
         ensureTerminalRef.current(sessionId, element).catch(() => {});
@@ -1985,7 +2000,9 @@ export default function useTerminalRuntime({
         }
         return;
       }
-      teardown = outputUnlisten;
+      teardown = () => {
+        outputUnlisten();
+      };
     };
 
     registerListeners().catch(() => {});

@@ -11,6 +11,7 @@ import {
   EventsWidget,
   HostWidget,
   RdpWidget,
+  SerialWidget,
   SftpWidget,
   TransfersWidget,
   TunnelWidget,
@@ -25,6 +26,7 @@ import type {
   LocalShellProfile,
   AppEvent,
   RdpProfile,
+  SerialProfile,
   SshConnectStateMap,
   WidgetKey,
   Session,
@@ -41,6 +43,9 @@ type buildWidgetsProps = {
   profiles: HostProfile[];
   rdpProfiles: RdpProfile[];
   rdpGroups: string[];
+  serialProfiles: SerialProfile[];
+  serialGroups: string[];
+  connectingSerialProfileIds: string[];
   sshGroups: string[];
   activeProfileId: string | null;
   sshConnectingProfiles: SshConnectStateMap;
@@ -86,6 +91,17 @@ type buildWidgetsProps = {
   onConnectProfile: (profileInput: HostProfile) => Promise<void>;
   onCancelSshConnectProfile: (profileId: string) => Promise<void>;
   onConnectRdpProfile: (profile: RdpProfile) => Promise<void>;
+  onConnectSerialProfile: (profile: SerialProfile) => void;
+  onPickSerialProfile: (profileId: string) => void;
+  activeSerialProfileId: string | null;
+  onOpenNewSerialProfile: (defaultGroup?: string | null) => void;
+  onOpenEditSerialProfile: (profile: SerialProfile) => void;
+  onRemoveSerialProfile: (profile: SerialProfile) => void;
+  onSaveSerialGroups: (groups: string[]) => Promise<string[]>;
+  onMoveSerialProfileToGroup: (
+    profileId: string,
+    targetGroup: string | null,
+  ) => Promise<boolean>;
   onOpenNewRdpProfile: (defaultGroup?: string | null) => void;
   onOpenEditRdpProfile: (profile: RdpProfile) => void;
   onRemoveRdpProfile: (profile: RdpProfile) => Promise<void>;
@@ -152,6 +168,9 @@ export function buildWidgets(
     profiles,
     rdpProfiles,
     rdpGroups,
+    serialProfiles,
+    serialGroups,
+    connectingSerialProfileIds,
     sshGroups,
     activeProfileId,
     sshConnectingProfiles,
@@ -192,6 +211,14 @@ export function buildWidgets(
     onConnectProfile,
     onCancelSshConnectProfile,
     onConnectRdpProfile,
+    onConnectSerialProfile,
+    onPickSerialProfile,
+    activeSerialProfileId,
+    onOpenNewSerialProfile,
+    onOpenEditSerialProfile,
+    onRemoveSerialProfile,
+    onSaveSerialGroups,
+    onMoveSerialProfileToGroup,
     onOpenNewRdpProfile,
     onOpenEditRdpProfile,
     onRemoveRdpProfile,
@@ -289,6 +316,24 @@ export function buildWidgets(
           onRenameGroup={onRenameRdpGroup}
           onRemoveGroup={onRemoveRdpGroup}
           onMoveProfileToGroup={onMoveRdpProfileToGroup}
+          t={t}
+        />
+      </Suspense>
+    ),
+    serial: (
+      <Suspense fallback={null}>
+        <SerialWidget
+          profiles={serialProfiles}
+          groups={serialGroups}
+          activeProfileId={activeSerialProfileId}
+          connectingProfileIds={connectingSerialProfileIds}
+          onConnect={onConnectSerialProfile}
+          onPick={onPickSerialProfile}
+          onOpenNewProfile={onOpenNewSerialProfile}
+          onOpenEditProfile={onOpenEditSerialProfile}
+          onRemoveProfile={onRemoveSerialProfile}
+          onSaveGroups={onSaveSerialGroups}
+          onMoveProfileToGroup={onMoveSerialProfileToGroup}
           t={t}
         />
       </Suspense>

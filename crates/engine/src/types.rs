@@ -92,15 +92,111 @@ pub enum SessionState {
     Error,
 }
 
+/// 终端会话所使用的传输类型。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SessionKind {
+    Ssh,
+    LocalShell,
+    Serial,
+}
+
 /// 会话元数据。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub session_id: String,
-    pub profile_id: String,
+    pub profile_id: Option<String>,
+    pub kind: SessionKind,
     pub state: SessionState,
     pub created_at: u64,
     pub last_error: Option<EngineError>,
+}
+
+/// 串口数据位。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialDataBits {
+    Five,
+    Six,
+    Seven,
+    Eight,
+}
+
+/// 串口停止位。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialStopBits {
+    One,
+    Two,
+}
+
+/// 串口奇偶校验模式。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialParity {
+    None,
+    Odd,
+    Even,
+}
+
+/// 串口流控制模式。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialFlowControl {
+    None,
+    Software,
+    Hardware,
+}
+
+/// 串口文本编码。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialEncoding {
+    Utf8,
+    Gb18030,
+}
+
+/// 串口发送时追加的行结束符。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialLineEnding {
+    None,
+    Cr,
+    Lf,
+    Crlf,
+}
+
+/// 可保存或用于快速连接的串口配置。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialProfile {
+    pub id: String,
+    pub name: String,
+    pub port_name: String,
+    pub baud_rate: u32,
+    pub data_bits: SerialDataBits,
+    pub stop_bits: SerialStopBits,
+    pub parity: SerialParity,
+    pub flow_control: SerialFlowControl,
+    pub encoding: SerialEncoding,
+    pub line_ending: SerialLineEnding,
+    /// 可选分组标签；首个标签作为串口 Widget 分组。
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+}
+
+/// 系统枚举到的串口设备信息。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerialPortInfo {
+    pub port_name: String,
+    pub port_type: String,
+    pub vid: Option<u16>,
+    pub pid: Option<u16>,
+    pub serial_number: Option<String>,
+    pub manufacturer: Option<String>,
+    pub product: Option<String>,
 }
 
 /// SFTP 文件类型。
@@ -355,6 +451,11 @@ pub enum EngineEvent {
     },
     TerminalExit {
         session_id: String,
+    },
+    SerialOutput {
+        session_id: String,
+        data: Vec<u8>,
+        received_at: u64,
     },
     SftpProgress(SftpProgress),
     SshTunnelUpdate(SshTunnelRuntime),

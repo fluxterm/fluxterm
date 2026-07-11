@@ -65,12 +65,64 @@ export type HostProfile = {
 };
 
 /** SSH 会话元数据。 */
+export type SessionKind = "ssh" | "localShell" | "serial";
+
+/** 统一终端会话元数据。 */
 export type Session = {
   sessionId: string;
-  profileId: string;
+  profileId: string | null;
+  kind: SessionKind;
   state: "connecting" | "connected" | "disconnected" | "error";
   createdAt: number;
   lastError?: EngineErrorView | null;
+};
+
+/** 串口数据位。 */
+export type SerialDataBits = "five" | "six" | "seven" | "eight";
+/** 串口停止位。 */
+export type SerialStopBits = "one" | "two";
+/** 串口奇偶校验。 */
+export type SerialParity = "none" | "odd" | "even";
+/** 串口流控制。 */
+export type SerialFlowControl = "none" | "software" | "hardware";
+/** 串口文本编码。 */
+export type SerialEncoding = "utf8" | "gb18030";
+/** 串口行结束符。 */
+export type SerialLineEnding = "none" | "cr" | "lf" | "crlf";
+
+/** 串口连接配置。 */
+export type SerialProfile = {
+  id: string;
+  name: string;
+  portName: string;
+  baudRate: number;
+  dataBits: SerialDataBits;
+  stopBits: SerialStopBits;
+  parity: SerialParity;
+  flowControl: SerialFlowControl;
+  encoding: SerialEncoding;
+  lineEnding: SerialLineEnding;
+  tags?: string[] | null;
+};
+
+/** 系统枚举到的串口设备。 */
+export type SerialPortInfo = {
+  portName: string;
+  portType: "usb" | "bluetooth" | "pci" | "unknown";
+  vid?: number | null;
+  pid?: number | null;
+  serialNumber?: string | null;
+  manufacturer?: string | null;
+  product?: string | null;
+};
+
+/** 串口收发监视器记录。 */
+export type SerialMonitorRecord = {
+  id: string;
+  sessionId: string;
+  direction: "rx" | "tx";
+  data: number[];
+  timestamp: number;
 };
 
 /** SSH 配置列表中的连接中状态。 */
@@ -543,6 +595,7 @@ export type CommandHistoryStore = {
 export type WidgetKey =
   | "profiles"
   | "rdp"
+  | "serial"
   | "files"
   | "transfers"
   | "events"

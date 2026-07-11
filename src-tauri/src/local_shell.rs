@@ -546,7 +546,8 @@ pub fn start_local_shell(
 
     Ok(Session {
         session_id,
-        profile_id: LOCAL_PROFILE_ID.to_string(),
+        profile_id: Some(LOCAL_PROFILE_ID.to_string()),
+        kind: engine::SessionKind::LocalShell,
         state: SessionState::Connected,
         created_at: now_epoch(),
         last_error: None,

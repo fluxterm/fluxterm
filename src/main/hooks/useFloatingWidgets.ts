@@ -73,6 +73,7 @@ type FloatingWidgetsState = {
 function normalizeWidgetKey(value: unknown): WidgetKey | null {
   if (value === "profiles") return "profiles";
   if (value === "rdp") return "rdp";
+  if (value === "serial") return "serial";
   if (value === "files") return "files";
   if (value === "transfers") return "transfers";
   if (value === "events") return "events";

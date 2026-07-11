@@ -1,0 +1,94 @@
+.serial-profile-modal-body {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.serial-profile-layout {
+  display: grid;
+  width: 100%;
+  min-height: 410px;
+  min-width: 0;
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+.serial-profile-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 10px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--surface-base);
+}
+.serial-profile-nav button {
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+.serial-profile-nav button.active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.serial-profile-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+}
+.serial-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.serial-profile-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+.serial-profile-field > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.serial-profile-field > input,
+.serial-profile-baud input,
+.serial-profile-field .select-menu {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.serial-profile-wide {
+  grid-column: 1 / -1;
+}
+.serial-profile-baud {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.serial-profile-baud.custom {
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.7fr);
+}
+.serial-profile-error {
+  margin: 16px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .serial-profile-modal-body {
+    width: 100%;
+  }
+  .serial-profile-layout {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+  .serial-profile-grid {
+    grid-template-columns: 1fr;
+  }
+  .serial-profile-wide {
+    grid-column: auto;
+  }
+}

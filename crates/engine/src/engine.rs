@@ -13,8 +13,8 @@ use crate::session::{ExpectedHostKey, SessionCommand, SessionHandle, run_session
 use crate::ssh_transport::JumpHostSpec;
 use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
-    EventCallback, HostProfile, ProxyRuntime, ProxySpec, Session, SessionState, SftpEntry,
-    SshTunnelRuntime, SshTunnelSpec, TerminalSize,
+    EventCallback, HostProfile, ProxyRuntime, ProxySpec, Session, SessionKind, SessionState,
+    SftpEntry, SshTunnelRuntime, SshTunnelSpec, TerminalSize,
 };
 use crate::util::now_epoch;
 
@@ -103,7 +103,8 @@ impl Engine {
 
         Ok(Session {
             session_id,
-            profile_id: profile.id,
+            profile_id: Some(profile.id),
+            kind: SessionKind::Ssh,
             state: SessionState::Connecting,
             created_at,
             last_error: None,

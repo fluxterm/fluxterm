@@ -26,6 +26,8 @@ type TerminalPaneTreeProps = {
   getSessionReason: (sessionId: string) => DisconnectReason | null;
   bellPendingBySession: Record<string, boolean>;
   getSessionBanner: (sessionId: string) => string | null;
+  getSessionShellClass: (sessionId: string) => string;
+  renderSessionOverlay: (sessionId: string) => React.ReactNode;
   onFocusPane: (paneId: string) => void;
   onSwitchSession: (sessionId: string) => void;
   onReorderPaneSessions: (
@@ -104,6 +106,8 @@ function PaneNodeView({
   getSessionReason,
   bellPendingBySession,
   getSessionBanner,
+  getSessionShellClass,
+  renderSessionOverlay,
   onFocusPane,
   onSwitchSession,
   onReorderPaneSessions,
@@ -137,6 +141,8 @@ function PaneNodeView({
             getSessionReason={getSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}
+            getSessionShellClass={getSessionShellClass}
+            renderSessionOverlay={renderSessionOverlay}
             onFocusPane={onFocusPane}
             onSwitchSession={onSwitchSession}
             onReorderPaneSessions={onReorderPaneSessions}
@@ -174,6 +180,8 @@ function PaneNodeView({
             getSessionReason={getSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}
+            getSessionShellClass={getSessionShellClass}
+            renderSessionOverlay={renderSessionOverlay}
             onFocusPane={onFocusPane}
             onSwitchSession={onSwitchSession}
             onReorderPaneSessions={onReorderPaneSessions}
@@ -206,6 +214,8 @@ function PaneNodeView({
       getSessionGroupColor={getSessionGroupColor}
       bellPendingBySession={bellPendingBySession}
       getSessionBanner={getSessionBanner}
+      getSessionShellClass={getSessionShellClass}
+      renderSessionOverlay={renderSessionOverlay}
       onFocusPane={onFocusPane}
       onSwitchSession={onSwitchSession}
       onReorderPaneSessions={onReorderPaneSessions}
@@ -247,6 +257,8 @@ function LeafPaneView({
   getSessionGroupColor,
   bellPendingBySession,
   getSessionBanner,
+  getSessionShellClass,
+  renderSessionOverlay,
   onFocusPane,
   onSwitchSession,
   onReorderPaneSessions,
@@ -457,6 +469,8 @@ function LeafPaneView({
       <div className="terminal-pane-content">
         {node.sessionIds.map((sessionId) => {
           const activeSession = sessionId === paneActiveSessionId;
+          const shellClass = getSessionShellClass(sessionId);
+          const hasTerminalSurface = shellClass !== "serial-session-shell";
           const showAutocomplete =
             activeSession &&
             paneAutocomplete &&
@@ -465,19 +479,22 @@ function LeafPaneView({
           return (
             <div
               key={sessionId}
-              className={`terminal-container-shell ${activeSession ? "active" : ""}`}
+              className={`terminal-container-shell ${shellClass} ${activeSession ? "active" : ""}`}
             >
-              <div
-                className={`terminal-container ${activeSession ? "active" : ""} ${
-                  isTerminalReady(sessionId) ? "ready" : ""
-                }`}
-                ref={getTerminalContainerRef(sessionId)}
-                onMouseDown={(event) => {
-                  if (event.button !== 0) return;
-                  onPaneMouseDown(sessionId, event);
-                }}
-                onContextMenu={(event) => onPaneContextMenu(sessionId, event)}
-              />
+              {hasTerminalSurface ? (
+                <div
+                  className={`terminal-container ${activeSession ? "active" : ""} ${
+                    isTerminalReady(sessionId) ? "ready" : ""
+                  }`}
+                  ref={getTerminalContainerRef(sessionId)}
+                  onMouseDown={(event) => {
+                    if (event.button !== 0) return;
+                    onPaneMouseDown(sessionId, event);
+                  }}
+                  onContextMenu={(event) => onPaneContextMenu(sessionId, event)}
+                />
+              ) : null}
+              {renderSessionOverlay(sessionId)}
               {showAutocomplete && (
                 <div
                   className={`terminal-autocomplete terminal-autocomplete-${paneAutocompleteAnchor.placement}`}

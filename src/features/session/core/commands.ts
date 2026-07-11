@@ -10,6 +10,7 @@ import type {
   LocalSessionMeta,
   LocalShellProfile,
   Session,
+  SessionKind,
   SessionStateUi,
 } from "@/types";
 import {
@@ -202,8 +203,8 @@ export async function connectLocalShellCommand({
 type DisconnectSessionCommandParams = {
   sessionId: string;
   state: SessionStateUi | undefined;
-  localSession: boolean;
-  sendDisconnect: (sessionId: string, localSession: boolean) => Promise<void>;
+  kind: SessionKind;
+  sendDisconnect: (sessionId: string, kind: SessionKind) => Promise<void>;
   detachSessionFromWorkspace: (sessionId: string) => void;
   localSessionIdsRef: React.RefObject<Set<string>>;
   setLocalSessionMeta: Setter<Record<string, LocalSessionMeta>>;
@@ -219,7 +220,7 @@ type DisconnectSessionCommandParams = {
 export async function disconnectSessionCommand({
   sessionId,
   state,
-  localSession,
+  kind,
   sendDisconnect,
   detachSessionFromWorkspace,
   localSessionIdsRef,
@@ -235,13 +236,13 @@ export async function disconnectSessionCommand({
     state === "reconnecting"
   ) {
     try {
-      await sendDisconnect(sessionId, localSession);
+      await sendDisconnect(sessionId, kind);
     } catch {
       // Ignore if the backend session is already closed.
     }
   }
 
-  if (localSession) {
+  if (kind === "localShell") {
     localSessionIdsRef.current.delete(sessionId);
     setLocalSessionMeta((prev) => {
       const next = { ...prev };

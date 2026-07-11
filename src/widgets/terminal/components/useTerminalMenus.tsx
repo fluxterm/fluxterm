@@ -32,6 +32,7 @@ type TerminalContextMenuProps = {
   onCopyFocusedLine: () => Promise<boolean>;
   onCopySelection: () => Promise<boolean>;
   onSendSelectionToAi: (selectionText: string) => Promise<void>;
+  aiSelectionEnabled: boolean;
   onPaste: () => Promise<boolean>;
   onClear: () => boolean;
   onOpenSearch: () => void;
@@ -43,6 +44,11 @@ type TerminalContextMenuProps = {
   onReconnectSession: (sessionId: string) => Promise<void>;
   onSaveSession: (sessionId: string) => Promise<void>;
   onSplitActivePane: (axis: "horizontal" | "vertical") => Promise<void>;
+  getSessionMenuCapabilities: (sessionId: string) => {
+    reconnect: boolean;
+    save: boolean;
+    split: boolean;
+  };
   onClosePaneSession: (paneId: string, sessionId: string) => Promise<void>;
   onCloseOtherSessionsInPane: (
     paneId: string,
@@ -77,6 +83,7 @@ export default function useTerminalMenus({
   onCopyFocusedLine,
   onCopySelection,
   onSendSelectionToAi,
+  aiSelectionEnabled,
   onPaste,
   onClear,
   onOpenSearch,
@@ -88,6 +95,7 @@ export default function useTerminalMenus({
   onReconnectSession,
   onSaveSession,
   onSplitActivePane,
+  getSessionMenuCapabilities,
   onClosePaneSession,
   onCloseOtherSessionsInPane,
   onCloseSessionsToRightInPane,
@@ -124,6 +132,9 @@ export default function useTerminalMenus({
       return group.name.toLocaleLowerCase().includes(query);
     })
     .sort((left, right) => Number(!!right.builtIn) - Number(!!left.builtIn));
+  const sessionMenuCapabilities = sessionMenu
+    ? getSessionMenuCapabilities(sessionMenu.sessionId)
+    : { reconnect: true, save: true, split: true };
 
   function closeMenu() {
     setMenu(null);
@@ -164,7 +175,10 @@ export default function useTerminalMenus({
                 id: "send-selection-to-ai",
                 label: t("terminal.menu.sendToAi"),
                 icon: <FiCpu />,
-                disabled: !activeSessionId || !hasActiveSelection(),
+                disabled:
+                  !aiSelectionEnabled ||
+                  !activeSessionId ||
+                  !hasActiveSelection(),
                 onClick: () => {
                   const selectionText = getActiveSelectionText();
                   if (!selectionText.trim()) {
@@ -234,6 +248,9 @@ export default function useTerminalMenus({
               onSplitActivePane("vertical").catch(() => {});
               setSessionMenu(null);
             }}
+            showReconnect={sessionMenuCapabilities.reconnect}
+            showSave={sessionMenuCapabilities.save}
+            showSplit={sessionMenuCapabilities.split}
             onCloseCurrent={() => {
               onClosePaneSession(
                 sessionMenu.paneId,

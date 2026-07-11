@@ -15,9 +15,13 @@ import type {
   SessionGroup,
   SessionStateUi,
   SessionWorkspaceState,
+  SerialMonitorRecord,
+  SerialProfile,
 } from "@/types";
 import { DEFAULT_SESSION_GROUP_ID } from "@/constants/sessionGroups";
+import type { TerminalFontFamilyMode } from "@/constants/terminalFontFamily";
 import TerminalPaneTree from "@/widgets/terminal/components/TerminalPaneTree";
+import SerialDebugPanel from "@/widgets/terminal/components/SerialDebugPanel";
 import useTerminalMenus from "@/widgets/terminal/components/useTerminalMenus";
 import useTerminalSearchBar from "@/widgets/terminal/components/TerminalSearchBar";
 import "@/widgets/terminal/components/TerminalWidget.css";
@@ -43,6 +47,10 @@ type TerminalWidgetProps = {
   profiles: HostProfile[];
   editingProfile: HostProfile;
   localSessionMeta: Record<string, LocalSessionMeta>;
+  serialSessionProfiles: Record<string, SerialProfile>;
+  serialRecordsBySession: Record<string, SerialMonitorRecord[]>;
+  terminalFontFamilyMode: TerminalFontFamilyMode;
+  terminalFontSize: number;
   activeSessionId: string | null;
   activeSession: Session | null;
   activeSessionState: SessionStateUi | null;
@@ -74,6 +82,13 @@ type TerminalWidgetProps = {
   onCloseLinkMenu: () => void;
   onPaste: () => Promise<boolean>;
   onClear: () => boolean;
+  onSendSerialText: (sessionId: string, data: string) => Promise<void>;
+  onSendSerialBinary: (sessionId: string, data: number[]) => Promise<void>;
+  onClearSerialMonitor: (sessionId: string) => void;
+  onSaveSerialMonitor: (
+    sessionId: string,
+    mode: "text" | "hex",
+  ) => Promise<void>;
   onSearchNext: (keyword: string, options?: SearchOptions) => boolean;
   onSearchPrev: (keyword: string, options?: SearchOptions) => boolean;
   onSearchClear: () => void;
@@ -131,7 +146,12 @@ export default function TerminalWidget({
   profiles,
   editingProfile,
   localSessionMeta,
+  serialSessionProfiles,
+  serialRecordsBySession,
+  terminalFontFamilyMode,
+  terminalFontSize,
   activeSessionId,
+  activeSession,
   activeSessionState,
   activeSessionReason,
   activeReconnectInfo,
@@ -158,6 +178,10 @@ export default function TerminalWidget({
   onCloseLinkMenu,
   onPaste,
   onClear,
+  onSendSerialText,
+  onSendSerialBinary,
+  onClearSerialMonitor,
+  onSaveSerialMonitor,
   onSearchNext,
   onSearchPrev,
   onSearchClear,
@@ -198,6 +222,13 @@ export default function TerminalWidget({
     if (!session) return t("session.defaultName");
     if (isLocalSession(sessionId)) {
       return localSessionMeta[sessionId]?.label ?? t("session.local");
+    }
+    if (session.kind === "serial") {
+      return (
+        serialSessionProfiles[sessionId]?.name ||
+        serialSessionProfiles[sessionId]?.portName ||
+        t("widget.serial")
+      );
     }
     const profile =
       profiles.find((entry) => entry.id === session.profileId) ??
@@ -298,6 +329,7 @@ export default function TerminalWidget({
       onCopyFocusedLine,
       onCopySelection,
       onSendSelectionToAi,
+      aiSelectionEnabled: activeSession?.kind !== "serial",
       onPaste,
       onClear,
       onOpenSearch: openSearch,
@@ -309,6 +341,14 @@ export default function TerminalWidget({
       onReconnectSession,
       onSaveSession,
       onSplitActivePane,
+      getSessionMenuCapabilities: (sessionId) => {
+        const serial = findSession(sessionId)?.kind === "serial";
+        return {
+          reconnect: !serial,
+          save: !serial,
+          split: !serial,
+        };
+      },
       onClosePaneSession,
       onCloseOtherSessionsInPane,
       onCloseSessionsToRightInPane,
@@ -337,6 +377,30 @@ export default function TerminalWidget({
             getSessionReason={resolveSessionReason}
             bellPendingBySession={bellPendingBySession}
             getSessionBanner={getSessionBanner}
+            getSessionShellClass={(sessionId) =>
+              findSession(sessionId)?.kind === "serial"
+                ? "serial-session-shell"
+                : ""
+            }
+            renderSessionOverlay={(sessionId) => {
+              const profile = serialSessionProfiles[sessionId];
+              if (!profile) return null;
+              return (
+                <SerialDebugPanel
+                  sessionId={sessionId}
+                  active={activeSessionId === sessionId}
+                  profile={profile}
+                  records={serialRecordsBySession[sessionId] ?? []}
+                  terminalFontFamilyMode={terminalFontFamilyMode}
+                  terminalFontSize={terminalFontSize}
+                  onSendText={(data) => onSendSerialText(sessionId, data)}
+                  onSendBinary={(data) => onSendSerialBinary(sessionId, data)}
+                  onClear={() => onClearSerialMonitor(sessionId)}
+                  onSave={(mode) => onSaveSerialMonitor(sessionId, mode)}
+                  t={t}
+                />
+              );
+            }}
             onFocusPane={onFocusPane}
             onSwitchSession={onSwitchSession}
             onReorderPaneSessions={onReorderPaneSessions}

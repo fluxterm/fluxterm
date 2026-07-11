@@ -42,6 +42,8 @@ import {
 import useAiSettings from "@/hooks/useAiSettings";
 import useSecurity from "@/hooks/useSecurity";
 import useSessionSettings from "@/hooks/useSessionSettings";
+import useSerialProfiles from "@/hooks/useSerialProfiles";
+import useSerialMonitorState from "@/hooks/useSerialMonitorState";
 import useLayoutState from "@/main/hooks/useLayoutState";
 import useFloatingWidgets from "@/main/hooks/useFloatingWidgets";
 import {
@@ -63,6 +65,7 @@ import type {
   LocalShellConfig,
   LocalShellProfile,
   RdpProfile,
+  SerialProfile,
   Session,
   SshConnectStateMap,
   TerminalCwdSupport,
@@ -132,6 +135,15 @@ import {
   type FloatingTunnelsMessage,
   type FloatingTunnelsSnapshot,
 } from "@/features/tunnel/core/widgetSync";
+import {
+  WIDGET_SERIAL_CHANNEL,
+  type FloatingSerialMessage,
+  type FloatingSerialSnapshot,
+} from "@/features/serial/core/widgetSync";
+import {
+  cloneSerialProfile,
+  createDefaultSerialProfile,
+} from "@/features/serial/core/defaults";
 import { callTauri } from "@/shared/tauri/commands";
 import {
   extractErrorMessage,
@@ -157,6 +169,7 @@ import {
 const widgetLabelKeys: Record<WidgetKey, TranslationKey> = {
   profiles: "widget.profiles",
   rdp: "widget.rdp",
+  serial: "widget.serial",
   files: "widget.files",
   transfers: "widget.transfers",
   events: "widget.events",
@@ -176,6 +189,9 @@ const LocalShellProfileModal = lazy(
 );
 const RdpProfileModal = lazy(
   () => import("@/main/components/modals/RdpProfileModal"),
+);
+const SerialProfileModal = lazy(
+  () => import("@/main/components/modals/SerialProfileModal"),
 );
 
 function clampBackgroundImageSurfaceAlpha(value: number) {
@@ -510,6 +526,16 @@ export default function AppShell() {
   const [activeRdpProfileId, setActiveRdpProfileId] = useState<string | null>(
     null,
   );
+  const [serialProfileModalOpen, setSerialProfileModalOpen] = useState(false);
+  const [activeSerialProfileId, setActiveSerialProfileId] = useState<
+    string | null
+  >(null);
+  const [serialProfileDraft, setSerialProfileDraft] = useState<SerialProfile>(
+    () => createDefaultSerialProfile(),
+  );
+  const [connectingSerialProfileIds, setConnectingSerialProfileIds] = useState<
+    string[]
+  >([]);
   const [profileDraft, setProfileDraft] = useState<HostProfile>(defaultProfile);
   const [localShellProfileModalOpen, setLocalShellProfileModalOpen] =
     useState(false);
@@ -572,6 +598,7 @@ export default function AppShell() {
     const value = match[1];
     if (value === "profiles") return "profiles";
     if (value === "rdp") return "rdp";
+    if (value === "serial") return "serial";
     if (value === "files") return "files";
     if (value === "transfers") return "transfers";
     if (value === "events") return "events";
@@ -621,6 +648,8 @@ export default function AppShell() {
     useState<FloatingTunnelsSnapshot | null>(null);
   const [floatingBroadcastSnapshot, setFloatingBroadcastSnapshot] =
     useState<FloatingBroadcastSnapshot | null>(null);
+  const [floatingSerialSnapshot, setFloatingSerialSnapshot] =
+    useState<FloatingSerialSnapshot | null>(null);
   const [bellPendingBySession, setBellPendingBySession] = useState<
     Record<string, boolean>
   >({});
@@ -766,6 +795,7 @@ export default function AppShell() {
     () => ({
       profiles: t(widgetLabelKeys.profiles),
       rdp: t(widgetLabelKeys.rdp),
+      serial: t(widgetLabelKeys.serial),
       files: t(widgetLabelKeys.files),
       transfers: t(widgetLabelKeys.transfers),
       events: t(widgetLabelKeys.events),
@@ -788,6 +818,7 @@ export default function AppShell() {
     autoReconnectOnReboot,
     getTerminalSize: () => terminalSizeRef.current,
   });
+  const serialMonitor = useSerialMonitorState();
   const { openManagedRemoteFile, openManagedLocalFile } = useRemoteEditSessions(
     {
       sessions: sessionState.sessions,
@@ -799,7 +830,11 @@ export default function AppShell() {
       openDialog,
     },
   );
-  const tunnelState = useSshTunnelState(sessionState.activeSessionId);
+  const tunnelState = useSshTunnelState(
+    sessionState.activeSession?.kind === "ssh"
+      ? sessionState.activeSessionId
+      : null,
+  );
   const activeTunnelSessionMeta = useMemo(() => {
     if (!sessionState.activeSessionId) {
       return {
@@ -832,13 +867,19 @@ export default function AppShell() {
   ]);
 
   const historyState = useCommandHistoryState({
-    activeSessionId: sessionState.activeSessionId,
+    activeSessionId:
+      sessionState.activeSession?.kind === "serial"
+        ? null
+        : sessionState.activeSessionId,
     writeToSession: sessionActions.writeToSession,
     focusActiveTerminal: () => focusActiveTerminalRef.current(),
   });
 
   const aiState = useAiState({
-    activeSessionId: sessionState.activeSessionId,
+    activeSessionId:
+      sessionState.activeSession?.kind === "serial"
+        ? null
+        : sessionState.activeSessionId,
     locale,
     debugLoggingEnabled: aiDebugLoggingEnabled,
     aiAvailable,
@@ -898,6 +939,7 @@ export default function AppShell() {
       );
     },
     isLocalSession: sessionActions.isLocalSession,
+    isSerialSession: sessionActions.isSerialSession,
     reconnectSession: sessionActions.reconnectSession,
     reconnectLocalShell: sessionActions.reconnectLocalShell,
     triggerScheduledReconnectNow: sessionActions.triggerScheduledReconnectNow,
@@ -1006,6 +1048,152 @@ export default function AppShell() {
   const isFloatingAiWidget = floatingWidgetKey === "ai";
   const isFloatingTunnelsWidget = floatingWidgetKey === "tunnels";
   const isFloatingBroadcastWidget = floatingWidgetKey === "broadcast";
+  const isFloatingSerialWidget = floatingWidgetKey === "serial";
+  const serialProfilesState = useSerialProfiles({
+    enabled: !floatingWidgetKey,
+  });
+
+  const {
+    profiles: effectiveSerialProfiles,
+    groups: effectiveSerialGroups,
+    ports: effectiveSerialPorts,
+    connectingProfileIds: effectiveConnectingSerialProfileIds,
+  } = useMemo(
+    () =>
+      isFloatingSerialWidget
+        ? {
+            profiles: floatingSerialSnapshot?.profiles ?? [],
+            groups: floatingSerialSnapshot?.groups ?? [],
+            ports: floatingSerialSnapshot?.ports ?? [],
+            loading: floatingSerialSnapshot?.loading ?? true,
+            connectingProfileIds:
+              floatingSerialSnapshot?.connectingProfileIds ?? [],
+          }
+        : {
+            profiles: serialProfilesState.profiles,
+            groups: serialProfilesState.groups,
+            ports: serialProfilesState.ports,
+            loading: serialProfilesState.loading,
+            connectingProfileIds: connectingSerialProfileIds,
+          },
+    [
+      connectingSerialProfileIds,
+      floatingSerialSnapshot,
+      isFloatingSerialWidget,
+      serialProfilesState.loading,
+      serialProfilesState.groups,
+      serialProfilesState.ports,
+      serialProfilesState.profiles,
+    ],
+  );
+
+  const postFloatingSerialMessage =
+    useFloatingWidgetMessagePoster<FloatingSerialMessage>(
+      WIDGET_SERIAL_CHANNEL,
+      isFloatingSerialWidget,
+    );
+
+  const refreshSerialProfileData = useCallback(() => {
+    if (isFloatingSerialWidget) {
+      postFloatingSerialMessage({ type: "serial:refresh" });
+      return;
+    }
+    void serialProfilesState.refresh().catch(() => {});
+  }, [isFloatingSerialWidget, postFloatingSerialMessage, serialProfilesState]);
+
+  const openNewSerialProfile = useCallback(
+    (defaultGroup?: string | null) => {
+      refreshSerialProfileData();
+      setSerialProfileDraft({
+        ...createDefaultSerialProfile(),
+        tags: defaultGroup ? [defaultGroup] : null,
+      });
+      setSerialProfileModalOpen(true);
+    },
+    [refreshSerialProfileData],
+  );
+
+  /** 保存分组；浮窗通过动作代理交给 Main。 */
+  const saveSerialGroups = useCallback(
+    async (groups: string[]) => {
+      if (isFloatingSerialWidget) {
+        postFloatingSerialMessage({ type: "serial:save-groups", groups });
+        return groups;
+      }
+      return serialProfilesState.saveGroups(groups);
+    },
+    [isFloatingSerialWidget, postFloatingSerialMessage, serialProfilesState],
+  );
+
+  /** 将串口 Profile 移动到目标分组。 */
+  const moveSerialProfileToGroup = useCallback(
+    async (profileId: string, targetGroup: string | null) => {
+      const profile = effectiveSerialProfiles.find(
+        (item) => item.id === profileId,
+      );
+      if (!profile) return false;
+      const next = { ...profile, tags: targetGroup ? [targetGroup] : null };
+      if (isFloatingSerialWidget) {
+        postFloatingSerialMessage({
+          type: "serial:save-profile",
+          profile: next,
+        });
+        return true;
+      }
+      await serialProfilesState.save(next);
+      return true;
+    },
+    [
+      effectiveSerialProfiles,
+      isFloatingSerialWidget,
+      postFloatingSerialMessage,
+      serialProfilesState,
+    ],
+  );
+
+  const openEditSerialProfile = useCallback(
+    (profile: SerialProfile) => {
+      refreshSerialProfileData();
+      setSerialProfileDraft(cloneSerialProfile(profile));
+      setSerialProfileModalOpen(true);
+    },
+    [refreshSerialProfileData],
+  );
+
+  const connectSerialProfile = useCallback(
+    async (profile: SerialProfile) => {
+      if (isFloatingSerialWidget) {
+        postFloatingSerialMessage({ type: "serial:connect", profile });
+        return;
+      }
+      const requestId = profile.id || `port:${profile.portName}`;
+      setConnectingSerialProfileIds((current) =>
+        current.includes(requestId) ? current : [...current, requestId],
+      );
+      try {
+        await sessionActions.connectSerialProfile(profile);
+      } finally {
+        setConnectingSerialProfileIds((current) =>
+          current.filter((item) => item !== requestId),
+        );
+      }
+    },
+    [isFloatingSerialWidget, postFloatingSerialMessage, sessionActions],
+  );
+
+  const removeSerialProfile = useCallback(
+    (profile: SerialProfile) => {
+      if (isFloatingSerialWidget) {
+        postFloatingSerialMessage({
+          type: "serial:remove-profile",
+          profileId: profile.id,
+        });
+        return;
+      }
+      void serialProfilesState.remove(profile.id).catch(() => {});
+    },
+    [isFloatingSerialWidget, postFloatingSerialMessage, serialProfilesState],
+  );
 
   const {
     showGroupTitle,
@@ -1164,6 +1352,7 @@ export default function AppShell() {
     const activeSessionId = sessionState.activeSessionId;
     if (!activeSessionId) return "ready";
     if (sessionActions.isLocalSession(activeSessionId)) return "ready";
+    if (sessionActions.isSerialSession(activeSessionId)) return "unsupported";
     if (!sftpEnabled || !filesWidgetVisible) return "disabled";
     return sftpState.availabilityBySession[activeSessionId] ?? "checking";
   }, [
@@ -1178,7 +1367,8 @@ export default function AppShell() {
     handleWorkingDirectoryChange,
     handlePathSyncSupportChange,
   } = useTerminalPathSync({
-    enabled: terminalPathSyncEnabled,
+    enabled:
+      terminalPathSyncEnabled && sessionState.activeSession?.kind !== "serial",
     filesWidgetVisible,
     sftpEnabled,
     activeSessionId: sessionState.activeSessionId,
@@ -1200,7 +1390,8 @@ export default function AppShell() {
 
   const { activeResourceSnapshot, activeResourceMonitorStatus } =
     useSessionResourceMonitor({
-      enabled: resourceMonitorEnabled,
+      enabled:
+        resourceMonitorEnabled && sessionState.activeSession?.kind !== "serial",
       intervalSec: resourceMonitorIntervalSec,
       activeSessionId: sessionState.activeSessionId,
       activeSessionState: sessionState.activeSessionState,
@@ -1324,6 +1515,94 @@ export default function AppShell() {
       openManagedLocalFile,
       pushToast,
       t,
+    ],
+  });
+
+  useFloatingWidgetSnapshotSync<FloatingSerialMessage>({
+    channelName: WIDGET_SERIAL_CHANNEL,
+    floatingWidgetKey,
+    isFloatingWidget: isFloatingSerialWidget,
+    broadcastSnapshot: (channel) => {
+      channel.postMessage({
+        type: "serial:snapshot",
+        payload: {
+          profiles: serialProfilesState.profiles,
+          groups: serialProfilesState.groups,
+          ports: serialProfilesState.ports,
+          connectingProfileIds: connectingSerialProfileIds,
+          loading: serialProfilesState.loading,
+        },
+      } satisfies FloatingSerialMessage);
+    },
+    onMainWindowMessage: (message, channel) => {
+      const postSnapshot = () => {
+        channel.postMessage({
+          type: "serial:snapshot",
+          payload: {
+            profiles: serialProfilesState.profiles,
+            groups: serialProfilesState.groups,
+            ports: serialProfilesState.ports,
+            connectingProfileIds: connectingSerialProfileIds,
+            loading: serialProfilesState.loading,
+          },
+        } satisfies FloatingSerialMessage);
+      };
+      switch (message.type) {
+        case "serial:request-snapshot":
+          postSnapshot();
+          break;
+        case "serial:refresh":
+          void serialProfilesState
+            .refresh()
+            .then(postSnapshot)
+            .catch(() => {});
+          break;
+        case "serial:connect":
+          void connectSerialProfile(message.profile);
+          break;
+        case "serial:save-profile":
+          void serialProfilesState
+            .save(message.profile)
+            .then(postSnapshot)
+            .catch(() => {});
+          break;
+        case "serial:remove-profile":
+          void serialProfilesState
+            .remove(message.profileId)
+            .then(postSnapshot)
+            .catch(() => {});
+          break;
+        case "serial:save-groups":
+          void serialProfilesState
+            .saveGroups(message.groups)
+            .then(postSnapshot)
+            .catch(() => {});
+          break;
+        case "serial:snapshot":
+          break;
+      }
+    },
+    onFloatingWindowMessage: (message) => {
+      if (message.type === "serial:snapshot") {
+        setFloatingSerialSnapshot(message.payload);
+      }
+    },
+    requestSnapshot: (channel) => {
+      channel.postMessage({
+        type: "serial:request-snapshot",
+      } satisfies FloatingSerialMessage);
+    },
+    deps: [
+      connectSerialProfile,
+      connectingSerialProfileIds,
+      serialProfilesState.loading,
+      serialProfilesState.groups,
+      serialProfilesState.ports,
+      serialProfilesState.profiles,
+      serialProfilesState.refresh,
+      serialProfilesState.remove,
+      serialProfilesState.save,
+      serialProfilesState.saveGroups,
     ],
   });
 
@@ -2104,11 +2383,147 @@ export default function AppShell() {
     const isLocal = sessionActions.isLocalSession(sessionId);
     const profile =
       profiles.find((item) => item.id === session.profileId) ?? editingProfile;
+    const serialProfile = sessionState.serialSessionProfiles[sessionId];
     const baseName = isLocal
       ? (sessionState.localSessionMeta[sessionId]?.label ?? t("session.local"))
-      : profile.name || profile.host || t("session.defaultName");
+      : session.kind === "serial"
+        ? serialProfile?.name || serialProfile?.portName || t("widget.serial")
+        : profile.name || profile.host || t("session.defaultName");
     const target = await save({
       defaultPath: `${baseName}.log`,
+      filters: [{ name: "Log", extensions: ["log", "txt"] }],
+    });
+    if (!target) return;
+    await writeTextFile(target, text);
+  }
+
+  async function handleSaveSerialMonitor(
+    sessionId: string,
+    mode: "text" | "hex",
+  ) {
+    const profile = sessionState.serialSessionProfiles[sessionId];
+    if (!profile) return;
+    const decoderLabel = profile.encoding === "gb18030" ? "gb18030" : "utf-8";
+    const decoders = {
+      rx: new TextDecoder(decoderLabel, { fatal: false }),
+      tx: new TextDecoder(decoderLabel, { fatal: false }),
+    };
+    const records = serialMonitor.recordsBySession[sessionId] ?? [];
+    const text =
+      mode === "hex"
+        ? (() => {
+            const lines: string[] = [];
+            let direction: "rx" | "tx" | null = null;
+            let timestamp = 0;
+            let offset = 0;
+            let lineOffset = 0;
+            let bytes: number[] = [];
+            const finalOffset = records.reduce(
+              (total, record) => total + record.data.length,
+              0,
+            );
+            const offsetWidth = Math.max(
+              4,
+              Math.max(0, finalOffset - 1).toString(16).length,
+            );
+            const pad = (value: number, width = 2) =>
+              String(value).padStart(width, "0");
+            const formatTime = (value: number) => {
+              const date = new Date(value);
+              return `[${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}]`;
+            };
+            const flush = () => {
+              if (!direction || !bytes.length) return;
+              const groups = Array.from(
+                { length: Math.ceil(bytes.length / 4) },
+                (_, groupIndex) =>
+                  bytes
+                    .slice(groupIndex * 4, groupIndex * 4 + 4)
+                    .map((byte) =>
+                      byte.toString(16).padStart(2, "0").toUpperCase(),
+                    )
+                    .join(" "),
+              ).join("  ");
+              const ascii = bytes
+                .map((byte) =>
+                  byte >= 0x20 && byte <= 0x7e
+                    ? String.fromCharCode(byte)
+                    : ".",
+                )
+                .join("");
+              lines.push(
+                `${formatTime(timestamp)} ${lineOffset.toString(16).toUpperCase().padStart(offsetWidth, "0")} ${direction.toUpperCase()} ${groups} | ${ascii}`,
+              );
+              bytes = [];
+            };
+            records.forEach((record) => {
+              if (direction !== record.direction) {
+                flush();
+                direction = record.direction;
+              }
+              record.data.forEach((byte) => {
+                if (!bytes.length) {
+                  timestamp = record.timestamp;
+                  lineOffset = offset;
+                }
+                bytes.push(byte);
+                offset += 1;
+                if (bytes.length === 16) flush();
+              });
+            });
+            flush();
+            return lines.join("\n");
+          })()
+        : (() => {
+            const lines: string[] = [];
+            let direction: "rx" | "tx" | null = null;
+            let timestamp = 0;
+            let content = "";
+            let previousWasCr = false;
+            const flush = (force = false) => {
+              if (!direction || (!force && !content)) return;
+              lines.push(
+                `${new Date(timestamp).toISOString()} ${direction.toUpperCase()} ${content}`,
+              );
+              content = "";
+              timestamp = 0;
+            };
+            records.forEach((record) => {
+              if (direction !== record.direction) {
+                flush();
+                direction = record.direction;
+                timestamp = 0;
+                previousWasCr = false;
+              }
+              const decoded = decoders[record.direction].decode(
+                new Uint8Array(record.data),
+                { stream: true },
+              );
+              Array.from(decoded).forEach((character) => {
+                if (!timestamp) timestamp = record.timestamp;
+                if (character === "\r") {
+                  flush(true);
+                  previousWasCr = true;
+                  return;
+                }
+                if (character === "\n") {
+                  if (!previousWasCr) {
+                    flush(true);
+                  } else {
+                    timestamp = 0;
+                  }
+                  previousWasCr = false;
+                  return;
+                }
+                previousWasCr = false;
+                content += character;
+              });
+            });
+            flush();
+            return lines.join("\n");
+          })();
+    const target = await save({
+      defaultPath: `${profile.name || profile.portName}-serial.log`,
       filters: [{ name: "Log", extensions: ["log", "txt"] }],
     });
     if (!target) return;
@@ -2548,6 +2963,9 @@ export default function AppShell() {
         profiles,
         rdpProfiles,
         rdpGroups,
+        serialProfiles: effectiveSerialProfiles,
+        serialGroups: effectiveSerialGroups,
+        connectingSerialProfileIds: effectiveConnectingSerialProfileIds,
         sshGroups,
         activeProfileId,
         sshConnectingProfiles: connectingSshProfiles,
@@ -2598,6 +3016,16 @@ export default function AppShell() {
         onConnectProfile: handleConnectProfile,
         onCancelSshConnectProfile: handleCancelConnectProfile,
         onConnectRdpProfile: handleConnectRdpProfile,
+        onConnectSerialProfile: (profile) => {
+          void connectSerialProfile(profile);
+        },
+        onPickSerialProfile: setActiveSerialProfileId,
+        activeSerialProfileId,
+        onOpenNewSerialProfile: openNewSerialProfile,
+        onOpenEditSerialProfile: openEditSerialProfile,
+        onRemoveSerialProfile: removeSerialProfile,
+        onSaveSerialGroups: saveSerialGroups,
+        onMoveSerialProfileToGroup: moveSerialProfileToGroup,
         onOpenNewRdpProfile: openNewRdpProfileModal,
         onOpenEditRdpProfile: openEditRdpProfileModal,
         onRemoveRdpProfile: handleRemoveRdpProfile,
@@ -2684,6 +3112,12 @@ export default function AppShell() {
       profiles,
       rdpProfiles,
       rdpGroups,
+      effectiveSerialProfiles,
+      effectiveSerialGroups,
+      effectiveConnectingSerialProfileIds,
+      activeSerialProfileId,
+      moveSerialProfileToGroup,
+      saveSerialGroups,
       sshGroups,
       activeProfileId,
       connectingSshProfiles,
@@ -2723,6 +3157,10 @@ export default function AppShell() {
       handleConnectProfile,
       handleCancelConnectProfile,
       handleConnectRdpProfile,
+      connectSerialProfile,
+      openNewSerialProfile,
+      openEditSerialProfile,
+      removeSerialProfile,
       handleRemoveRdpProfile,
       handleBroadcastCommand,
       postFloatingBroadcastMessage,
@@ -2863,6 +3301,10 @@ export default function AppShell() {
                 profiles={profiles}
                 editingProfile={editingProfile}
                 localSessionMeta={sessionState.localSessionMeta}
+                serialSessionProfiles={sessionState.serialSessionProfiles}
+                serialRecordsBySession={serialMonitor.recordsBySession}
+                terminalFontFamilyMode={terminalFontFamilyMode}
+                terminalFontSize={terminalFontSize}
                 activeSessionId={sessionState.activeSessionId}
                 activeSession={sessionState.activeSession}
                 activeSessionState={sessionState.activeSessionState}
@@ -2893,6 +3335,20 @@ export default function AppShell() {
                 onCloseLinkMenu={terminalActions.closeActiveLinkMenu}
                 onPaste={terminalActions.pasteToActiveTerminal}
                 onClear={terminalActions.clearActiveTerminal}
+                onSendSerialText={async (sessionId, data) => {
+                  await sessionActions.sendSessionInput(sessionId, {
+                    kind: "text",
+                    data,
+                  });
+                }}
+                onSendSerialBinary={async (sessionId, data) => {
+                  await sessionActions.sendSessionInput(sessionId, {
+                    kind: "binary",
+                    data,
+                  });
+                }}
+                onClearSerialMonitor={serialMonitor.clear}
+                onSaveSerialMonitor={handleSaveSerialMonitor}
                 onSearchNext={terminalActions.searchActiveTerminalNext}
                 onSearchPrev={terminalActions.searchActiveTerminalPrev}
                 onSearchClear={terminalActions.clearActiveSearchDecorations}
@@ -3069,6 +3525,26 @@ export default function AppShell() {
             groups={rdpGroups}
             onClose={closeRdpProfileModal}
             onProfilesChange={() => refreshRdpProfiles().then(() => {})}
+            t={t}
+          />
+        ) : null}
+        {serialProfileModalOpen ? (
+          <SerialProfileModal
+            open={serialProfileModalOpen}
+            initialProfile={serialProfileDraft}
+            ports={effectiveSerialPorts}
+            groups={effectiveSerialGroups}
+            onClose={() => setSerialProfileModalOpen(false)}
+            onSave={async (profile) => {
+              if (isFloatingSerialWidget) {
+                postFloatingSerialMessage({
+                  type: "serial:save-profile",
+                  profile,
+                });
+                return;
+              }
+              await serialProfilesState.save(profile);
+            }}
             t={t}
           />
         ) : null}

@@ -9,6 +9,7 @@ pub mod rdp;
 pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;
+pub mod serial;
 pub mod sftp;
 pub mod ssh;
 pub mod system;

@@ -221,7 +221,8 @@ mod tests {
             &state,
             &Session {
                 session_id: "local-1".to_string(),
-                profile_id: "__local_shell__".to_string(),
+                profile_id: Some("__local_shell__".to_string()),
+                kind: engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,
@@ -267,7 +268,8 @@ mod tests {
             &state,
             &Session {
                 session_id: "local-4".to_string(),
-                profile_id: "__local_shell__".to_string(),
+                profile_id: Some("__local_shell__".to_string()),
+                kind: engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,
@@ -318,7 +320,8 @@ mod tests {
             &state,
             &Session {
                 session_id: "local-5".to_string(),
-                profile_id: "__local_shell__".to_string(),
+                profile_id: Some("__local_shell__".to_string()),
+                kind: engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,

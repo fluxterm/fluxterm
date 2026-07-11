@@ -32,6 +32,14 @@ struct TerminalExitPayload {
     session_id: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SerialOutputPayload {
+    session_id: String,
+    data: Vec<u8>,
+    received_at: u64,
+}
+
 /// 构建引擎事件到前端事件的桥接器。
 pub fn build_event_bridge(app: AppHandle) -> Arc<dyn Fn(EngineEvent) + Send + Sync> {
     Arc::new(move |event| match event {
@@ -45,6 +53,20 @@ pub fn build_event_bridge(app: AppHandle) -> Arc<dyn Fn(EngineEvent) + Send + Sy
         EngineEvent::TerminalExit { session_id } => {
             record_terminal_exit_from_app(&app, &session_id);
             let _ = app.emit("terminal:exit", TerminalExitPayload { session_id });
+        }
+        EngineEvent::SerialOutput {
+            session_id,
+            data,
+            received_at,
+        } => {
+            let _ = app.emit(
+                "serial:output",
+                SerialOutputPayload {
+                    session_id,
+                    data,
+                    received_at,
+                },
+            );
         }
         EngineEvent::SftpProgress(progress) => {
             let _ = app.emit("sftp:progress", progress);

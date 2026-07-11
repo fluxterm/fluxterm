@@ -15,6 +15,7 @@ export const MAX_SIDE_SLOTS = 10;
 export const widgetKeys: WidgetKey[] = [
   "profiles",
   "rdp",
+  "serial",
   "files",
   "transfers",
   "events",
@@ -314,6 +315,7 @@ function clampNumber(
 function normalizeWidgetKey(value: unknown): WidgetKey | null {
   if (value === "profiles") return "profiles";
   if (value === "rdp") return "rdp";
+  if (value === "serial") return "serial";
   if (value === "files") return "files";
   if (value === "transfers") return "transfers";
   if (value === "events") return "events";

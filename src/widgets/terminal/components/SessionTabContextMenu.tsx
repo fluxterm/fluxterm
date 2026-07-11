@@ -28,6 +28,9 @@ type SessionTabContextMenuProps = {
   onSave: () => void;
   onSplitHorizontal: () => void;
   onSplitVertical: () => void;
+  showReconnect?: boolean;
+  showSave?: boolean;
+  showSplit?: boolean;
   onCloseCurrent: () => void;
   onCloseAll?: (() => void) | null;
   onCloseOthers?: (() => void) | null;
@@ -51,6 +54,9 @@ export default function SessionTabContextMenu({
   onSave,
   onSplitHorizontal,
   onSplitVertical,
+  showReconnect = true,
+  showSave = true,
+  showSplit = true,
   onCloseCurrent,
   onCloseAll,
   onCloseOthers,
@@ -79,30 +85,42 @@ export default function SessionTabContextMenu({
       y={y}
       onClose={onClose}
       items={[
-        {
-          id: "reconnect",
-          label: t("terminal.tabMenu.reconnect"),
-          icon: <FiRefreshCw />,
-          onClick: onReconnect,
-        },
-        {
-          id: "save",
-          label: t("terminal.tabMenu.save"),
-          icon: <FiSave />,
-          onClick: onSave,
-        },
-        {
-          id: "split-horizontal",
-          label: t("terminal.tabMenu.splitHorizontal"),
-          icon: <FiColumns />,
-          onClick: onSplitHorizontal,
-        },
-        {
-          id: "split-vertical",
-          label: t("terminal.tabMenu.splitVertical"),
-          icon: <FiCornerDownRight />,
-          onClick: onSplitVertical,
-        },
+        ...(showReconnect
+          ? [
+              {
+                id: "reconnect",
+                label: t("terminal.tabMenu.reconnect"),
+                icon: <FiRefreshCw />,
+                onClick: onReconnect,
+              },
+            ]
+          : []),
+        ...(showSave
+          ? [
+              {
+                id: "save",
+                label: t("terminal.tabMenu.save"),
+                icon: <FiSave />,
+                onClick: onSave,
+              },
+            ]
+          : []),
+        ...(showSplit
+          ? [
+              {
+                id: "split-horizontal",
+                label: t("terminal.tabMenu.splitHorizontal"),
+                icon: <FiColumns />,
+                onClick: onSplitHorizontal,
+              },
+              {
+                id: "split-vertical",
+                label: t("terminal.tabMenu.splitVertical"),
+                icon: <FiCornerDownRight />,
+                onClick: onSplitVertical,
+              },
+            ]
+          : []),
         {
           id: "group-create",
           label: t("terminal.tabMenu.group.create"),

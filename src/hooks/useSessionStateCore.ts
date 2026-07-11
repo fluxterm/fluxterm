@@ -20,8 +20,10 @@ import type {
   Session,
   SessionGroup,
   SessionInput,
+  SessionKind,
   SessionStateUi,
   SessionWorkspaceState,
+  SerialProfile,
 } from "@/types";
 import {
   DEFAULT_LOCAL_SHELL_CONFIG,
@@ -102,6 +104,7 @@ type UseSessionStateResult = {
   sessionStates: Record<string, SessionStateUi>;
   sessionReasons: Record<string, DisconnectReason>;
   localSessionMeta: Record<string, LocalSessionMeta>;
+  serialSessionProfiles: Record<string, SerialProfile>;
   reconnectInfoBySession: Record<string, { attempt: number; delayMs: number }>;
   appEvents: AppEvent[];
   busyMessage: string | null;
@@ -119,11 +122,14 @@ type UseSessionStateResult = {
   sessionReasonsRef: React.RefObject<Record<string, DisconnectReason>>;
   sessionBuffersRef: React.RefObject<Record<string, string>>;
   localSessionMetaRef: React.RefObject<Record<string, LocalSessionMeta>>;
+  serialSessionProfilesRef: React.RefObject<Record<string, SerialProfile>>;
   localSessionIdsRef: React.RefObject<Set<string>>;
   activeSessionIdRef: React.RefObject<string | null>;
   appendAppEvent: (event: CreateAppEventInput) => void;
   setBusyMessage: React.Dispatch<React.SetStateAction<string | null>>;
   isLocalSession: (sessionId: string | null) => boolean;
+  isSerialSession: (sessionId: string | null) => boolean;
+  getSessionKind: (sessionId: string | null) => SessionKind | null;
   setLastCommand: (sessionId: string, command: string) => void;
   sendSessionInput: (
     sessionId: string,
@@ -146,6 +152,7 @@ type UseSessionStateResult = {
     shell: LocalShellProfile | null,
     activate?: boolean,
   ) => Promise<void>;
+  connectSerialProfile: (profile: SerialProfile) => Promise<void>;
   disconnectSession: (sessionId: string) => Promise<void>;
   reconnectSession: (sessionId: string) => Promise<void>;
   reconnectLocalShell: (sessionId: string) => Promise<void>;
@@ -215,6 +222,9 @@ export default function useSessionState({
   const [localSessionMeta, setLocalSessionMeta] = useState<
     Record<string, LocalSessionMeta>
   >({});
+  const [serialSessionProfiles, setSerialSessionProfiles] = useState<
+    Record<string, SerialProfile>
+  >({});
   const [reconnectInfoBySession, setReconnectInfoBySession] = useState<
     Record<string, { attempt: number; delayMs: number }>
   >({});
@@ -255,6 +265,7 @@ export default function useSessionState({
   const localSessionIdsRef = useRef<Set<string>>(new Set());
   const localShellStartedRef = useRef(false);
   const localSessionMetaRef = useRef<Record<string, LocalSessionMeta>>({});
+  const serialSessionProfilesRef = useRef<Record<string, SerialProfile>>({});
   const profilesRef = useRef<HostProfile[]>([]);
   const connectProfileRef = useRef<(profile: HostProfile) => Promise<void>>(
     async () => {},
@@ -304,24 +315,17 @@ export default function useSessionState({
     ? (reconnectInfoBySession[activeSessionId] ?? null)
     : null;
 
-  const localSessionIdSet = useMemo(
-    () => new Set(Object.keys(localSessionMeta)),
-    [localSessionMeta],
-  );
-  const activeSessionIsLocal =
-    !!activeSession && localSessionIdSet.has(activeSession.sessionId);
-
   const activeSessionProfile =
-    activeSession && !activeSessionIsLocal
+    activeSession?.kind === "ssh"
       ? (profiles.find((item) => item.id === activeSession.profileId) ?? null)
       : null;
 
-  const isRemoteSession = !!activeSession && !activeSessionIsLocal;
+  const isRemoteSession = activeSession?.kind === "ssh";
 
   const isRemoteConnected =
     !!activeSession &&
     activeSessionState === "connected" &&
-    !activeSessionIsLocal;
+    activeSession?.kind === "ssh";
 
   const canReconnect =
     !!activeSessionProfile &&
@@ -335,7 +339,19 @@ export default function useSessionState({
   }
 
   function isLocalSession(sessionId: string | null) {
-    return !!sessionId && localSessionIdsRef.current.has(sessionId);
+    return getSessionKind(sessionId) === "localShell";
+  }
+
+  function isSerialSession(sessionId: string | null) {
+    return getSessionKind(sessionId) === "serial";
+  }
+
+  function getSessionKind(sessionId: string | null): SessionKind | null {
+    if (!sessionId) return null;
+    return (
+      sessionsRef.current.find((item) => item.sessionId === sessionId)?.kind ??
+      null
+    );
   }
 
   function resolveSessionLabel(sessionId: string) {
@@ -346,6 +362,13 @@ export default function useSessionState({
     if (isLocalSession(sessionId)) {
       return (
         localSessionMetaRef.current[sessionId]?.label ?? t("session.local")
+      );
+    }
+    if (isSerialSession(sessionId)) {
+      return (
+        serialSessionProfilesRef.current[sessionId]?.name ||
+        serialSessionProfilesRef.current[sessionId]?.portName ||
+        t("widget.serial")
       );
     }
     const profile =
@@ -450,14 +473,6 @@ export default function useSessionState({
     [getTerminalSize, shellId],
   );
 
-  function sessionCommand(
-    sessionId: string,
-    sshCommand: string,
-    localCommand: string,
-  ) {
-    return isLocalSession(sessionId) ? localCommand : sshCommand;
-  }
-
   /** 统一发送会话输入；文本与二进制在此分流到对应命令。 */
   async function sendSessionInput(sessionId: string, input: SessionInput) {
     if (input.kind === "text") {
@@ -467,20 +482,55 @@ export default function useSessionState({
         clearTerminalEofRequested(terminalEofRequestAtRef.current, sessionId);
       }
     }
-    const command =
-      input.kind === "binary"
-        ? sessionCommand(
-            sessionId,
-            "ssh_write_binary",
-            "local_shell_write_binary",
-          )
-        : sessionCommand(sessionId, "ssh_write", "local_shell_write");
+    const kind = getSessionKind(sessionId);
+    if (!kind) {
+      throw new Error(`Unknown session: ${sessionId}`);
+    }
+    const commandByKind: Record<SessionKind, { text: string; binary: string }> =
+      {
+        ssh: { text: "ssh_write", binary: "ssh_write_binary" },
+        localShell: {
+          text: "local_shell_write",
+          binary: "local_shell_write_binary",
+        },
+        serial: {
+          text: "serial_write_text",
+          binary: "serial_write_binary",
+        },
+      };
+    const command = commandByKind[kind][input.kind];
     const payload =
       input.kind === "binary"
         ? { sessionId, data: input.data }
-        : { sessionId, data: input.data };
+        : {
+            sessionId,
+            data: input.data,
+            ...(kind === "serial"
+              ? {
+                  encoding:
+                    serialSessionProfilesRef.current[sessionId]?.encoding ??
+                    "utf8",
+                }
+              : {}),
+          };
     try {
-      return await callTauri(command, payload);
+      const result = await callTauri<unknown>(command, payload);
+      if (kind === "serial") {
+        const bytes =
+          input.kind === "binary"
+            ? input.data
+            : Array.isArray(result)
+              ? result.filter(
+                  (value): value is number => typeof value === "number",
+                )
+              : [];
+        window.dispatchEvent(
+          new CustomEvent("fluxterm:serial-transmit", {
+            detail: { sessionId, data: bytes },
+          }),
+        );
+      }
+      return result;
     } catch (err) {
       // 本地 Shell 进程退出后，若 terminal:exit 事件未及时到达，
       // 这里以写入失败作为兜底信号，确保会话进入断开状态并可回车重连。
@@ -496,8 +546,10 @@ export default function useSessionState({
   }
 
   function resizeSession(sessionId: string, cols: number, rows: number) {
+    const kind = getSessionKind(sessionId);
+    if (kind === "serial" || !kind) return Promise.resolve();
     return callTauri(
-      sessionCommand(sessionId, "ssh_resize", "local_shell_resize"),
+      kind === "localShell" ? "local_shell_resize" : "ssh_resize",
       {
         sessionId,
         cols,
@@ -595,13 +647,17 @@ export default function useSessionState({
       handleSessionDisconnected,
       handleSessionStatus: (payload) => {
         const label = resolveSessionLabel(payload.sessionId);
+        const serialSession = isSerialSession(payload.sessionId);
         if (payload.state === "disconnected") {
           handleSessionDisconnected(payload.sessionId);
           return;
         }
         setSessionStates((prev) => ({
           ...prev,
-          [payload.sessionId]: payload.state,
+          [payload.sessionId]:
+            serialSession && payload.state === "error"
+              ? "disconnected"
+              : payload.state,
         }));
         if (payload.state === "error") {
           const errorMessage = payload.error
@@ -631,18 +687,22 @@ export default function useSessionState({
           });
           void logError(
             JSON.stringify({
-              event: "ssh.session.error",
+              event: serialSession
+                ? "serial.session.error"
+                : "ssh.session.error",
               sessionId: payload.sessionId,
               message: payload.error?.message ?? "unknown",
             }),
           );
-          if (!isLocalSession(payload.sessionId)) {
+          if (!isLocalSession(payload.sessionId) && !serialSession) {
             disconnectSessionRef.current(payload.sessionId).catch(() => {});
           }
           if (!errorDialogShownRef.current[payload.sessionId]) {
             errorDialogShownRef.current[payload.sessionId] = true;
             openDialog({
-              title: t("dialog.sshErrorTitle"),
+              title: serialSession
+                ? t("serial.connect.failed")
+                : t("dialog.sshErrorTitle"),
               message: errorMessage || t("dialog.sshErrorBody"),
               confirmLabel: t("actions.close"),
             });
@@ -865,17 +925,59 @@ export default function useSessionState({
     ],
   );
 
+  /** 建立串口会话并附着到当前活动终端区域。 */
+  const connectSerialProfile = useCallback(
+    async (profile: SerialProfile) => {
+      try {
+        const session = await callTauri<Session>("serial_connect", { profile });
+        setSerialSessionProfiles((current) => ({
+          ...current,
+          [session.sessionId]: { ...profile },
+        }));
+        serialSessionProfilesRef.current = {
+          ...serialSessionProfilesRef.current,
+          [session.sessionId]: { ...profile },
+        };
+        setSessions((current) => [...current, session]);
+        setSessionStates((current) => ({
+          ...current,
+          [session.sessionId]: "connected",
+        }));
+        sessionWorkspace.attachSession(
+          session.sessionId,
+          true,
+          sessionWorkspace.workspace.root
+            ? { paneId: sessionWorkspace.getActivePaneId() ?? undefined }
+            : undefined,
+        );
+      } catch (error) {
+        openDialog({
+          title: t("serial.connect.failed"),
+          message: translateAppError(error, t),
+          confirmLabel: t("actions.close"),
+        });
+        throw error;
+      }
+    },
+    [openDialog, sessionWorkspace, t],
+  );
+
   async function disconnectSession(sessionId: string) {
     const state = sessionStatesRef.current[sessionId];
-    const localSession = isLocalSession(sessionId);
+    const kind = getSessionKind(sessionId);
+    if (!kind) return;
     await disconnectSessionCommand({
       sessionId,
       state,
-      localSession,
-      sendDisconnect: (id, local) =>
-        callTauri(local ? "local_shell_disconnect" : "ssh_disconnect", {
-          sessionId: id,
-        }),
+      kind,
+      sendDisconnect: (id, nextKind) => {
+        const command: Record<SessionKind, string> = {
+          ssh: "ssh_disconnect",
+          localShell: "local_shell_disconnect",
+          serial: "serial_disconnect",
+        };
+        return callTauri(command[nextKind], { sessionId: id });
+      },
       detachSessionFromWorkspace: sessionWorkspace.detachSession,
       localSessionIdsRef,
       setLocalSessionMeta,
@@ -884,11 +986,54 @@ export default function useSessionState({
       setSessionReasons,
       setReconnectInfoBySession,
     });
+    if (kind === "serial") {
+      setSerialSessionProfiles((current) => {
+        const next = { ...current };
+        delete next[sessionId];
+        return next;
+      });
+      delete serialSessionProfilesRef.current[sessionId];
+    }
   }
 
   async function reconnectSession(sessionId: string) {
     if (isLocalSession(sessionId)) {
       await reconnectLocalShell(sessionId);
+      return;
+    }
+    if (isSerialSession(sessionId)) {
+      const profile = serialSessionProfilesRef.current[sessionId];
+      if (!profile) return;
+      setSessionStates((current) => ({
+        ...current,
+        [sessionId]: "reconnecting",
+      }));
+      try {
+        const nextSession = await callTauri<Session>("serial_connect", {
+          profile,
+        });
+        replaceSessionConnection(sessionId, nextSession, "connected");
+        setSerialSessionProfiles((current) => {
+          const next = { ...current };
+          delete next[sessionId];
+          next[nextSession.sessionId] = { ...profile };
+          return next;
+        });
+        delete serialSessionProfilesRef.current[sessionId];
+        serialSessionProfilesRef.current[nextSession.sessionId] = {
+          ...profile,
+        };
+      } catch (error) {
+        setSessionStates((current) => ({
+          ...current,
+          [sessionId]: "disconnected",
+        }));
+        openDialog({
+          title: t("serial.connect.failed"),
+          message: translateAppError(error, t),
+          confirmLabel: t("actions.close"),
+        });
+      }
       return;
     }
     setSessionStates((prev) => ({
@@ -910,7 +1055,7 @@ export default function useSessionState({
   }
 
   async function triggerScheduledReconnectNow(sessionId: string) {
-    if (isLocalSession(sessionId)) return;
+    if (isLocalSession(sessionId) || isSerialSession(sessionId)) return;
     if (!reconnectTimersRef.current[sessionId]) return;
     clearScheduledReconnectCountdown(sessionId);
     setSessionStates((prev) => ({
@@ -1017,6 +1162,14 @@ export default function useSessionState({
       (item) => item.sessionId === activeSessionId,
     );
     if (!currentSession) return;
+    if (currentSession.kind === "serial") {
+      openDialog({
+        title: t("layout.split"),
+        message: t("serial.split.unsupported"),
+        confirmLabel: t("actions.close"),
+      });
+      return;
+    }
 
     let nextSession: Session;
     if (isLocalSession(activeSessionId)) {
@@ -1091,6 +1244,10 @@ export default function useSessionState({
   }, [localSessionMeta]);
 
   useEffect(() => {
+    serialSessionProfilesRef.current = serialSessionProfiles;
+  }, [serialSessionProfiles]);
+
+  useEffect(() => {
     profilesRef.current = profiles;
   }, [profiles]);
 
@@ -1148,6 +1305,7 @@ export default function useSessionState({
     sessionStates,
     sessionReasons,
     localSessionMeta,
+    serialSessionProfiles,
     reconnectInfoBySession,
     appEvents,
     busyMessage,
@@ -1165,17 +1323,21 @@ export default function useSessionState({
     sessionReasonsRef,
     sessionBuffersRef,
     localSessionMetaRef,
+    serialSessionProfilesRef,
     localSessionIdsRef,
     activeSessionIdRef,
     appendAppEvent,
     setBusyMessage,
     isLocalSession,
+    isSerialSession,
+    getSessionKind,
     setLastCommand,
     sendSessionInput,
     writeToSession,
     resizeSession,
     connectProfile,
     connectLocalShell,
+    connectSerialProfile,
     disconnectSession,
     reconnectSession,
     reconnectLocalShell,

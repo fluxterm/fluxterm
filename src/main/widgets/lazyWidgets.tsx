@@ -10,6 +10,9 @@ export const HostWidget = lazy(
 export const RdpWidget = lazy(
   () => import("@/widgets/rdp/components/RdpWidget"),
 );
+export const SerialWidget = lazy(
+  () => import("@/widgets/serial/components/SerialWidget"),
+);
 export const TransfersWidget = lazy(
   () => import("@/widgets/transfers/components/TransfersWidget"),
 );

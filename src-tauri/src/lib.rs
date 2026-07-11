@@ -13,6 +13,7 @@ pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;
 pub mod security_store;
+pub mod serial_profile_store;
 pub mod session_settings;
 pub mod ssh_config_import;
 pub mod ssh_host_keys;
@@ -59,6 +60,11 @@ use crate::commands::security::{
     security_change_password, security_enable_strong_protection, security_enable_weak_protection,
     security_lock, security_status, security_unlock,
 };
+use crate::commands::serial::{
+    serial_connect, serial_disconnect, serial_port_list, serial_profile_groups_list,
+    serial_profile_groups_save, serial_profile_list, serial_profile_remove, serial_profile_save,
+    serial_write_binary, serial_write_text,
+};
 use crate::commands::sftp::{
     sftp_cancel_transfer, sftp_download, sftp_download_dir, sftp_home, sftp_list, sftp_mkdir,
     sftp_remove, sftp_rename, sftp_resolve_path, sftp_upload, sftp_upload_batch,
@@ -74,7 +80,7 @@ use crate::local_shell::LocalShellState;
 use crate::rdp::RdpState;
 use crate::remote_edit::RemoteEditState;
 use crate::resource_monitor::ResourceMonitorState;
-use crate::state::{EngineState, SecurityState};
+use crate::state::{EngineState, SecurityState, SerialState};
 
 fn resolve_log_level() -> LevelFilter {
     let raw = std::env::var("RUST_LOG").unwrap_or_default();
@@ -121,6 +127,9 @@ pub fn run() {
             engine: Arc::new(Engine::new()),
         })
         .manage(SecurityState::default())
+        .manage(SerialState {
+            manager: Arc::new(engine::SerialManager::new()),
+        })
         .manage(LocalShellState::default())
         .manage(ResourceMonitorState::default())
         .manage(RdpState::default())
@@ -170,6 +179,16 @@ pub fn run() {
             ssh_resize,
             ssh_write,
             ssh_write_binary,
+            serial_port_list,
+            serial_profile_list,
+            serial_profile_groups_list,
+            serial_profile_groups_save,
+            serial_profile_save,
+            serial_profile_remove,
+            serial_connect,
+            serial_disconnect,
+            serial_write_text,
+            serial_write_binary,
             ssh_tunnel_open,
             ssh_tunnel_close,
             ssh_tunnel_list,

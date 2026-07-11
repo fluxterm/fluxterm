@@ -115,6 +115,12 @@ pub fn resolve_rdp_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineErr
     Ok(dir.join("rdp"))
 }
 
+/// 解析串口连接配置目录。
+pub fn resolve_serial_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    let dir = resolve_connections_config_dir(app)?;
+    Ok(dir.join("serial"))
+}
+
 /// 解析应用安全配置文件路径。
 pub fn resolve_security_config_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
     let dir = resolve_global_config_dir(app)?;
@@ -161,5 +167,17 @@ pub fn resolve_rdp_profiles_path(app: &AppHandle) -> Result<PathBuf, EngineError
 /// 解析 RDP 分组配置文件路径。
 pub fn resolve_rdp_groups_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
     let dir = resolve_rdp_connections_dir(app)?;
+    Ok(dir.join("groups.json"))
+}
+
+/// 解析串口 Profile 配置文件路径。
+pub fn resolve_serial_profiles_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    let dir = resolve_serial_connections_dir(app)?;
+    Ok(dir.join("profiles.json"))
+}
+
+/// 解析串口分组配置文件路径。
+pub fn resolve_serial_groups_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    let dir = resolve_serial_connections_dir(app)?;
     Ok(dir.join("groups.json"))
 }
