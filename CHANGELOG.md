@@ -2,6 +2,20 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，并遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.7.0] - 2026-07-11
+
+本次更新新增串口会话管理与调试能力，并统一后端运行时日志和错误信息的国际化契约，提升设备调试体验与跨语言环境下的错误可读性。
+
+### Added
+
+- **串口调试**: 新增独立串口组件，支持 Profile 分组管理、独立文本/HEX 发送与显示、16 字节 HEX 分组、偏移地址、连续文本、可靠贴底滚动、终端字体同步、选区复制和日志导出。
+- **运行时消息检查**: 新增后端运行时消息静态检查，阻止错误和结构化日志重新引入硬编码中文，并接入项目检查流程。
+
+### Changed
+
+- **后端日志语言统一**: Engine、Tauri、SFTP、代理、RDP、OpenAI、本地 Shell、安全和配置存储等运行时日志与错误兜底统一使用英文。
+- **错误国际化契约**: 跨前端错误统一携带领域级 `messageKey`，具体错误可通过 `messageVars` 提供动态参数，由前端根据当前语言展示本地化提示。
+
 ## [0.6.1] - 2026-07-04
 
 本次更新聚焦于应用与终端字号配置、基础 UI 字号体系统一，以及终端自动补全交互稳定性修复。
@@ -665,6 +679,8 @@
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
 
+[0.7.0]: https://github.com/fluxterm/fluxterm/compare/0.6.1...0.7.0
+[0.6.1]: https://github.com/fluxterm/fluxterm/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/fluxterm/fluxterm/compare/0.5.0...0.6.0
 [0.5.0]: https://github.com/fluxterm/fluxterm/compare/0.4.1...0.5.0
 [0.4.1]: https://github.com/fluxterm/fluxterm/compare/0.4.0...0.4.1
