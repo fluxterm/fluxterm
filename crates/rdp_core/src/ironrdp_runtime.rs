@@ -233,7 +233,9 @@ pub async fn run_ironrdp_session(
             );
             let message = match close_reason {
                 RuntimeCloseReason::UserDisconnected => format!("session {session_id} closed"),
-                RuntimeCloseReason::ServerClosed => "远端服务器已断开当前 RDP 会话".to_string(),
+                RuntimeCloseReason::ServerClosed => {
+                    "The remote server disconnected the RDP session".to_string()
+                }
             };
             let _ = sessions.publish_runtime_state(&session_id, "disconnected", message);
         }

@@ -49,8 +49,9 @@ pub fn serial_profile_save(
     if profile.name.is_empty() {
         return Err(EngineError::new(
             "serial_profile_name_required",
-            "串口配置名称不能为空",
-        ));
+            "Serial profile name is required",
+        )
+        .with_message_key("error.serial.profileNameRequired"));
     }
     validate_profile(&profile)?;
     if profile.id.trim().is_empty() {

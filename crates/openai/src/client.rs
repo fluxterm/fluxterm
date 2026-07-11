@@ -86,7 +86,9 @@ async fn request_chat_completion(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(config.timeout_ms))
         .build()
-        .map_err(|err| OpenAiError::Request(format!("无法创建 OpenAI 客户端: {err}")))?;
+        .map_err(|err| {
+            OpenAiError::Request(format!("Failed to create the OpenAI client: {err}"))
+        })?;
 
     let base = config.base_url.trim_end_matches('/');
     let endpoint = build_chat_completions_endpoint(base);
@@ -114,12 +116,12 @@ async fn request_chat_completion(
         };
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|err| OpenAiError::ResponseInvalid(format!("无法读取 OpenAI 响应: {err}")))?;
-    let json = serde_json::from_str::<Value>(&body)
-        .map_err(|err| OpenAiError::ResponseInvalid(format!("无法解析 OpenAI 响应: {err}")))?;
+    let body = response.text().await.map_err(|err| {
+        OpenAiError::ResponseInvalid(format!("Failed to read the OpenAI response: {err}"))
+    })?;
+    let json = serde_json::from_str::<Value>(&body).map_err(|err| {
+        OpenAiError::ResponseInvalid(format!("Failed to parse the OpenAI response: {err}"))
+    })?;
     extract_chat_completion_response(&json)
 }
 
@@ -135,7 +137,9 @@ async fn complete_chat(
                 .choices
                 .into_iter()
                 .next()
-                .ok_or_else(|| OpenAiError::ResponseInvalid("OpenAI 未返回候选消息".to_string()))?
+                .ok_or_else(|| {
+                    OpenAiError::ResponseInvalid("OpenAI returned no candidate message".to_string())
+                })?
                 .message;
             log_response(config, request_type, &message);
             Ok(OpenAiSessionChatResponse { message })
@@ -157,7 +161,9 @@ async fn stream_chat_completion(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(config.timeout_ms))
         .build()
-        .map_err(|err| OpenAiError::Request(format!("无法创建 OpenAI 客户端: {err}")))?;
+        .map_err(|err| {
+            OpenAiError::Request(format!("Failed to create the OpenAI client: {err}"))
+        })?;
 
     if config.debug_logging_enabled {
         log_system_prompt_summary(request_type, &messages);
@@ -388,9 +394,9 @@ fn build_chat_completions_endpoint(base: &str) -> String {
 
 fn map_transport_error(err: reqwest::Error) -> OpenAiError {
     if err.is_timeout() {
-        return OpenAiError::Timeout("OpenAI 请求超时".to_string());
+        return OpenAiError::Timeout("OpenAI request timed out".to_string());
     }
-    OpenAiError::Request(format!("OpenAI 请求失败: {err}"))
+    OpenAiError::Request(format!("OpenAI request failed: {err}"))
 }
 
 fn extract_error_message(body: &str) -> String {
@@ -404,7 +410,7 @@ fn extract_error_message(body: &str) -> String {
                 .map(str::to_string)
         })
         .filter(|message| !message.trim().is_empty())
-        .unwrap_or_else(|| "OpenAI 请求失败".to_string())
+        .unwrap_or_else(|| "OpenAI request failed".to_string())
 }
 
 #[derive(Debug)]
@@ -421,7 +427,9 @@ fn extract_chat_completion_response(json: &Value) -> Result<ChatCompletionsRespo
     let choices = json
         .get("choices")
         .and_then(Value::as_array)
-        .ok_or_else(|| OpenAiError::ResponseInvalid("OpenAI 响应缺少 choices".to_string()))?;
+        .ok_or_else(|| {
+            OpenAiError::ResponseInvalid("OpenAI response is missing choices".to_string())
+        })?;
 
     let parsed = choices
         .iter()
@@ -430,7 +438,7 @@ fn extract_chat_completion_response(json: &Value) -> Result<ChatCompletionsRespo
 
     if parsed.is_empty() {
         return Err(OpenAiError::ResponseInvalid(
-            "OpenAI 未返回候选消息".to_string(),
+            "OpenAI returned no candidate message".to_string(),
         ));
     }
 
@@ -438,9 +446,9 @@ fn extract_chat_completion_response(json: &Value) -> Result<ChatCompletionsRespo
 }
 
 fn extract_choice(value: &Value) -> Result<Choice, OpenAiError> {
-    let message = value
-        .get("message")
-        .ok_or_else(|| OpenAiError::ResponseInvalid("OpenAI 响应缺少 message".to_string()))?;
+    let message = value.get("message").ok_or_else(|| {
+        OpenAiError::ResponseInvalid("OpenAI response is missing message".to_string())
+    })?;
     let role = message
         .get("role")
         .and_then(Value::as_str)
@@ -462,16 +470,16 @@ fn extract_message_content(message: &Value) -> Result<String, OpenAiError> {
                 .collect::<String>();
             if content.trim().is_empty() {
                 return Err(OpenAiError::ResponseInvalid(
-                    "OpenAI 响应缺少可读内容".to_string(),
+                    "OpenAI response contains no readable content".to_string(),
                 ));
             }
             Ok(content)
         }
         Some(Value::Null) | None => Err(OpenAiError::ResponseInvalid(
-            "OpenAI 响应缺少 content".to_string(),
+            "OpenAI response is missing content".to_string(),
         )),
         Some(other) => Err(OpenAiError::ResponseInvalid(format!(
-            "OpenAI 响应 content 类型不受支持: {}",
+            "OpenAI response content type is unsupported: {}",
             other
         ))),
     }
@@ -487,8 +495,11 @@ fn parse_stream_event(event: &str) -> Result<Option<String>, OpenAiError> {
         if payload == "[DONE]" {
             return Ok(None);
         }
-        let json = serde_json::from_str::<Value>(payload)
-            .map_err(|err| OpenAiError::ResponseInvalid(format!("无法解析流式响应事件: {err}")))?;
+        let json = serde_json::from_str::<Value>(payload).map_err(|err| {
+            OpenAiError::ResponseInvalid(format!(
+                "Failed to parse the streaming response event: {err}"
+            ))
+        })?;
         if let Some(delta) = extract_stream_delta_content(&json)? {
             content.push_str(&delta);
         }
@@ -524,7 +535,7 @@ fn extract_stream_delta_content(json: &Value) -> Result<Option<String>, OpenAiEr
         }
         Some(Value::Null) | None => Ok(None),
         Some(other) => Err(OpenAiError::ResponseInvalid(format!(
-            "OpenAI 流式响应 content 类型不受支持: {}",
+            "OpenAI streaming response content type is unsupported: {}",
             other
         ))),
     }

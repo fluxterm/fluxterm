@@ -39,7 +39,7 @@ pub async fn proxy_open(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法创建代理实例",
+            "Failed to create the proxy instance",
             err.to_string(),
         )
     })?;
@@ -104,7 +104,7 @@ pub async fn proxy_close(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法关闭代理实例",
+            "Failed to close the proxy instance",
             err.to_string(),
         )
     })?;
@@ -151,7 +151,7 @@ pub async fn proxy_list(
         .map_err(|err| {
             EngineError::with_detail(
                 "session_command_failed",
-                "无法读取代理实例列表",
+                "Failed to list proxy instances",
                 err.to_string(),
             )
         })?;
@@ -206,7 +206,7 @@ pub async fn proxy_close_all(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法关闭全部代理实例",
+            "Failed to close all proxy instances",
             err.to_string(),
         )
     })?;

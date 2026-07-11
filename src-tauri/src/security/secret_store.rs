@@ -36,7 +36,7 @@ impl<'a> SecretStore<'a> {
             Some(raw) if raw.trim().is_empty() => Ok(None),
             Some(raw) if !raw.starts_with("enc:v1:") => Err(EngineError::new(
                 "secret_format_unsupported",
-                "凭据格式无效：当前仅支持 enc:v1 密文",
+                "Invalid credential format; only enc:v1 ciphertext is supported",
             )),
             Some(raw) => self.crypto.decrypt_string(&raw).map(Some),
             None => Ok(None),

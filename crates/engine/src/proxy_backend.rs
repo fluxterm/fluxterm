@@ -106,7 +106,7 @@ impl ProxyBackend for BuiltinProxyBackend {
                     json!({
                         "error": {
                             "code": PROXY_BIND_CONFLICT,
-                            "message": format!("代理监听地址已存在：{request_key}"),
+                            "message": format!("Proxy listener address already exists: {request_key}"),
                         },
                         "bindHost": spec.bind_host,
                         "bindPort": spec.bind_port,
@@ -114,7 +114,7 @@ impl ProxyBackend for BuiltinProxyBackend {
                 );
                 return Err(EngineError::new(
                     PROXY_BIND_CONFLICT,
-                    format!("代理监听地址已存在：{request_key}"),
+                    format!("Proxy listener address already exists: {request_key}"),
                 ));
             }
         }
@@ -147,7 +147,7 @@ impl ProxyBackend for BuiltinProxyBackend {
             .lock()
             .unwrap()
             .remove(proxy_id)
-            .ok_or_else(|| EngineError::new(PROXY_NOT_FOUND, "代理实例不存在"))?;
+            .ok_or_else(|| EngineError::new(PROXY_NOT_FOUND, "Proxy instance not found"))?;
         log_telemetry(
             TelemetryLevel::Info,
             "proxy.close.start",
@@ -158,7 +158,10 @@ impl ProxyBackend for BuiltinProxyBackend {
         );
         close_proxy(&handle);
         if !self.wait_stopped(&handle) {
-            return Err(EngineError::new(PROXY_SHUTDOWN_TIMEOUT, "代理实例关闭超时"));
+            return Err(EngineError::new(
+                PROXY_SHUTDOWN_TIMEOUT,
+                "Proxy instance shutdown timed out",
+            ));
         }
         log_telemetry(
             TelemetryLevel::Info,
@@ -205,7 +208,7 @@ impl ProxyBackend for BuiltinProxyBackend {
         if !all_stopped {
             return Err(EngineError::new(
                 PROXY_SHUTDOWN_TIMEOUT,
-                "批量关闭代理实例超时",
+                "Timed out while closing proxy instances",
             ));
         }
         log_telemetry(

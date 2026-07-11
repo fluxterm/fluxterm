@@ -70,7 +70,7 @@ fn trust_host_key_path(
         fs::create_dir_all(parent).map_err(|err| {
             EngineError::with_detail(
                 "known_hosts_write_failed",
-                "无法创建 known_hosts 目录",
+                "Failed to create the known_hosts directory",
                 err.to_string(),
             )
         })?;
@@ -82,7 +82,7 @@ fn trust_host_key_path(
         let content = fs::read_to_string(path).map_err(|err| {
             EngineError::with_detail(
                 "known_hosts_read_failed",
-                "无法读取 known_hosts 文件",
+                "Failed to read the known_hosts file",
                 err.to_string(),
             )
         })?;
@@ -104,7 +104,7 @@ fn trust_host_key_path(
     fs::write(path, preserved.join("\n") + "\n").map_err(|err| {
         EngineError::with_detail(
             "known_hosts_write_failed",
-            "无法写入 known_hosts 文件",
+            "Failed to write the known_hosts file",
             err.to_string(),
         )
     })
@@ -122,7 +122,7 @@ fn match_host_key_path(
         fs::read_to_string(path).map_err(|err| {
             EngineError::with_detail(
                 "known_hosts_read_failed",
-                "无法读取 known_hosts 文件",
+                "Failed to read the known_hosts file",
                 err.to_string(),
             )
         })?
@@ -147,7 +147,7 @@ fn match_host_key_path(
         let previous_key = keys::parse_public_key_base64(line_key).map_err(|err| {
             EngineError::with_detail(
                 "known_hosts_parse_failed",
-                "known_hosts 文件格式无效",
+                "Invalid known_hosts file format",
                 err.to_string(),
             )
         })?;

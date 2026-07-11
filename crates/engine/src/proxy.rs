@@ -119,12 +119,16 @@ pub async fn open_proxy(
                     "bindPort": spec.bind_port,
                     "error": {
                         "code": PROXY_BIND_FAILED,
-                        "message": "代理端口监听失败",
+                        "message": "Failed to bind the proxy listener",
                         "detail": err.to_string(),
                     }
                 }),
             );
-            EngineError::with_detail(PROXY_BIND_FAILED, "代理端口监听失败", err.to_string())
+            EngineError::with_detail(
+                PROXY_BIND_FAILED,
+                "Failed to bind the proxy listener",
+                err.to_string(),
+            )
         })?;
     {
         let mut guard = runtime.lock().await;
@@ -176,7 +180,7 @@ pub async fn open_proxy(
                 }
                 accepted = listener.accept() => {
                     let Ok((stream, peer_addr)) = accepted else {
-                        let err = EngineError::new(PROXY_ACCEPT_FAILED, "接受代理连接失败");
+                        let err = EngineError::new(PROXY_ACCEPT_FAILED, "Failed to accept the proxy connection");
                         log_telemetry(
                             TelemetryLevel::Warn,
                             "proxy.connection.failed",
@@ -212,7 +216,7 @@ pub async fn open_proxy(
                                 "peerAddr": peer_addr.to_string(),
                                 "error": {
                                     "code": PROXY_CONNECTION_LIMIT_EXCEEDED,
-                                    "message": "连接数已达上限",
+                                    "message": "The connection limit has been reached",
                                 },
                                 "maxActiveConnections": MAX_ACTIVE_CONNECTIONS,
                             }),
@@ -220,7 +224,7 @@ pub async fn open_proxy(
                         let mut guard = runtime_for_loop.lock().await;
                         guard.last_error = Some(EngineError::new(
                             PROXY_CONNECTION_LIMIT_EXCEEDED,
-                            "连接数已达上限",
+                            "The connection limit has been reached",
                         ));
                         drop(guard);
                         emit_proxy_update(&on_event_for_loop, &runtime_for_loop).await;
@@ -243,7 +247,7 @@ pub async fn open_proxy(
                         on_conn_open(&runtime_for_conn, &on_event_for_conn, &conn_log_ctx).await;
                         let handled = tokio::select! {
                             _ = stop_rx_for_conn.changed() => {
-                                Err(EngineError::new(PROXY_SHUTDOWN_TIMEOUT, "代理关闭中，连接已终止"))
+                                Err(EngineError::new(PROXY_SHUTDOWN_TIMEOUT, "The connection was terminated while the proxy was shutting down"))
                             }
                             result = handle_client(
                                 stream,
@@ -360,7 +364,7 @@ pub async fn open_proxy(
                         "bindPort": proxy_log_ctx_for_loop.bind_port,
                         "error": {
                             "code": PROXY_SHUTDOWN_TIMEOUT,
-                            "message": "优雅关闭超时，执行强制终止",
+                            "message": "Graceful shutdown timed out; forcing termination",
                         },
                     }),
                 );
@@ -574,7 +578,7 @@ async fn handle_socks5_client(
         handle_socks5_handshake(stream, auth),
     )
     .await
-    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "SOCKS5 握手超时"))?;
+    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "SOCKS5 handshake timed out"))?;
     let handshake = match handshake {
         Ok(result) => {
             log_telemetry(
@@ -617,7 +621,13 @@ async fn handle_socks5_client(
         conn,
     )
     .await
-    .map_err(|err| EngineError::with_detail(PROXY_TRANSFER_FAILED, "代理转发失败", err.to_string()))
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_TRANSFER_FAILED,
+            "Proxy forwarding failed",
+            err.to_string(),
+        )
+    })
 }
 
 struct Socks5HandshakeResult {
@@ -634,20 +644,20 @@ async fn handle_socks5_handshake(
         &mut stream,
         &mut greeting,
         PROXY_SOCKS5_HANDSHAKE_FAILED,
-        "SOCKS5 握手失败",
+        "SOCKS5 handshake failed",
     )
     .await
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_SOCKS5_HANDSHAKE_FAILED,
-            "SOCKS5 握手失败",
+            "SOCKS5 handshake failed",
             err.to_string(),
         )
     })?;
     if greeting[0] != 0x05 {
         return Err(EngineError::new(
             PROXY_SOCKS5_HANDSHAKE_FAILED,
-            "仅支持 SOCKS5 代理",
+            "Only SOCKS5 proxies are supported",
         ));
     }
     let mut methods = vec![0u8; greeting[1] as usize];
@@ -655,13 +665,13 @@ async fn handle_socks5_handshake(
         &mut stream,
         &mut methods,
         PROXY_SOCKS5_HANDSHAKE_FAILED,
-        "SOCKS5 握手失败",
+        "SOCKS5 handshake failed",
     )
     .await
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_SOCKS5_HANDSHAKE_FAILED,
-            "SOCKS5 握手失败",
+            "SOCKS5 handshake failed",
             err.to_string(),
         )
     })?;
@@ -671,20 +681,20 @@ async fn handle_socks5_handshake(
             let _ = stream.write_all(&[0x05, 0xFF]).await;
             return Err(EngineError::new(
                 PROXY_AUTH_REQUIRED,
-                "SOCKS5 客户端不支持用户名密码认证",
+                "The SOCKS5 client does not support username/password authentication",
             ));
         }
         write_all_with_timeout(
             &mut stream,
             &[0x05, 0x02],
             PROXY_SOCKS5_HANDSHAKE_FAILED,
-            "SOCKS5 握手失败",
+            "SOCKS5 handshake failed",
         )
         .await
         .map_err(|err| {
             EngineError::with_detail(
                 PROXY_SOCKS5_HANDSHAKE_FAILED,
-                "SOCKS5 握手失败",
+                "SOCKS5 handshake failed",
                 err.to_string(),
             )
         })?;
@@ -694,20 +704,20 @@ async fn handle_socks5_handshake(
             let _ = stream.write_all(&[0x05, 0xFF]).await;
             return Err(EngineError::new(
                 PROXY_SOCKS5_HANDSHAKE_FAILED,
-                "SOCKS5 客户端不支持无认证模式",
+                "The SOCKS5 client does not support unauthenticated mode",
             ));
         }
         write_all_with_timeout(
             &mut stream,
             &[0x05, 0x00],
             PROXY_SOCKS5_HANDSHAKE_FAILED,
-            "SOCKS5 握手失败",
+            "SOCKS5 handshake failed",
         )
         .await
         .map_err(|err| {
             EngineError::with_detail(
                 PROXY_SOCKS5_HANDSHAKE_FAILED,
-                "SOCKS5 握手失败",
+                "SOCKS5 handshake failed",
                 err.to_string(),
             )
         })?;
@@ -718,20 +728,20 @@ async fn handle_socks5_handshake(
         &mut stream,
         &mut req_head,
         PROXY_SOCKS5_REQUEST_FAILED,
-        "SOCKS5 请求读取失败",
+        "Failed to read the SOCKS5 request",
     )
     .await
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_SOCKS5_REQUEST_FAILED,
-            "SOCKS5 请求读取失败",
+            "Failed to read the SOCKS5 request",
             err.to_string(),
         )
     })?;
     if req_head[0] != 0x05 {
         return Err(EngineError::new(
             PROXY_SOCKS5_REQUEST_FAILED,
-            "无效 SOCKS5 请求版本",
+            "Invalid SOCKS5 request version",
         ));
     }
     if req_head[1] != 0x01 {
@@ -740,7 +750,7 @@ async fn handle_socks5_handshake(
             .await;
         return Err(EngineError::new(
             PROXY_SOCKS5_REQUEST_FAILED,
-            "仅支持 CONNECT 命令",
+            "Only the CONNECT command is supported",
         ));
     }
     let target_host = match req_head[3] {
@@ -750,13 +760,13 @@ async fn handle_socks5_handshake(
                 &mut stream,
                 &mut ipv4,
                 PROXY_SOCKS5_REQUEST_FAILED,
-                "读取目标地址失败",
+                "Failed to read the target address",
             )
             .await
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_SOCKS5_REQUEST_FAILED,
-                    "读取目标地址失败",
+                    "Failed to read the target address",
                     err.to_string(),
                 )
             })?;
@@ -768,13 +778,13 @@ async fn handle_socks5_handshake(
                 &mut stream,
                 &mut len_buf,
                 PROXY_SOCKS5_REQUEST_FAILED,
-                "读取目标域名失败",
+                "Failed to read the target domain",
             )
             .await
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_SOCKS5_REQUEST_FAILED,
-                    "读取目标域名失败",
+                    "Failed to read the target domain",
                     err.to_string(),
                 )
             })?;
@@ -784,20 +794,20 @@ async fn handle_socks5_handshake(
                 &mut stream,
                 &mut domain,
                 PROXY_SOCKS5_REQUEST_FAILED,
-                "读取目标域名失败",
+                "Failed to read the target domain",
             )
             .await
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_SOCKS5_REQUEST_FAILED,
-                    "读取目标域名失败",
+                    "Failed to read the target domain",
                     err.to_string(),
                 )
             })?;
             String::from_utf8(domain).map_err(|err| {
                 EngineError::with_detail(
                     PROXY_SOCKS5_REQUEST_FAILED,
-                    "目标域名不是合法 UTF-8",
+                    "The target domain is not valid UTF-8",
                     err.to_string(),
                 )
             })?
@@ -808,13 +818,13 @@ async fn handle_socks5_handshake(
                 &mut stream,
                 &mut ipv6,
                 PROXY_SOCKS5_REQUEST_FAILED,
-                "读取目标地址失败",
+                "Failed to read the target address",
             )
             .await
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_SOCKS5_REQUEST_FAILED,
-                    "读取目标地址失败",
+                    "Failed to read the target address",
                     err.to_string(),
                 )
             })?;
@@ -826,7 +836,7 @@ async fn handle_socks5_handshake(
                 .await;
             return Err(EngineError::new(
                 PROXY_SOCKS5_REQUEST_FAILED,
-                "不支持的目标地址类型",
+                "Unsupported target address type",
             ));
         }
     };
@@ -835,13 +845,13 @@ async fn handle_socks5_handshake(
         &mut stream,
         &mut port_buf,
         PROXY_SOCKS5_REQUEST_FAILED,
-        "读取目标端口失败",
+        "Failed to read the target port",
     )
     .await
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_SOCKS5_REQUEST_FAILED,
-            "读取目标端口失败",
+            "Failed to read the target port",
             err.to_string(),
         )
     })?;
@@ -850,7 +860,7 @@ async fn handle_socks5_handshake(
     let upstream = connect_with_timeout(&target).await.map_err(|err| {
         EngineError::with_detail(
             PROXY_UPSTREAM_CONNECT_FAILED,
-            "连接上游失败",
+            "Failed to connect to the upstream server",
             err.to_string(),
         )
     })?;
@@ -858,11 +868,15 @@ async fn handle_socks5_handshake(
         &mut stream,
         &[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0],
         PROXY_SOCKS5_REQUEST_FAILED,
-        "发送响应失败",
+        "Failed to send the response",
     )
     .await
     .map_err(|err| {
-        EngineError::with_detail(PROXY_SOCKS5_REQUEST_FAILED, "发送响应失败", err.to_string())
+        EngineError::with_detail(
+            PROXY_SOCKS5_REQUEST_FAILED,
+            "Failed to send the response",
+            err.to_string(),
+        )
     })?;
     Ok(Socks5HandshakeResult {
         client: stream,
@@ -875,59 +889,124 @@ async fn validate_socks5_username_password(
     expected: &ProxyAuth,
 ) -> Result<(), EngineError> {
     let mut ver = [0u8; 1];
-    read_exact_with_timeout(stream, &mut ver, PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-        })?;
+    read_exact_with_timeout(
+        stream,
+        &mut ver,
+        PROXY_AUTH_FAILED,
+        "SOCKS5 authentication failed",
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+            err.to_string(),
+        )
+    })?;
     if ver[0] != 0x01 {
         let _ = stream.write_all(&[0x01, 0x01]).await;
-        return Err(EngineError::new(PROXY_AUTH_FAILED, "SOCKS5 认证版本无效"));
+        return Err(EngineError::new(
+            PROXY_AUTH_FAILED,
+            "Invalid SOCKS5 authentication version",
+        ));
     }
     let mut ulen = [0u8; 1];
-    read_exact_with_timeout(stream, &mut ulen, PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-        })?;
+    read_exact_with_timeout(
+        stream,
+        &mut ulen,
+        PROXY_AUTH_FAILED,
+        "SOCKS5 authentication failed",
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+            err.to_string(),
+        )
+    })?;
     let mut user = vec![0u8; ulen[0] as usize];
-    read_exact_with_timeout(stream, &mut user, PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-        })?;
+    read_exact_with_timeout(
+        stream,
+        &mut user,
+        PROXY_AUTH_FAILED,
+        "SOCKS5 authentication failed",
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+            err.to_string(),
+        )
+    })?;
     let mut plen = [0u8; 1];
-    read_exact_with_timeout(stream, &mut plen, PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-        })?;
+    read_exact_with_timeout(
+        stream,
+        &mut plen,
+        PROXY_AUTH_FAILED,
+        "SOCKS5 authentication failed",
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+            err.to_string(),
+        )
+    })?;
     let mut pass = vec![0u8; plen[0] as usize];
-    read_exact_with_timeout(stream, &mut pass, PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-        })?;
+    read_exact_with_timeout(
+        stream,
+        &mut pass,
+        PROXY_AUTH_FAILED,
+        "SOCKS5 authentication failed",
+    )
+    .await
+    .map_err(|err| {
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+            err.to_string(),
+        )
+    })?;
     let username = String::from_utf8(user).map_err(|err| {
-        EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证用户名非法", err.to_string())
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "Invalid SOCKS5 authentication username",
+            err.to_string(),
+        )
     })?;
     let password = String::from_utf8(pass).map_err(|err| {
-        EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证密码非法", err.to_string())
+        EngineError::with_detail(
+            PROXY_AUTH_FAILED,
+            "Invalid SOCKS5 authentication password",
+            err.to_string(),
+        )
     })?;
 
     if username == expected.username && password == expected.password {
-        write_all_with_timeout(stream, &[0x01, 0x00], PROXY_AUTH_FAILED, "SOCKS5 认证失败")
-            .await
-            .map_err(|err| {
-                EngineError::with_detail(PROXY_AUTH_FAILED, "SOCKS5 认证失败", err.to_string())
-            })?;
+        write_all_with_timeout(
+            stream,
+            &[0x01, 0x00],
+            PROXY_AUTH_FAILED,
+            "SOCKS5 authentication failed",
+        )
+        .await
+        .map_err(|err| {
+            EngineError::with_detail(
+                PROXY_AUTH_FAILED,
+                "SOCKS5 authentication failed",
+                err.to_string(),
+            )
+        })?;
         return Ok(());
     }
 
     let _ = stream.write_all(&[0x01, 0x01]).await;
     Err(EngineError::new(
         PROXY_AUTH_FAILED,
-        "SOCKS5 用户名或密码错误",
+        "Invalid SOCKS5 username or password",
     ))
 }
 
@@ -957,7 +1036,7 @@ async fn handle_http_client(
         handle_http_handshake(client, auth),
     )
     .await
-    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "HTTP 代理握手超时"))?;
+    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "HTTP proxy handshake timed out"))?;
     let handshake = match handshake {
         Ok(result) => {
             log_telemetry(
@@ -1004,7 +1083,11 @@ async fn handle_http_client(
     )
     .await
     .map_err(|err| {
-        EngineError::with_detail(PROXY_TRANSFER_FAILED, "代理转发失败", err.to_string())
+        EngineError::with_detail(
+            PROXY_TRANSFER_FAILED,
+            "Proxy forwarding failed",
+            err.to_string(),
+        )
     })?;
     Ok((handshake.initial_bytes_out + body_out, body_in))
 }
@@ -1030,11 +1113,11 @@ async fn handle_http_handshake(
             &mut client,
             b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"FluxTerm Proxy\"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
             PROXY_AUTH_FAILED,
-            "发送认证失败响应失败",
+            "Failed to send the authentication failure response",
         )
         .await
         .map_err(|err| {
-            EngineError::with_detail(PROXY_AUTH_FAILED, "发送认证失败响应失败", err.to_string())
+            EngineError::with_detail(PROXY_AUTH_FAILED, "Failed to send the authentication failure response", err.to_string())
         })?;
         let target_hint = parsed
             .host_header
@@ -1042,7 +1125,7 @@ async fn handle_http_handshake(
             .unwrap_or_else(|| parsed.target.clone());
         return Err(EngineError::with_detail(
             PROXY_AUTH_FAILED,
-            "HTTP 代理认证失败",
+            "HTTP proxy authentication failed",
             format!("target={target_hint}"),
         ));
     }
@@ -1054,7 +1137,7 @@ async fn handle_http_handshake(
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_UPSTREAM_CONNECT_FAILED,
-                    "连接上游失败",
+                    "Failed to connect to the upstream server",
                     err.to_string(),
                 )
             })?;
@@ -1062,13 +1145,13 @@ async fn handle_http_handshake(
             &mut client,
             b"HTTP/1.1 200 Connection Established\r\n\r\n",
             PROXY_HTTP_HANDSHAKE_FAILED,
-            "发送 CONNECT 响应失败",
+            "Failed to send the CONNECT response",
         )
         .await
         .map_err(|err| {
             EngineError::with_detail(
                 PROXY_HTTP_HANDSHAKE_FAILED,
-                "发送 CONNECT 响应失败",
+                "Failed to send the CONNECT response",
                 err.to_string(),
             )
         })?;
@@ -1077,13 +1160,13 @@ async fn handle_http_handshake(
                 &mut upstream,
                 &buffered_body,
                 PROXY_HTTP_FORWARD_FAILED,
-                "发送请求体失败",
+                "Failed to send the request body",
             )
             .await
             .map_err(|err| {
                 EngineError::with_detail(
                     PROXY_HTTP_FORWARD_FAILED,
-                    "发送请求体失败",
+                    "Failed to send the request body",
                     err.to_string(),
                 )
             })?;
@@ -1127,7 +1210,7 @@ async fn handle_http_handshake(
         .map_err(|err| {
             EngineError::with_detail(
                 PROXY_UPSTREAM_CONNECT_FAILED,
-                "连接上游失败",
+                "Failed to connect to the upstream server",
                 err.to_string(),
             )
         })?;
@@ -1135,13 +1218,13 @@ async fn handle_http_handshake(
         &mut upstream,
         forwarded.as_bytes(),
         PROXY_HTTP_FORWARD_FAILED,
-        "发送上游请求失败",
+        "Failed to send the upstream request",
     )
     .await
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_HTTP_FORWARD_FAILED,
-            "发送上游请求失败",
+            "Failed to send the upstream request",
             err.to_string(),
         )
     })?;
@@ -1150,11 +1233,15 @@ async fn handle_http_handshake(
             &mut upstream,
             &buffered_body,
             PROXY_HTTP_FORWARD_FAILED,
-            "发送请求体失败",
+            "Failed to send the request body",
         )
         .await
         .map_err(|err| {
-            EngineError::with_detail(PROXY_HTTP_FORWARD_FAILED, "发送请求体失败", err.to_string())
+            EngineError::with_detail(
+                PROXY_HTTP_FORWARD_FAILED,
+                "Failed to send the request body",
+                err.to_string(),
+            )
         })?;
     }
     Ok(HttpHandshakeResult {
@@ -1173,20 +1260,20 @@ async fn read_http_headers(stream: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>),
             stream,
             &mut chunk,
             PROXY_HTTP_PARSE_FAILED,
-            "读取 HTTP 请求失败",
+            "Failed to read the HTTP request",
         )
         .await
         .map_err(|err| {
             EngineError::with_detail(
                 PROXY_HTTP_PARSE_FAILED,
-                "读取 HTTP 请求失败",
+                "Failed to read the HTTP request",
                 err.to_string(),
             )
         })?;
         if n == 0 {
             return Err(EngineError::new(
                 PROXY_HTTP_PARSE_FAILED,
-                "HTTP 请求提前结束",
+                "The HTTP request ended unexpectedly",
             ));
         }
         buf.extend_from_slice(&chunk[..n]);
@@ -1197,7 +1284,10 @@ async fn read_http_headers(stream: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>),
             return Ok((headers, rest));
         }
         if buf.len() > MAX_HEADER {
-            return Err(EngineError::new(PROXY_HTTP_PARSE_FAILED, "HTTP 请求头过大"));
+            return Err(EngineError::new(
+                PROXY_HTTP_PARSE_FAILED,
+                "The HTTP request headers are too large",
+            ));
         }
     }
 }
@@ -1208,11 +1298,11 @@ async fn connect_with_timeout(target: &str) -> Result<TcpStream, EngineError> {
         TcpStream::connect(target),
     )
     .await
-    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "连接上游超时"))?
+    .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "Upstream connection timed out"))?
     .map_err(|err| {
         EngineError::with_detail(
             PROXY_UPSTREAM_CONNECT_FAILED,
-            "连接上游失败",
+            "Failed to connect to the upstream server",
             err.to_string(),
         )
     })
@@ -1229,7 +1319,7 @@ async fn read_exact_with_timeout(
         stream.read_exact(buf),
     )
     .await
-    .map_err(|_| EngineError::new(PROXY_IO_READ_TIMEOUT, "读取超时"))?
+    .map_err(|_| EngineError::new(PROXY_IO_READ_TIMEOUT, "Read operation timed out"))?
     .map(|_| ())
     .map_err(|err| EngineError::with_detail(code, message, err.to_string()))
 }
@@ -1242,7 +1332,7 @@ async fn read_with_timeout(
 ) -> Result<usize, EngineError> {
     timeout(Duration::from_secs(READ_TIMEOUT_SEC), stream.read(buf))
         .await
-        .map_err(|_| EngineError::new(PROXY_IO_READ_TIMEOUT, "读取超时"))?
+        .map_err(|_| EngineError::new(PROXY_IO_READ_TIMEOUT, "Read operation timed out"))?
         .map_err(|err| EngineError::with_detail(code, message, err.to_string()))
 }
 
@@ -1257,7 +1347,7 @@ async fn write_all_with_timeout(
         stream.write_all(buf),
     )
     .await
-    .map_err(|_| EngineError::new(PROXY_IO_WRITE_TIMEOUT, "写入超时"))?
+    .map_err(|_| EngineError::new(PROXY_IO_WRITE_TIMEOUT, "Write operation timed out"))?
     .map_err(|err| EngineError::with_detail(code, message, err.to_string()))
 }
 
@@ -1318,7 +1408,7 @@ async fn relay_with_timeouts(
                 Ok(Ok(bytes)) => bytes,
                 Ok(Err(err)) => return Err(err),
                 Err(err) => {
-                    return Err(EngineError::with_detail(PROXY_TRANSFER_FAILED, "代理转发任务异常", err.to_string()));
+                    return Err(EngineError::with_detail(PROXY_TRANSFER_FAILED, "The proxy forwarding task failed", err.to_string()));
                 }
             };
             Ok((bytes_out, bytes_in))
@@ -1336,7 +1426,7 @@ async fn relay_with_timeouts(
                 Ok(Ok(bytes)) => bytes,
                 Ok(Err(err)) => return Err(err),
                 Err(err) => {
-                    return Err(EngineError::with_detail(PROXY_TRANSFER_FAILED, "代理转发任务异常", err.to_string()));
+                    return Err(EngineError::with_detail(PROXY_TRANSFER_FAILED, "The proxy forwarding task failed", err.to_string()));
                 }
             };
             Ok((bytes_out, bytes_in))
@@ -1352,7 +1442,7 @@ fn unwrap_relay_result(
         Ok(Err(err)) => Err(err),
         Err(err) => Err(EngineError::with_detail(
             PROXY_TRANSFER_FAILED,
-            "代理转发任务异常",
+            "The proxy forwarding task failed",
             err.to_string(),
         )),
     }
@@ -1386,13 +1476,16 @@ where
                 flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
                 return Err(EngineError::with_detail(
                     PROXY_TRANSFER_FAILED,
-                    "代理读取失败",
+                    "Failed to read proxy data",
                     err.to_string(),
                 ));
             }
             Err(_) => {
                 flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
-                return Err(EngineError::new(PROXY_IO_READ_TIMEOUT, "读取超时"));
+                return Err(EngineError::new(
+                    PROXY_IO_READ_TIMEOUT,
+                    "Read operation timed out",
+                ));
             }
         };
         if read == 0 {
@@ -1410,13 +1503,16 @@ where
                 flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
                 return Err(EngineError::with_detail(
                     PROXY_TRANSFER_FAILED,
-                    "代理写入失败",
+                    "Failed to write proxy data",
                     err.to_string(),
                 ));
             }
             Err(_) => {
                 flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
-                return Err(EngineError::new(PROXY_IO_WRITE_TIMEOUT, "写入超时"));
+                return Err(EngineError::new(
+                    PROXY_IO_WRITE_TIMEOUT,
+                    "Write operation timed out",
+                ));
             }
         }
         let delta = read as u64;
@@ -1463,19 +1559,19 @@ fn parse_http_request_head(raw: &str) -> Result<ParsedHttpRequestHead, EngineErr
     let mut lines = raw.split("\r\n");
     let req_line = lines
         .next()
-        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "缺少请求行"))?;
+        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Missing HTTP request line"))?;
     let mut parts = req_line.split_whitespace();
     let method = parts
         .next()
-        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "请求方法缺失"))?
+        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Missing HTTP request method"))?
         .to_string();
     let target = parts
         .next()
-        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "请求目标缺失"))?
+        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Missing HTTP request target"))?
         .to_string();
     let version = parts
         .next()
-        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "HTTP 版本缺失"))?
+        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Missing HTTP version"))?
         .to_string();
 
     let mut headers = Vec::new();
@@ -1528,16 +1624,16 @@ fn parse_connect_target(target: &str) -> Result<(String, u16), EngineError> {
     let Some((host, port_raw)) = target.rsplit_once(':') else {
         return Err(EngineError::new(
             PROXY_HTTP_PARSE_FAILED,
-            "CONNECT 目标格式无效",
+            "Invalid CONNECT target format",
         ));
     };
     let port = port_raw
         .parse::<u16>()
-        .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "CONNECT 目标端口无效"))?;
+        .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Invalid CONNECT target port"))?;
     if host.is_empty() {
         return Err(EngineError::new(
             PROXY_HTTP_PARSE_FAILED,
-            "CONNECT 目标主机为空",
+            "CONNECT target host is empty",
         ));
     }
     Ok((host.to_string(), port))
@@ -1554,7 +1650,10 @@ fn resolve_http_target(req: &ParsedHttpRequestHead) -> Result<HttpTarget, Engine
         return parse_absolute_http_target(&req.target);
     }
     let host_value = req.host_header.as_ref().ok_or_else(|| {
-        EngineError::new(PROXY_HTTP_PARSE_FAILED, "缺少 Host 头，无法确定上游地址")
+        EngineError::new(
+            PROXY_HTTP_PARSE_FAILED,
+            "Missing Host header; unable to determine the upstream address",
+        )
     })?;
     let (host, port) = parse_host_port(host_value, 80)?;
     Ok(HttpTarget {
@@ -1565,9 +1664,12 @@ fn resolve_http_target(req: &ParsedHttpRequestHead) -> Result<HttpTarget, Engine
 }
 
 fn parse_absolute_http_target(target: &str) -> Result<HttpTarget, EngineError> {
-    let rest = target
-        .strip_prefix("http://")
-        .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "仅支持 http 绝对 URL"))?;
+    let rest = target.strip_prefix("http://").ok_or_else(|| {
+        EngineError::new(
+            PROXY_HTTP_PARSE_FAILED,
+            "Only absolute HTTP URLs are supported",
+        )
+    })?;
     let (authority, path) = match rest.find('/') {
         Some(index) => (&rest[..index], &rest[index..]),
         None => (rest, "/"),
@@ -1583,15 +1685,15 @@ fn parse_absolute_http_target(target: &str) -> Result<HttpTarget, EngineError> {
 fn parse_host_port(input: &str, default_port: u16) -> Result<(String, u16), EngineError> {
     let authority = input.rsplit('@').next().unwrap_or(input);
     if authority.starts_with('[') {
-        let end = authority
-            .find(']')
-            .ok_or_else(|| EngineError::new(PROXY_HTTP_PARSE_FAILED, "IPv6 地址格式无效"))?;
+        let end = authority.find(']').ok_or_else(|| {
+            EngineError::new(PROXY_HTTP_PARSE_FAILED, "Invalid IPv6 address format")
+        })?;
         let host = authority[..=end].to_string();
         let remain = &authority[end + 1..];
         if let Some(port_str) = remain.strip_prefix(':') {
             let port = port_str
                 .parse::<u16>()
-                .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "端口格式无效"))?;
+                .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Invalid port format"))?;
             return Ok((host, port));
         }
         return Ok((host, default_port));
@@ -1603,7 +1705,7 @@ fn parse_host_port(input: &str, default_port: u16) -> Result<(String, u16), Engi
     {
         let port = port_str
             .parse::<u16>()
-            .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "端口格式无效"))?;
+            .map_err(|_| EngineError::new(PROXY_HTTP_PARSE_FAILED, "Invalid port format"))?;
         return Ok((host.to_string(), port));
     }
 

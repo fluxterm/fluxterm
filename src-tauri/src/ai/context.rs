@@ -39,10 +39,12 @@ pub fn build_session_chat_input(
     settings: &AiSettings,
 ) -> Result<OpenAiSessionChatInput, EngineError> {
     with_store(state, |store| {
-        let session = store
-            .sessions
-            .get(&request.session_id)
-            .ok_or_else(|| EngineError::new("ai_context_missing", "未找到当前会话的 AI 上下文"))?;
+        let session = store.sessions.get(&request.session_id).ok_or_else(|| {
+            EngineError::new(
+                "ai_context_missing",
+                "AI context for the current session was not found",
+            )
+        })?;
         Ok(OpenAiSessionChatInput {
             context: build_session_context_snapshot(
                 session,
@@ -63,10 +65,12 @@ pub fn build_session_chat_stream_input(
     settings: &AiSettings,
 ) -> Result<OpenAiSessionChatStreamInput, EngineError> {
     with_store(state, |store| {
-        let session = store
-            .sessions
-            .get(&request.session_id)
-            .ok_or_else(|| EngineError::new("ai_context_missing", "未找到当前会话的 AI 上下文"))?;
+        let session = store.sessions.get(&request.session_id).ok_or_else(|| {
+            EngineError::new(
+                "ai_context_missing",
+                "AI context for the current session was not found",
+            )
+        })?;
         Ok(OpenAiSessionChatStreamInput {
             request_id: request.request_id,
             context: build_session_context_snapshot(

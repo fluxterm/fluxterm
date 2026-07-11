@@ -23,7 +23,7 @@ pub async fn ssh_tunnel_open(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SSH 隧道创建",
+            "Failed to create the SSH tunnel",
             err.to_string(),
         )
     })?
@@ -46,7 +46,7 @@ pub async fn ssh_tunnel_close(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SSH 隧道关闭",
+            "Failed to close the SSH tunnel",
             err.to_string(),
         )
     })?
@@ -67,7 +67,7 @@ pub async fn ssh_tunnel_list(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SSH 隧道列表查询",
+            "Failed to list SSH tunnels",
             err.to_string(),
         )
     })?
@@ -88,7 +88,7 @@ pub async fn ssh_tunnel_close_all(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SSH 隧道批量关闭",
+            "Failed to close SSH tunnels",
             err.to_string(),
         )
     })?

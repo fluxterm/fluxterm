@@ -542,11 +542,11 @@ fn set_runtime_state(runtime: &mut SessionRuntime, state: &str) {
 }
 
 fn session_not_found_error() -> RuntimeError {
-    RuntimeError::new("rdp_session_not_found", "RDP 会话不存在")
+    RuntimeError::new("rdp_session_not_found", "RDP session not found")
 }
 
 fn lock_error<T>(_: std::sync::PoisonError<std::sync::MutexGuard<'_, T>>) -> RuntimeError {
-    RuntimeError::new("rdp_runtime_poisoned", "RDP 运行时状态损坏")
+    RuntimeError::new("rdp_runtime_poisoned", "RDP runtime state is unavailable")
 }
 
 #[cfg(test)]

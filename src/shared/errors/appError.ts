@@ -109,10 +109,13 @@ export function translateAppError(error: unknown, t: Translate): string {
       ? error
       : normalizeToAppError(error, { code: "unknown_error", source: "tauri" });
   const explicitMessageKey = resolveMessageKey(normalized);
-  if (explicitMessageKey) return t(explicitMessageKey, normalized.messageVars);
   const code = resolveErrorCode(error);
   const key = code ? ERROR_CODE_TRANSLATIONS[code] : null;
+  if (explicitMessageKey && !explicitMessageKey.endsWith(".operationFailed")) {
+    return t(explicitMessageKey, normalized.messageVars);
+  }
   if (key) return t(key);
+  if (explicitMessageKey) return t(explicitMessageKey, normalized.messageVars);
   const message = normalized.message;
   const messageKey = findTranslationKey(message);
   if (messageKey) return t(messageKey);

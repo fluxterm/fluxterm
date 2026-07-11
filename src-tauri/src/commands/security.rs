@@ -48,14 +48,14 @@ pub fn security_unlock(
     input: SecurityPasswordInput,
 ) -> Result<SecurityStatus, EngineError> {
     let security_config = read_security_config(&app)?;
-    let config = security_config
-        .as_ref()
-        .ok_or_else(|| EngineError::new("security_mode_invalid", "当前未配置安全模式"))?;
+    let config = security_config.as_ref().ok_or_else(|| {
+        EngineError::new("security_mode_invalid", "Security mode is not configured")
+    })?;
     let provider = config.provider.trim().to_ascii_lowercase();
     if provider != "user_password" {
         return Err(EngineError::new(
             "security_unlock_unavailable",
-            "当前未启用强保护模式，无需解锁。",
+            "Strong protection mode is not enabled",
         ));
     }
     let session = CryptoService::unlock_user_password(config, &input.password)?;
@@ -77,7 +77,7 @@ pub fn security_lock(
     if provider != "user_password" {
         return Err(EngineError::new(
             "security_unlock_unavailable",
-            "当前未启用强保护模式，无需锁定。",
+            "Strong protection mode is not enabled",
         ));
     }
     security.clear_session();
@@ -99,7 +99,7 @@ pub fn security_enable_strong_protection(
     if current_crypto.provider_kind() != crate::security::EncryptionProviderKind::Embedded {
         return Err(EngineError::new(
             "security_enable_unavailable",
-            "当前已启用强保护模式，请直接修改安全密码。",
+            "Strong protection mode is already enabled",
         ));
     }
 
@@ -131,13 +131,13 @@ pub fn security_change_password(
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut rdp_store = read_rdp_profiles(&app)?;
     let current_config = read_security_config(&app)?;
-    let config = current_config
-        .as_ref()
-        .ok_or_else(|| EngineError::new("security_mode_invalid", "当前未配置安全模式"))?;
+    let config = current_config.as_ref().ok_or_else(|| {
+        EngineError::new("security_mode_invalid", "Security mode is not configured")
+    })?;
     if !config.provider.trim().eq_ignore_ascii_case("user_password") {
         return Err(EngineError::new(
             "security_change_unavailable",
-            "当前未启用强保护模式，无法修改安全密码。",
+            "Strong protection mode is not enabled",
         ));
     }
 
@@ -178,13 +178,13 @@ pub fn security_enable_weak_protection(
     {
         return Err(EngineError::new(
             "security_locked",
-            "当前安全数据已锁定，请先输入安全密码解锁。",
+            "Security data is locked",
         ));
     }
     if current_crypto.provider_kind() == crate::security::EncryptionProviderKind::Embedded {
         return Err(EngineError::new(
             "security_enable_unavailable",
-            "当前已经处于弱保护模式。",
+            "Weak protection mode is already enabled",
         ));
     }
 

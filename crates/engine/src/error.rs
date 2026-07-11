@@ -27,10 +27,11 @@ pub struct EngineError {
 impl EngineError {
     /// 创建仅包含错误码与消息的错误。
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let code = code.into();
         Self {
-            code: code.into(),
+            message_key: Some(default_message_key(&code).to_string()),
+            code,
             message: message.into(),
-            message_key: None,
             message_vars: None,
             detail: None,
         }
@@ -51,10 +52,11 @@ impl EngineError {
         message: impl Into<String>,
         detail: impl Into<String>,
     ) -> Self {
+        let code = code.into();
         Self {
-            code: code.into(),
+            message_key: Some(default_message_key(&code).to_string()),
+            code,
             message: message.into(),
-            message_key: None,
             message_vars: None,
             detail: Some(detail.into()),
         }
@@ -70,6 +72,41 @@ impl EngineError {
     pub fn with_message_vars(mut self, message_vars: Value) -> Self {
         self.message_vars = Some(Box::new(message_vars));
         self
+    }
+}
+
+/// 根据稳定错误码提供跨 Tauri 边界使用的默认翻译键。
+fn default_message_key(code: &str) -> &'static str {
+    if code.starts_with("serial_") {
+        "error.serial.operationFailed"
+    } else if code.starts_with("sftp_") {
+        "error.sftp.operationFailed"
+    } else if code.starts_with("ssh_") {
+        "error.ssh.operationFailed"
+    } else if code.starts_with("proxy_") {
+        "error.proxy.operationFailed"
+    } else if code.starts_with("rdp_") {
+        "error.rdp.operationFailed"
+    } else if code.starts_with("remote_edit_") {
+        "error.remoteEdit.operationFailed"
+    } else if code.starts_with("ai_") {
+        "error.ai.operationFailed"
+    } else if code.starts_with("security_")
+        || code.starts_with("crypto_")
+        || code.starts_with("secret_")
+    {
+        "error.security.operationFailed"
+    } else if code.starts_with("local_")
+        || code.starts_with("file_")
+        || code.starts_with("config_")
+        || code.starts_with("data_")
+        || code.starts_with("profile_")
+    {
+        "error.system.operationFailed"
+    } else if code.starts_with("session_") {
+        "error.session.operationFailed"
+    } else {
+        "error.backend.operationFailed"
     }
 }
 
@@ -123,5 +160,14 @@ mod tests {
         .expect("deserialize engine error");
 
         assert_eq!(error.detail.as_deref(), Some("legacy detail"));
+    }
+
+    #[test]
+    fn assigns_default_message_key_by_error_domain() {
+        let error = EngineError::new("serial_open_failed", "Failed to open serial port");
+        assert_eq!(
+            error.message_key.as_deref(),
+            Some("error.serial.operationFailed")
+        );
     }
 }

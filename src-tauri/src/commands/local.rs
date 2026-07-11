@@ -10,7 +10,11 @@ use crate::local_fs::local_list_entries;
 /// 获取本机家目录路径。
 pub fn local_home(app: AppHandle) -> Result<String, EngineError> {
     let path = app.path().home_dir().map_err(|err| {
-        EngineError::with_detail("local_home_failed", "无法获取本机家目录", err.to_string())
+        EngineError::with_detail(
+            "local_home_failed",
+            "Failed to resolve the local home directory",
+            err.to_string(),
+        )
     })?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -25,7 +29,11 @@ pub fn local_list(path: String) -> Result<Vec<engine::SftpEntry>, EngineError> {
 /// 获取本机可用的 SSH 私钥路径列表（按优先级排序）。
 pub fn local_ssh_keys(app: AppHandle) -> Result<Vec<String>, EngineError> {
     let home = app.path().home_dir().map_err(|err| {
-        EngineError::with_detail("local_home_failed", "无法获取本机家目录", err.to_string())
+        EngineError::with_detail(
+            "local_home_failed",
+            "Failed to resolve the local home directory",
+            err.to_string(),
+        )
     })?;
     let ssh_dir = home.join(".ssh");
     let candidates = ["id_ed25519", "id_rsa", "id_ecdsa", "id_dsa"];

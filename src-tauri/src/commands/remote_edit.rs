@@ -42,7 +42,7 @@ pub async fn remote_edit_open(
     .map_err(|err| {
         engine::EngineError::with_detail(
             "session_command_failed",
-            "无法执行远端编辑打开",
+            "Failed to open the remote edit session",
             err.to_string(),
         )
     })??;
@@ -84,7 +84,7 @@ pub async fn remote_edit_confirm_upload(
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
             "remote_edit_not_found",
-            "远端编辑实例不存在",
+            "Remote edit session not found",
         ));
     };
     {
@@ -92,7 +92,7 @@ pub async fn remote_edit_confirm_upload(
         if guard.pending_snapshot.is_none() {
             return Err(engine::EngineError::new(
                 "remote_edit_not_pending",
-                "当前远端编辑实例没有待确认的修改",
+                "The remote edit session has no pending changes",
             ));
         }
         guard.snapshot.status = RemoteEditStatus::Uploading;
@@ -128,7 +128,7 @@ pub async fn remote_edit_confirm_upload(
         if remote_before_upload.mtime != remote_mtime || remote_before_upload.size != remote_size {
             return Err(engine::EngineError::new(
                 "remote_edit_conflict",
-                "远端文件已发生变化，当前修改未回传",
+                "The remote file changed and local modifications were not uploaded",
             ));
         }
 
@@ -142,7 +142,7 @@ pub async fn remote_edit_confirm_upload(
     .map_err(|err| {
         engine::EngineError::with_detail(
             "session_command_failed",
-            "无法执行远端编辑上传",
+            "Failed to upload the remote edit working copy",
             err.to_string(),
         )
     })?;
@@ -216,7 +216,7 @@ pub async fn remote_edit_dismiss_pending(
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
             "remote_edit_not_found",
-            "远端编辑实例不存在",
+            "Remote edit session not found",
         ));
     };
     let snapshot = {

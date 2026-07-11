@@ -42,14 +42,14 @@ pub fn read_session_settings(app: &AppHandle) -> Result<SessionSettings, EngineE
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "session_settings_read_failed",
-            "无法读取终端配置文件",
+            "Failed to read the terminal settings file",
             err.to_string(),
         )
     })?;
     serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "session_settings_parse_failed",
-            "终端配置文件解析失败",
+            "Failed to parse the terminal settings file",
             err.to_string(),
         )
     })

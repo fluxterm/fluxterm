@@ -78,9 +78,10 @@ impl SerialManager {
         let ports = tokio_serial::available_ports().map_err(|error| {
             EngineError::with_detail(
                 "serial_port_list_failed",
-                "无法枚举系统串口",
+                "Failed to enumerate system serial ports",
                 error.to_string(),
             )
+            .with_message_key("error.serial.portListFailed")
         })?;
         let mut result = ports
             .into_iter()
@@ -181,7 +182,13 @@ impl SerialManager {
             let (tx, mut rx) = mpsc::unbounded_channel();
             let insert_result = sessions
                 .lock()
-                .map_err(|_| EngineError::new("serial_state_unavailable", "无法访问串口会话状态"))
+                .map_err(|_| {
+                    EngineError::localized(
+                        "serial_state_unavailable",
+                        "Serial session state is unavailable",
+                        "error.serial.stateUnavailable",
+                    )
+                })
                 .map(|mut guard| {
                     guard.insert(task_session_id.clone(), SerialSessionHandle { tx });
                 });
@@ -218,9 +225,9 @@ impl SerialManager {
                             Err(error) => {
                                 final_error = Some(EngineError::with_detail(
                                     "serial_read_failed",
-                                    "串口读取失败或设备已断开",
+                                    "Failed to read from the serial port or the device was disconnected",
                                     error.to_string(),
-                                ));
+                                ).with_message_key("error.serial.readFailed"));
                                 break;
                             }
                         }
@@ -231,9 +238,10 @@ impl SerialManager {
                                 let result = port.write_all(&data).await.map_err(|error| {
                                     EngineError::with_detail(
                                         "serial_write_failed",
-                                        "串口写入失败",
+                                        "Failed to write to the serial port",
                                         error.to_string(),
                                     )
+                                    .with_message_key("error.serial.writeFailed")
                                 });
                                 let failed = result.as_ref().err().cloned();
                                 let _ = respond_to.send(result);
@@ -247,9 +255,10 @@ impl SerialManager {
                                 let result = port.flush().await.map_err(|error| {
                                     EngineError::with_detail(
                                         "serial_flush_failed",
-                                        "串口缓冲区刷新失败",
+                                        "Failed to flush the serial port buffer",
                                         error.to_string(),
                                     )
+                                    .with_message_key("error.serial.flushFailed")
                                 });
                                 let _ = respond_to.send(result);
                                 break;
@@ -285,9 +294,13 @@ impl SerialManager {
                 }
             }
         });
-        ready_rx
-            .await
-            .map_err(|_| EngineError::new("serial_connect_task_failed", "串口连接任务意外结束"))?
+        ready_rx.await.map_err(|_| {
+            EngineError::localized(
+                "serial_connect_task_failed",
+                "The serial connection task ended unexpectedly",
+                "error.serial.connectTaskFailed",
+            )
+        })?
     }
 
     /// 将文本按会话配置的编码写入串口。
@@ -307,10 +320,8 @@ impl SerialManager {
         let (respond_to, response) = oneshot::channel();
         self.sender(session_id)?
             .send(SerialCommand::Write { data, respond_to })
-            .map_err(|_| EngineError::new("serial_session_closed", "串口会话已经关闭"))?;
-        response
-            .await
-            .map_err(|_| EngineError::new("serial_session_closed", "串口会话已经关闭"))?
+            .map_err(|_| serial_session_closed_error())?;
+        response.await.map_err(|_| serial_session_closed_error())?
     }
 
     /// 主动关闭串口会话。
@@ -318,10 +329,8 @@ impl SerialManager {
         let (respond_to, response) = oneshot::channel();
         self.sender(session_id)?
             .send(SerialCommand::Disconnect { respond_to })
-            .map_err(|_| EngineError::new("serial_session_closed", "串口会话已经关闭"))?;
-        response
-            .await
-            .map_err(|_| EngineError::new("serial_session_closed", "串口会话已经关闭"))?
+            .map_err(|_| serial_session_closed_error())?;
+        response.await.map_err(|_| serial_session_closed_error())?
     }
 
     fn sender(
@@ -330,10 +339,16 @@ impl SerialManager {
     ) -> Result<mpsc::UnboundedSender<SerialCommand>, EngineError> {
         self.sessions
             .lock()
-            .map_err(|_| EngineError::new("serial_state_unavailable", "无法访问串口会话状态"))?
+            .map_err(|_| serial_state_unavailable_error())?
             .get(session_id)
             .map(|handle| handle.tx.clone())
-            .ok_or_else(|| EngineError::new("serial_session_not_found", "串口会话不存在"))
+            .ok_or_else(|| {
+                EngineError::localized(
+                    "serial_session_not_found",
+                    "Serial session not found",
+                    "error.serial.sessionNotFound",
+                )
+            })
     }
 
     /// 原子预留端口，直到返回的守卫被释放。
@@ -341,11 +356,11 @@ impl SerialManager {
         let mut claimed_ports = self
             .claimed_ports
             .lock()
-            .map_err(|_| EngineError::new("serial_state_unavailable", "无法访问串口会话状态"))?;
+            .map_err(|_| serial_state_unavailable_error())?;
         if !claimed_ports.insert(port_name.to_string()) {
             return Err(EngineError::localized(
                 "serial_port_in_use",
-                format!("串口 {port_name} 已在会话中连接"),
+                format!("Serial port {port_name} is already connected in a session"),
                 "error.serial.portInUse",
             )
             .with_message_vars(json!({ "portName": port_name })));
@@ -360,13 +375,18 @@ impl SerialManager {
 /// 校验串口配置中的必填字段和波特率。
 pub fn validate_profile(profile: &SerialProfile) -> Result<(), EngineError> {
     if profile.port_name.trim().is_empty() {
-        return Err(EngineError::new("serial_port_required", "串口名称不能为空"));
+        return Err(EngineError::localized(
+            "serial_port_required",
+            "Serial port name is required",
+            "error.serial.portRequired",
+        ));
     }
     if profile.baud_rate == 0 {
         return Err(EngineError::new(
             "serial_baud_rate_invalid",
-            "串口波特率必须大于零",
-        ));
+            "Serial baud rate must be greater than zero",
+        )
+        .with_message_key("error.serial.baudRateInvalid"));
     }
     Ok(())
 }
@@ -375,14 +395,20 @@ fn encode_text(text: &str, encoding: SerialEncoding) -> Result<Vec<u8>, EngineEr
     if encoding == SerialEncoding::Utf8 {
         return Ok(text.as_bytes().to_vec());
     }
-    let encoding = Encoding::for_label(b"gb18030")
-        .ok_or_else(|| EngineError::new("serial_encoding_unavailable", "GB18030 编码不可用"))?;
+    let encoding = Encoding::for_label(b"gb18030").ok_or_else(|| {
+        EngineError::localized(
+            "serial_encoding_unavailable",
+            "GB18030 encoding is unavailable",
+            "error.serial.encodingUnavailable",
+        )
+    })?;
     let (encoded, _, had_errors) = encoding.encode(text);
     if had_errors {
         return Err(EngineError::new(
             "serial_text_encode_failed",
-            "文本包含 GB18030 无法表示的字符",
-        ));
+            "The text contains characters that cannot be represented in GB18030",
+        )
+        .with_message_key("error.serial.textEncodeFailed"));
     }
     Ok(encoded.into_owned())
 }
@@ -398,7 +424,28 @@ fn map_open_error(error: tokio_serial::Error) -> EngineError {
     } else {
         "serial_open_failed"
     };
-    EngineError::with_detail(code, "无法打开目标串口", detail)
+    EngineError::with_detail(code, "Failed to open the target serial port", detail)
+        .with_message_key(if code == "serial_port_in_use" {
+            "error.serial.externalPortInUse"
+        } else {
+            "error.serial.openFailed"
+        })
+}
+
+fn serial_state_unavailable_error() -> EngineError {
+    EngineError::localized(
+        "serial_state_unavailable",
+        "Serial session state is unavailable",
+        "error.serial.stateUnavailable",
+    )
+}
+
+fn serial_session_closed_error() -> EngineError {
+    EngineError::localized(
+        "serial_session_closed",
+        "Serial session is already closed",
+        "error.serial.sessionClosed",
+    )
 }
 
 fn to_data_bits(value: SerialDataBits) -> DataBits {

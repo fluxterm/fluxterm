@@ -195,7 +195,7 @@ impl RdpState {
             .ok_or_else(|| {
                 EngineError::new(
                     "rdp_resolution_required",
-                    "RDP 会话缺少有效分辨率，请重新检查显示模式配置",
+                    "The RDP session does not have a valid resolution",
                 )
             })?;
         let snapshot = RdpSessionSnapshot {
@@ -338,7 +338,7 @@ impl RdpState {
         sessions
             .get(session_id)
             .map(|runtime| (runtime.snapshot.clone(), runtime.profile.clone()))
-            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP 会话不存在"))
+            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP session not found"))
     }
 
     fn update_session_snapshot(
@@ -349,7 +349,7 @@ impl RdpState {
         let mut sessions = self.sessions.lock().map_err(lock_error)?;
         let runtime = sessions
             .get_mut(session_id)
-            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP 会话不存在"))?;
+            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP session not found"))?;
         update(&mut runtime.snapshot);
         Ok(runtime.snapshot.clone())
     }
@@ -457,5 +457,5 @@ fn runtime_error(err: RuntimeError) -> EngineError {
 fn lock_error(
     _: std::sync::PoisonError<std::sync::MutexGuard<'_, HashMap<String, LocalSessionRuntime>>>,
 ) -> EngineError {
-    EngineError::new("rdp_runtime_poisoned", "RDP 运行时状态损坏")
+    EngineError::new("rdp_runtime_poisoned", "RDP runtime state is unavailable")
 }

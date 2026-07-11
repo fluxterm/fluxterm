@@ -164,7 +164,7 @@ pub fn rdp_profile_save(
     if profile.host.is_empty() || profile.username.is_empty() {
         return Err(EngineError::new(
             "rdp_profile_required",
-            "RDP 主机地址和用户名不能为空",
+            "RDP host and username are required",
         ));
     }
     if profile.id.is_empty() {
@@ -184,7 +184,7 @@ pub fn rdp_profile_save(
             if width == 0 || height == 0 {
                 return Err(EngineError::new(
                     "rdp_fixed_resolution_required",
-                    "固定分辨率模式必须提供有效的宽度和高度",
+                    "Fixed resolution mode requires a valid width and height",
                 ));
             }
             profile.width = Some(width.max(320));
@@ -534,7 +534,7 @@ fn load_profile(
         .profiles
         .into_iter()
         .find(|item| item.id == profile_id)
-        .ok_or_else(|| EngineError::new("rdp_profile_not_found", "RDP Profile 不存在"))?;
+        .ok_or_else(|| EngineError::new("rdp_profile_not_found", "RDP profile not found"))?;
     decrypt_rdp_profile_secrets(profile, &secret_store)
 }
 

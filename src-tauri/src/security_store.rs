@@ -32,14 +32,14 @@ pub fn read_security_config(app: &AppHandle) -> Result<Option<SecretConfig>, Eng
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "security_config_read_failed",
-            "无法读取安全配置文件",
+            "Failed to read the security settings file",
             err.to_string(),
         )
     })?;
     let config = serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "security_config_parse_failed",
-            "安全配置文件解析失败",
+            "Failed to parse the security settings file",
             err.to_string(),
         )
     })?;
@@ -52,7 +52,7 @@ pub fn write_security_config(app: &AppHandle, config: &SecretConfig) -> Result<(
     let content = serde_json::to_string_pretty(config).map_err(|err| {
         EngineError::with_detail(
             "security_config_write_failed",
-            "无法序列化安全配置文件",
+            "Failed to serialize the security settings file",
             err.to_string(),
         )
     })?;

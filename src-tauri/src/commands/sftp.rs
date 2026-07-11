@@ -23,7 +23,7 @@ pub async fn sftp_list(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 列表",
+            "Failed to list the SFTP directory",
             err.to_string(),
         )
     })?
@@ -44,7 +44,7 @@ pub async fn sftp_home(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP Home",
+            "Failed to resolve the SFTP home directory",
             err.to_string(),
         )
     })?
@@ -67,7 +67,7 @@ pub async fn sftp_resolve_path(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 路径解析",
+            "Failed to resolve the SFTP path",
             err.to_string(),
         )
     })?
@@ -92,7 +92,7 @@ pub async fn sftp_upload(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 上传",
+            "Failed to upload through SFTP",
             err.to_string(),
         )
     })?
@@ -117,7 +117,7 @@ pub async fn sftp_upload_batch(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 批量上传",
+            "Failed to perform the SFTP batch upload",
             err.to_string(),
         )
     })?
@@ -142,7 +142,7 @@ pub async fn sftp_download(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 下载",
+            "Failed to download through SFTP",
             err.to_string(),
         )
     })?
@@ -167,7 +167,7 @@ pub async fn sftp_download_dir(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 目录下载",
+            "Failed to download the SFTP directory",
             err.to_string(),
         )
     })?
@@ -190,7 +190,7 @@ pub async fn sftp_cancel_transfer(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 取消传输",
+            "Failed to cancel the SFTP transfer",
             err.to_string(),
         )
     })?
@@ -215,7 +215,7 @@ pub async fn sftp_rename(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 重命名",
+            "Failed to rename the SFTP entry",
             err.to_string(),
         )
     })?
@@ -238,7 +238,7 @@ pub async fn sftp_remove(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 删除",
+            "Failed to remove the SFTP entry",
             err.to_string(),
         )
     })?
@@ -261,7 +261,7 @@ pub async fn sftp_mkdir(
     .map_err(|err| {
         EngineError::with_detail(
             "session_command_failed",
-            "无法执行 SFTP 创建目录",
+            "Failed to create the SFTP directory",
             err.to_string(),
         )
     })?

@@ -185,14 +185,14 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "ai_settings_read_failed",
-            "无法读取终端 AI 配置文件",
+            "Failed to read the terminal AI settings file",
             err.to_string(),
         )
     })?;
     let raw_value: serde_json::Value = serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "ai_settings_parse_failed",
-            "终端 AI 配置文件解析失败",
+            "Failed to parse the terminal AI settings file",
             err.to_string(),
         )
     })?;
@@ -205,7 +205,7 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
             let settings: AiSettings = serde_json::from_value(raw_value).map_err(|err| {
                 EngineError::with_detail(
                     "ai_settings_parse_failed",
-                    "终端 AI 配置文件解析失败",
+                    "Failed to parse the terminal AI settings file",
                     err.to_string(),
                 )
             })?;
@@ -213,7 +213,7 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
         }
         _ => Err(EngineError::new(
             "ai_settings_parse_failed",
-            "终端 AI 配置文件版本不受支持，请清理旧配置后重试。",
+            "The terminal AI settings file version is unsupported",
         )),
     }
 }
@@ -224,7 +224,7 @@ pub fn write_ai_settings(app: &AppHandle, settings: AiSettings) -> Result<AiSett
     let content = serde_json::to_string_pretty(&validated).map_err(|err| {
         EngineError::with_detail(
             "ai_settings_serialize_failed",
-            "无法序列化终端 AI 配置",
+            "Failed to serialize the terminal AI settings",
             err.to_string(),
         )
     })?;
@@ -302,7 +302,7 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
     if settings.selection_max_chars == 0 {
         return Err(EngineError::new(
             "ai_settings_invalid",
-            "终端 AI 配置文件中的 selectionMaxChars 必须大于 0",
+            "selectionMaxChars in the terminal AI settings must be greater than zero",
         ));
     }
     if settings.session_recent_output_max_chars == 0
@@ -314,7 +314,7 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
     {
         return Err(EngineError::new(
             "ai_settings_invalid",
-            "终端 AI 配置文件中的上下文预算、缓存 TTL 与请求超时必须大于 0",
+            "Context budgets, cache TTL, and request timeout in the terminal AI settings must be greater than zero",
         ));
     }
 
@@ -332,13 +332,13 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
         if provider.id.is_empty() {
             return Err(EngineError::new(
                 "ai_settings_invalid",
-                "AI 接入配置的 id 不能为空",
+                "AI provider configuration id is required",
             ));
         }
         if !seen_ids.insert(provider.id.clone()) {
             return Err(EngineError::new(
                 "ai_settings_invalid",
-                "AI 接入配置的 id 不能重复",
+                "AI provider configuration ids must be unique",
             ));
         }
     }

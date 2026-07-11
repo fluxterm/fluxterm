@@ -295,7 +295,7 @@ fn collect_expired_cache_paths(
     let entries = fs::read_dir(path).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_cleanup_failed",
-            "无法遍历缓存目录",
+            "Failed to traverse the cache directory",
             err.to_string(),
         )
     })?;
@@ -303,7 +303,7 @@ fn collect_expired_cache_paths(
         let entry = entry.map_err(|err| {
             EngineError::with_detail(
                 "remote_edit_cleanup_failed",
-                "无法读取缓存目录项",
+                "Failed to read a cache directory entry",
                 err.to_string(),
             )
         })?;
@@ -322,7 +322,7 @@ fn collect_expired_cache_paths(
         let metadata = fs::metadata(&entry_path).map_err(|err| {
             EngineError::with_detail(
                 "remote_edit_cleanup_failed",
-                "无法读取缓存元数据",
+                "Failed to read cache metadata",
                 err.to_string(),
             )
         })?;
@@ -352,7 +352,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
     fs::create_dir_all(&root_dir).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_cache_failed",
-            "无法创建远端编辑缓存目录",
+            "Failed to create the remote edit cache directory",
             err.to_string(),
         )
     })?;
@@ -382,7 +382,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
         serde_json::to_vec_pretty(&payload).map_err(|err| {
             EngineError::with_detail(
                 "remote_edit_cache_failed",
-                "无法写入缓存清理标记",
+                "Failed to write the cache cleanup marker",
                 err.to_string(),
             )
         })?,
@@ -390,7 +390,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
     .map_err(|err| {
         EngineError::with_detail(
             "remote_edit_cache_failed",
-            "无法写入缓存清理标记",
+            "Failed to write the cache cleanup marker",
             err.to_string(),
         )
     })?;
@@ -488,14 +488,14 @@ pub(crate) fn read_local_file_snapshot(path: &Path) -> Result<RemoteFileSnapshot
     let metadata = fs::metadata(path).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_snapshot_failed",
-            "无法读取本地文件元数据",
+            "Failed to read local file metadata",
             err.to_string(),
         )
     })?;
     let bytes = fs::read(path).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_snapshot_failed",
-            "无法读取本地文件内容",
+            "Failed to read local file content",
             err.to_string(),
         )
     })?;
@@ -530,14 +530,14 @@ fn load_remote_edit_index(app: &AppHandle) -> Result<RemoteEditIndexStore, Engin
     let raw = fs::read(&path).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法读取远端编辑索引",
+            "Failed to read the remote edit index",
             err.to_string(),
         )
     })?;
     let mut store = serde_json::from_slice::<RemoteEditIndexStore>(&raw).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法解析远端编辑索引",
+            "Failed to parse the remote edit index",
             err.to_string(),
         )
     })?;
@@ -555,7 +555,7 @@ fn write_remote_edit_index(
     fs::create_dir_all(&root_dir).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法创建远端编辑索引目录",
+            "Failed to create the remote edit index directory",
             err.to_string(),
         )
     })?;
@@ -564,14 +564,14 @@ fn write_remote_edit_index(
     let bytes = serde_json::to_vec_pretty(store).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法序列化远端编辑索引",
+            "Failed to serialize the remote edit index",
             err.to_string(),
         )
     })?;
     fs::write(&tmp_path, bytes).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法写入远端编辑索引临时文件",
+            "Failed to write the temporary remote edit index",
             err.to_string(),
         )
     })?;
@@ -580,14 +580,14 @@ fn write_remote_edit_index(
             fs::remove_file(&path).map_err(|remove_err| {
                 EngineError::with_detail(
                     "remote_edit_index_failed",
-                    "无法替换远端编辑索引文件",
+                    "Failed to replace the remote edit index",
                     format!("{rename_err}; {remove_err}"),
                 )
             })?;
             fs::rename(&tmp_path, &path).map_err(|err| {
                 EngineError::with_detail(
                     "remote_edit_index_failed",
-                    "无法替换远端编辑索引文件",
+                    "Failed to replace the remote edit index",
                     err.to_string(),
                 )
             })?;
@@ -595,7 +595,7 @@ fn write_remote_edit_index(
         }
         Err(EngineError::with_detail(
             "remote_edit_index_failed",
-            "无法替换远端编辑索引文件",
+            "Failed to replace the remote edit index",
             rename_err.to_string(),
         ))
     })
@@ -702,7 +702,7 @@ pub(crate) fn open_local_file(
     if !Path::new(file_path).is_file() {
         return Err(EngineError::new(
             "file_open_failed",
-            "目标文件不存在或不可访问",
+            "The target file does not exist or is inaccessible",
         ));
     }
 
@@ -723,7 +723,11 @@ pub(crate) fn open_local_file(
     app.opener()
         .open_path(file_path, None::<&str>)
         .map_err(|error| {
-            EngineError::with_detail("file_open_failed", "无法打开文件", error.to_string())
+            EngineError::with_detail(
+                "file_open_failed",
+                "Failed to open the file",
+                error.to_string(),
+            )
         })
 }
 
@@ -731,7 +735,7 @@ fn ensure_remote_workspace_parent(path: &Path) -> Result<(), EngineError> {
     fs::create_dir_all(path).map_err(|err| {
         EngineError::with_detail(
             "remote_edit_cache_failed",
-            "无法创建远端编辑工作副本目录",
+            "Failed to create the remote edit working copy directory",
             err.to_string(),
         )
     })
@@ -753,7 +757,7 @@ fn should_reuse_local_workspace(
     if !is_same_snapshot(&local_snapshot, &index_entry.baseline) {
         return Err(EngineError::new(
             "remote_edit_local_dirty",
-            "本地工作副本存在未回传修改，不能直接继续打开",
+            "The local working copy contains unsynchronized changes",
         ));
     }
     Ok(remote_entry.mtime == index_entry.remote_mtime
@@ -780,7 +784,7 @@ pub(crate) fn remote_edit_prepare_open(
     if !matches!(remote_entry.kind, engine::SftpEntryKind::File) {
         return Err(EngineError::new(
             "remote_edit_not_file",
-            "当前条目不是可编辑文件",
+            "The current entry is not an editable file",
         ));
     }
 
@@ -799,7 +803,7 @@ pub(crate) fn remote_edit_prepare_open(
         let existing_index_entry = index_entry.ok_or_else(|| {
             EngineError::new(
                 "remote_edit_workspace_invalid",
-                "本地工作副本索引缺失或已损坏，无法确认文件基线",
+                "The local working copy index is missing or corrupted",
             )
         })?;
         if existing_index_entry.instance_id != instance_id
@@ -810,7 +814,7 @@ pub(crate) fn remote_edit_prepare_open(
         {
             return Err(EngineError::new(
                 "remote_edit_workspace_invalid",
-                "本地工作副本索引与目标文件不匹配，无法安全复用",
+                "The local working copy index does not match the target file",
             ));
         }
         if should_reuse_local_workspace(&local_path, &remote_entry, &existing_index_entry)? {

@@ -149,7 +149,7 @@ pub async fn ai_session_chat_stream_start(
         .map_err(|err| {
             EngineError::with_detail(
                 "ai_event_emit_failed",
-                "无法发送 AI 流式事件",
+                "Failed to emit the AI streaming event",
                 err.to_string(),
             )
         })?;
@@ -163,7 +163,7 @@ pub async fn ai_session_chat_stream_start(
         .map_err(|err| {
             EngineError::with_detail(
                 "ai_event_emit_failed",
-                "无法发送 AI 流式事件",
+                "Failed to emit the AI streaming event",
                 err.to_string(),
             )
         })?;
@@ -248,7 +248,7 @@ fn build_cache_key(label: &str, value: &impl Serialize) -> Result<String, Engine
     let serialized = serde_json::to_string(value).map_err(|err| {
         EngineError::with_detail(
             "ai_cache_key_invalid",
-            "无法生成 AI 请求缓存键",
+            "Failed to generate the AI request cache key",
             err.to_string(),
         )
     })?;
@@ -277,7 +277,7 @@ impl OpenAiToEngineError {
     fn from_emit(error: tauri::Error) -> Self {
         Self(EngineError::with_detail(
             "ai_event_emit_failed",
-            "无法发送 AI 流式事件",
+            "Failed to emit the AI streaming event",
             error.to_string(),
         ))
     }

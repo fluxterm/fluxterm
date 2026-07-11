@@ -18,7 +18,7 @@ pub fn file_open(
     if !Path::new(&file_path).is_file() {
         return Err(EngineError::new(
             "file_open_failed",
-            "目标文件不存在或不可访问",
+            "The target file does not exist or is inaccessible",
         ));
     }
 
@@ -39,7 +39,7 @@ pub fn file_open(
                             "editorPath": editor_path.clone(),
                             "error": {
                                 "code": "file_open_editor_failed",
-                                "message": "使用默认编辑器打开失败，回退系统打开方式",
+                                "message": "The default editor failed; falling back to the system opener",
                                 "detail": error.to_string(),
                             }
                         }),
@@ -56,7 +56,7 @@ pub fn file_open(
                     "editorPath": editor_path.clone(),
                     "error": {
                         "code": "file_open_editor_invalid",
-                        "message": "默认编辑器路径无效",
+                        "message": "The default editor path is invalid",
                         "detail": Option::<String>::None,
                     }
                 }),
@@ -67,6 +67,10 @@ pub fn file_open(
     app.opener()
         .open_path(&file_path, None::<&str>)
         .map_err(|error| {
-            EngineError::with_detail("file_open_failed", "无法打开文件", error.to_string())
+            EngineError::with_detail(
+                "file_open_failed",
+                "Failed to open the file",
+                error.to_string(),
+            )
         })
 }

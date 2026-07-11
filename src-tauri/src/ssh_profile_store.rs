@@ -55,14 +55,14 @@ pub fn read_ssh_profiles(app: &AppHandle) -> Result<SshProfileStore, EngineError
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "ssh_profile_read_failed",
-            "无法读取 SSH 配置文件",
+            "Failed to read the SSH profile file",
             err.to_string(),
         )
     })?;
     serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "ssh_profile_parse_failed",
-            "SSH 配置文件解析失败",
+            "Failed to parse the SSH profile file",
             err.to_string(),
         )
     })
@@ -73,7 +73,7 @@ pub fn write_ssh_profiles(app: &AppHandle, store: &SshProfileStore) -> Result<()
     let content = serde_json::to_string_pretty(store).map_err(|err| {
         EngineError::with_detail(
             "ssh_profile_write_failed",
-            "无法序列化 SSH 配置文件",
+            "Failed to serialize the SSH profile file",
             err.to_string(),
         )
     })?;
@@ -88,14 +88,14 @@ pub fn read_ssh_groups(app: &AppHandle) -> Result<Vec<String>, EngineError> {
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "ssh_group_read_failed",
-            "无法读取 SSH 分组文件",
+            "Failed to read the SSH group file",
             err.to_string(),
         )
     })?;
     let store: GroupStore = serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "ssh_group_parse_failed",
-            "SSH 分组文件解析失败",
+            "Failed to parse the SSH group file",
             err.to_string(),
         )
     })?;
@@ -112,7 +112,7 @@ pub fn write_ssh_groups(app: &AppHandle, groups: &[String]) -> Result<(), Engine
     .map_err(|err| {
         EngineError::with_detail(
             "ssh_group_write_failed",
-            "无法序列化 SSH 分组文件",
+            "Failed to serialize the SSH group file",
             err.to_string(),
         )
     })?;

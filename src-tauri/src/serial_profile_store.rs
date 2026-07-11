@@ -37,16 +37,18 @@ pub fn read_serial_profiles(app: &AppHandle) -> Result<SerialProfileStore, Engin
     let content = fs::read_to_string(&path).map_err(|error| {
         EngineError::with_detail(
             "serial_profile_read_failed",
-            "无法读取串口配置文件",
+            "Failed to read the serial profile file",
             error.to_string(),
         )
+        .with_message_key("error.serial.profileReadFailed")
     })?;
     serde_json::from_str(&content).map_err(|error| {
         EngineError::with_detail(
             "serial_profile_parse_failed",
-            "串口配置文件解析失败",
+            "Failed to parse the serial profile file",
             error.to_string(),
         )
+        .with_message_key("error.serial.profileParseFailed")
     })
 }
 
@@ -59,9 +61,10 @@ pub fn write_serial_profiles(
     let content = serde_json::to_string_pretty(store).map_err(|error| {
         EngineError::with_detail(
             "serial_profile_write_failed",
-            "无法序列化串口配置文件",
+            "Failed to serialize the serial profile file",
             error.to_string(),
         )
+        .with_message_key("error.serial.profileWriteFailed")
     })?;
     write_atomic(path, &content)
 }
@@ -75,16 +78,18 @@ pub fn read_serial_groups(app: &AppHandle) -> Result<Vec<String>, EngineError> {
     let content = fs::read_to_string(&path).map_err(|error| {
         EngineError::with_detail(
             "serial_groups_read_failed",
-            "无法读取串口分组文件",
+            "Failed to read the serial group file",
             error.to_string(),
         )
+        .with_message_key("error.serial.groupsReadFailed")
     })?;
     serde_json::from_str(&content).map_err(|error| {
         EngineError::with_detail(
             "serial_groups_parse_failed",
-            "串口分组文件解析失败",
+            "Failed to parse the serial group file",
             error.to_string(),
         )
+        .with_message_key("error.serial.groupsParseFailed")
     })
 }
 
@@ -94,9 +99,10 @@ pub fn write_serial_groups(app: &AppHandle, groups: &[String]) -> Result<Vec<Str
     let content = serde_json::to_string_pretty(&normalized).map_err(|error| {
         EngineError::with_detail(
             "serial_groups_write_failed",
-            "无法序列化串口分组文件",
+            "Failed to serialize the serial group file",
             error.to_string(),
         )
+        .with_message_key("error.serial.groupsWriteFailed")
     })?;
     write_atomic(resolve_serial_groups_path(app)?, &content)?;
     Ok(normalized)

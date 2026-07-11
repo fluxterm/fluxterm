@@ -18,8 +18,9 @@
     "format": "prettier --write src/",
     "format:all": "pnpm format && cargo fmt",
     "telemetry:check": "node scripts/check-telemetry.mjs",
-    "check": "pnpm type-check && pnpm lint && pnpm telemetry:check",
-    "check:all": "pnpm type-check && pnpm lint && pnpm telemetry:check && cargo clippy --all-targets --all-features -- -D warnings",
+    "runtime-message:check": "node scripts/check-runtime-messages.mjs",
+    "check": "pnpm type-check && pnpm lint && pnpm telemetry:check && pnpm runtime-message:check",
+    "check:all": "pnpm type-check && pnpm lint && pnpm telemetry:check && pnpm runtime-message:check && cargo clippy --all-targets --all-features -- -D warnings",
     "code:stats": "node --experimental-strip-types scripts/count-code-lines.ts"
   },
   "dependencies": {

@@ -25,7 +25,11 @@ impl UserPasswordProvider {
 
     fn cipher(&self) -> Result<Aes256Gcm, EngineError> {
         Aes256Gcm::new_from_slice(&self.encryption_key).map_err(|err| {
-            EngineError::with_detail("crypto_init_failed", "无法初始化加密器", err.to_string())
+            EngineError::with_detail(
+                "crypto_init_failed",
+                "Failed to initialize the cipher",
+                err.to_string(),
+            )
         })
     }
 }
@@ -48,7 +52,9 @@ impl EncryptionProvider for UserPasswordProvider {
         let nonce: [u8; 12] = random();
         let ciphertext = cipher
             .encrypt(Nonce::from_slice(&nonce), plaintext)
-            .map_err(|_| EngineError::new("secret_encrypt_failed", "凭据加密失败"))?;
+            .map_err(|_| {
+                EngineError::new("secret_encrypt_failed", "Failed to encrypt the credential")
+            })?;
         Ok(ProviderCiphertext {
             algorithm: EncryptionAlgorithm::Aes256Gcm,
             nonce: nonce.to_vec(),
@@ -63,6 +69,8 @@ impl EncryptionProvider for UserPasswordProvider {
                 Nonce::from_slice(&payload.nonce),
                 payload.ciphertext.as_ref(),
             )
-            .map_err(|_| EngineError::new("secret_decrypt_failed", "凭据解密失败"))
+            .map_err(|_| {
+                EngineError::new("secret_decrypt_failed", "Failed to decrypt the credential")
+            })
     }
 }

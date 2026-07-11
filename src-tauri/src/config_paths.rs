@@ -42,7 +42,11 @@ pub fn load_dotenv_strict() -> Result<(), String> {
 /// 解析应用配置根目录。
 pub fn resolve_config_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     let home = app.path().home_dir().map_err(|err| {
-        EngineError::with_detail("config_path_failed", "无法获取用户主目录", err.to_string())
+        EngineError::with_detail(
+            "config_path_failed",
+            "Failed to resolve the user home directory",
+            err.to_string(),
+        )
     })?;
 
     if let Ok(value) = std::env::var(CONFIG_DIR_ENV_KEY) {
@@ -74,7 +78,7 @@ pub fn resolve_config_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> 
                 "sourceType": "env",
                 "error": {
                     "code": "config_dir_env_empty",
-                    "message": "环境变量配置目录为空，已忽略",
+                    "message": "The configuration directory environment variable is empty and was ignored",
                     "detail": Option::<String>::None,
                 }
             }),
@@ -87,7 +91,11 @@ pub fn resolve_config_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> 
 /// 解析应用数据根目录。
 pub fn resolve_data_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     app.path().app_data_dir().map_err(|err| {
-        EngineError::with_detail("data_path_failed", "无法获取应用数据目录", err.to_string())
+        EngineError::with_detail(
+            "data_path_failed",
+            "Failed to resolve the application data directory",
+            err.to_string(),
+        )
     })
 }
 

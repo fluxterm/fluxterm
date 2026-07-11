@@ -56,14 +56,14 @@ pub fn read_rdp_profiles(app: &AppHandle) -> Result<RdpProfileStore, EngineError
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "rdp_profile_read_failed",
-            "无法读取 RDP 配置文件",
+            "Failed to read the RDP profile file",
             err.to_string(),
         )
     })?;
     serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "rdp_profile_parse_failed",
-            "RDP 配置文件解析失败",
+            "Failed to parse the RDP profile file",
             err.to_string(),
         )
     })
@@ -74,7 +74,7 @@ pub fn write_rdp_profiles(app: &AppHandle, store: &RdpProfileStore) -> Result<()
     let content = serde_json::to_string_pretty(store).map_err(|err| {
         EngineError::with_detail(
             "rdp_profile_write_failed",
-            "无法序列化 RDP 配置文件",
+            "Failed to serialize the RDP profile file",
             err.to_string(),
         )
     })?;
@@ -89,14 +89,14 @@ pub fn read_rdp_groups(app: &AppHandle) -> Result<Vec<String>, EngineError> {
     let content = fs::read_to_string(&path).map_err(|err| {
         EngineError::with_detail(
             "rdp_group_read_failed",
-            "无法读取 RDP 分组文件",
+            "Failed to read the RDP group file",
             err.to_string(),
         )
     })?;
     let store: GroupStore = serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
             "rdp_group_parse_failed",
-            "RDP 分组文件解析失败",
+            "Failed to parse the RDP group file",
             err.to_string(),
         )
     })?;
@@ -113,7 +113,7 @@ pub fn write_rdp_groups(app: &AppHandle, groups: &[String]) -> Result<(), Engine
     .map_err(|err| {
         EngineError::with_detail(
             "rdp_group_write_failed",
-            "无法序列化 RDP 分组文件",
+            "Failed to serialize the RDP group file",
             err.to_string(),
         )
     })?;

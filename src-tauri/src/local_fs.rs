@@ -12,18 +12,34 @@ pub fn local_list_entries(path: &str) -> Result<Vec<SftpEntry>, EngineError> {
         return list_windows_drives();
     }
     let dir = fs::read_dir(path).map_err(|err| {
-        EngineError::with_detail("local_list_failed", "无法读取本地目录", err.to_string())
+        EngineError::with_detail(
+            "local_list_failed",
+            "Failed to read the local directory",
+            err.to_string(),
+        )
     })?;
     let mut entries = Vec::new();
     for item in dir {
         let entry = item.map_err(|err| {
-            EngineError::with_detail("local_list_failed", "无法读取本地目录条目", err.to_string())
+            EngineError::with_detail(
+                "local_list_failed",
+                "Failed to read a local directory entry",
+                err.to_string(),
+            )
         })?;
         let file_type = entry.file_type().map_err(|err| {
-            EngineError::with_detail("local_list_failed", "无法读取文件类型", err.to_string())
+            EngineError::with_detail(
+                "local_list_failed",
+                "Failed to read the file type",
+                err.to_string(),
+            )
         })?;
         let metadata = entry.metadata().map_err(|err| {
-            EngineError::with_detail("local_list_failed", "无法读取文件信息", err.to_string())
+            EngineError::with_detail(
+                "local_list_failed",
+                "Failed to read file metadata",
+                err.to_string(),
+            )
         })?;
         let name = entry.file_name().to_string_lossy().to_string();
         let full_path = entry.path().to_string_lossy().to_string();

@@ -371,7 +371,10 @@ fn default_shell_id(shells: &[LocalShellProfile]) -> Option<String> {
 fn resolve_shell_profile(shell_id: Option<String>) -> Result<LocalShellProfile, EngineError> {
     let shells = collect_shells();
     if shells.is_empty() {
-        return Err(EngineError::new("local_shell_missing", "未发现可用 Shell"));
+        return Err(EngineError::new(
+            "local_shell_missing",
+            "No available shell was found",
+        ));
     }
     if let Some(id) = shell_id
         && let Some(shell) = shells.iter().find(|shell| shell.id == id)
@@ -379,11 +382,11 @@ fn resolve_shell_profile(shell_id: Option<String>) -> Result<LocalShellProfile, 
         return Ok(shell.clone());
     }
     let fallback = default_shell_id(&shells)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "未发现可用 Shell"))?;
+        .ok_or_else(|| EngineError::new("local_shell_missing", "No available shell was found"))?;
     shells
         .into_iter()
         .find(|shell| shell.id == fallback)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "未发现可用 Shell"))
+        .ok_or_else(|| EngineError::new("local_shell_missing", "No available shell was found"))
 }
 
 fn normalize_terminal_type(value: &str) -> Option<&'static str> {
@@ -430,7 +433,11 @@ pub fn start_local_shell(
         pixel_height: 0,
     });
     let pair = pty_pair.map_err(|err| {
-        EngineError::with_detail("local_shell_failed", "无法创建本地终端", err.to_string())
+        EngineError::with_detail(
+            "local_shell_failed",
+            "Failed to create the local terminal",
+            err.to_string(),
+        )
     })?;
 
     let mut command = CommandBuilder::new(&shell.path);
@@ -477,19 +484,27 @@ pub fn start_local_shell(
         command.arg(arg);
     }
     let mut child = pair.slave.spawn_command(command).map_err(|err| {
-        EngineError::with_detail("local_shell_failed", "无法启动本地 Shell", err.to_string())
+        EngineError::with_detail(
+            "local_shell_failed",
+            "Failed to start the local shell",
+            err.to_string(),
+        )
     })?;
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().map_err(|err| {
         EngineError::with_detail(
             "local_shell_failed",
-            "无法读取本地终端输出",
+            "Failed to read local terminal output",
             err.to_string(),
         )
     })?;
     let writer = pair.master.take_writer().map_err(|err| {
-        EngineError::with_detail("local_shell_failed", "无法写入本地终端", err.to_string())
+        EngineError::with_detail(
+            "local_shell_failed",
+            "Failed to write to the local terminal",
+            err.to_string(),
+        )
     })?;
     let killer = child.clone_killer();
 
@@ -538,10 +553,12 @@ pub fn start_local_shell(
         _waiter_thread: waiter_thread,
     };
 
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| EngineError::new("local_shell_lock_failed", "无法访问本地 Shell 状态"))?;
+    let mut sessions = state.sessions.lock().map_err(|_| {
+        EngineError::new(
+            "local_shell_lock_failed",
+            "Local shell state is unavailable",
+        )
+    })?;
     sessions.insert(session_id.clone(), handle);
 
     Ok(Session {
@@ -560,24 +577,26 @@ pub fn write_local_shell(
     session_id: &str,
     data: &[u8],
 ) -> Result<(), EngineError> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| EngineError::new("local_shell_lock_failed", "无法访问本地 Shell 状态"))?;
+    let mut sessions = state.sessions.lock().map_err(|_| {
+        EngineError::new(
+            "local_shell_lock_failed",
+            "Local shell state is unavailable",
+        )
+    })?;
     let handle = sessions
         .get_mut(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "本地 Shell 会话不存在"))?;
+        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
     handle.writer.write_all(data).map_err(|err| {
         EngineError::with_detail(
             "local_shell_write_failed",
-            "无法写入本地 Shell",
+            "Failed to write to the local shell",
             err.to_string(),
         )
     })?;
     handle.writer.flush().map_err(|err| {
         EngineError::with_detail(
             "local_shell_write_failed",
-            "无法刷新本地 Shell",
+            "Failed to flush the local shell",
             err.to_string(),
         )
     })?;
@@ -591,13 +610,15 @@ pub fn resize_local_shell(
     cols: u16,
     rows: u16,
 ) -> Result<(), EngineError> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| EngineError::new("local_shell_lock_failed", "无法访问本地 Shell 状态"))?;
+    let mut sessions = state.sessions.lock().map_err(|_| {
+        EngineError::new(
+            "local_shell_lock_failed",
+            "Local shell state is unavailable",
+        )
+    })?;
     let handle = sessions
         .get_mut(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "本地 Shell 会话不存在"))?;
+        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
     handle
         .master
         .resize(PtySize {
@@ -609,7 +630,7 @@ pub fn resize_local_shell(
         .map_err(|err| {
             EngineError::with_detail(
                 "local_shell_resize_failed",
-                "无法调整本地 Shell 尺寸",
+                "Failed to resize the local shell",
                 err.to_string(),
             )
         })?;
@@ -618,13 +639,15 @@ pub fn resize_local_shell(
 
 /// 关闭本地 Shell 会话。
 pub fn stop_local_shell(state: &LocalShellState, session_id: &str) -> Result<(), EngineError> {
-    let mut sessions = state
-        .sessions
-        .lock()
-        .map_err(|_| EngineError::new("local_shell_lock_failed", "无法访问本地 Shell 状态"))?;
+    let mut sessions = state.sessions.lock().map_err(|_| {
+        EngineError::new(
+            "local_shell_lock_failed",
+            "Local shell state is unavailable",
+        )
+    })?;
     let mut handle = sessions
         .remove(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "本地 Shell 会话不存在"))?;
+        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
     let _ = handle.killer.kill();
     Ok(())
 }

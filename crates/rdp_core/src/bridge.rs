@@ -154,7 +154,7 @@ async fn handle_bridge_ws(
         );
         return Err((
             StatusCode::UNAUTHORIZED,
-            "RDP bridge token 不匹配".to_string(),
+            "RDP bridge token mismatch".to_string(),
         ));
     };
 
@@ -169,7 +169,7 @@ async fn handle_bridge_ws(
         );
         return Err((
             StatusCode::UNAUTHORIZED,
-            "RDP bridge token 不匹配".to_string(),
+            "RDP bridge token mismatch".to_string(),
         ));
     }
     let (snapshot, rx) = match state.sessions.subscribe(&session_id) {
@@ -203,7 +203,7 @@ async fn handle_bridge_ws(
         );
         return Err((
             StatusCode::GONE,
-            "RDP 会话桥接已失效，请重新发起连接".to_string(),
+            "The RDP session bridge is no longer valid; reconnect the session".to_string(),
         ));
     }
     log_telemetry(
@@ -367,7 +367,7 @@ fn can_attach_bridge(snapshot: &RuntimeSessionSnapshot, token: &str) -> bool {
 fn io_error(err: std::io::Error) -> RuntimeError {
     RuntimeError::with_detail(
         "rdp_runtime_bridge_io_error",
-        "RDP bridge 启动失败",
+        "Failed to start the RDP bridge",
         err.to_string(),
     )
 }
