@@ -24,6 +24,7 @@ use crate::state::SecurityState;
 
 const MAX_OUTPUT_CHARS: usize = 6_000;
 const MAX_OUTPUT_SNIPPETS: usize = 8;
+const MAX_OUTPUT_INPUT_BYTES: usize = 16 * 1024;
 
 /// AI 运行时共享状态。
 pub struct AiRuntimeState {
@@ -217,7 +218,13 @@ pub fn record_terminal_output_from_app(app: &AppHandle, session_id: &str, data: 
         && let Some(session) = store.sessions.get_mut(session_id)
     {
         // 先清洗 ANSI 与控制字符，再进入去重流程，避免把终端重绘噪音写入上下文。
-        let normalized = normalize_terminal_output_snippet(data);
+        // 高频输出批次可能很大；AI 上下文只需要最近尾部，先限制清洗输入，
+        // 避免 ANSI 解析和归一化反过来阻塞终端输出线程。
+        let mut snippet_start = data.len().saturating_sub(MAX_OUTPUT_INPUT_BYTES);
+        while !data.is_char_boundary(snippet_start) {
+            snippet_start += 1;
+        }
+        let normalized = normalize_terminal_output_snippet(&data[snippet_start..]);
         if normalized.is_empty() {
             return;
         }

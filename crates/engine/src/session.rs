@@ -24,7 +24,7 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock, mpsc};
-use tokio::time::timeout;
+use tokio::time::{MissedTickBehavior, interval, timeout};
 use uuid::Uuid;
 
 use crate::auth::{AuthPurpose, authenticate};
@@ -39,11 +39,32 @@ use crate::types::{
     EngineEvent, EventCallback, HostProfile, SessionState, SftpEntry, SshTunnelKind,
     SshTunnelRuntime, SshTunnelSpec, SshTunnelStatus, TerminalSize,
 };
+use crate::util::decode_terminal_output;
+
+const TERMINAL_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+const TERMINAL_OUTPUT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
 
 /// 会话发送通道句柄。
 #[derive(Clone)]
 pub struct SessionHandle {
     pub tx: mpsc::UnboundedSender<SessionCommand>,
+}
+
+/// 将 SSH 通道累计的字节解码并发送为单个终端输出批次。
+fn emit_terminal_output_batch(
+    on_event: &EventCallback,
+    session_id: &str,
+    buffer: &mut Vec<u8>,
+    end_of_stream: bool,
+) {
+    let data = decode_terminal_output(buffer, end_of_stream);
+    if data.is_empty() {
+        return;
+    }
+    on_event(EngineEvent::TerminalOutput {
+        session_id: session_id.to_string(),
+        data,
+    });
 }
 
 /// 正式 SSH 握手阶段要求匹配的 Host Key。
@@ -800,6 +821,10 @@ pub async fn run_session_loop(
         Arc::new(Mutex::new(HashMap::new()));
     let tunnel_handles: Arc<Mutex<HashMap<String, TunnelHandle>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let mut terminal_output = Vec::with_capacity(TERMINAL_OUTPUT_BATCH_BYTES);
+    let mut terminal_output_interval = interval(TERMINAL_OUTPUT_FLUSH_INTERVAL);
+    terminal_output_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    terminal_output_interval.tick().await;
 
     while running {
         tokio::select! {
@@ -1041,15 +1066,13 @@ pub async fn run_session_loop(
                     }
                 }
             }
-            result = channel.wait() => {
+            result = channel.wait(), if terminal_output.len() < TERMINAL_OUTPUT_BATCH_BYTES => {
                 match result {
                     Some(russh::ChannelMsg::Data { data }) => {
-                        let text = String::from_utf8_lossy(data.as_ref()).to_string();
-                        on_event(EngineEvent::TerminalOutput { session_id: session_id.clone(), data: text });
+                        terminal_output.extend_from_slice(data.as_ref());
                     }
                     Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
-                        let text = String::from_utf8_lossy(data.as_ref()).to_string();
-                        on_event(EngineEvent::TerminalOutput { session_id: session_id.clone(), data: text });
+                        terminal_output.extend_from_slice(data.as_ref());
                     }
                     Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
                         running = false;
@@ -1057,8 +1080,17 @@ pub async fn run_session_loop(
                     Some(_) => {}
                 }
             }
+            _ = terminal_output_interval.tick(), if !terminal_output.is_empty() => {
+                emit_terminal_output_batch(
+                    &on_event,
+                    &session_id,
+                    &mut terminal_output,
+                    false,
+                );
+            }
         }
     }
+    emit_terminal_output_batch(&on_event, &session_id, &mut terminal_output, true);
     let mut handles = tunnel_handles.lock().await;
     let values: Vec<TunnelHandle> = handles.drain().map(|(_, value)| value).collect();
     drop(handles);

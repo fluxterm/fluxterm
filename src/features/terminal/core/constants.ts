@@ -15,6 +15,12 @@ export const SELECTION_AUTO_COPY_DEBOUNCE_MS = 120;
 /** 终端首次挂载时的最大补偿重试次数。 */
 export const TERMINAL_MOUNT_RETRY_LIMIT = 8;
 
+/** 单次提交给 xterm 解析的最大字符数，避免大块输出长时间占用 UI 线程。 */
+export const TERMINAL_OUTPUT_WRITE_BATCH_CHARS = 64 * 1024;
+
+/** 未挂载终端允许保留的尾部输出字符数，防止后台会话缓存无限增长。 */
+export const TERMINAL_DETACHED_BUFFER_MAX_CHARS = 1024 * 1024;
+
 /** 联想浮层最小可用高度。 */
 export const AUTOCOMPLETE_MIN_PANEL_HEIGHT = 120;
 

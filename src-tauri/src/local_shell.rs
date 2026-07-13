@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::sync::mpsc::{RecvTimeoutError, channel, sync_channel};
 use std::thread;
-#[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
 
 #[cfg(not(target_os = "windows"))]
@@ -30,7 +30,10 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::{os::windows::process::CommandExt, thread::sleep};
 
-use engine::{EngineError, Session, SessionState, TerminalSize, util::now_epoch};
+use engine::{
+    EngineError, Session, SessionState, TerminalSize,
+    util::{decode_terminal_output, now_epoch},
+};
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -39,6 +42,9 @@ use uuid::Uuid;
 use crate::ai::{record_terminal_exit_from_app, record_terminal_output_from_app};
 
 const LOCAL_PROFILE_ID: &str = "__local_shell__";
+const TERMINAL_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
+const TERMINAL_OUTPUT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
+const TERMINAL_OUTPUT_CHANNEL_CAPACITY: usize = 16;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(target_os = "windows")]
@@ -85,7 +91,23 @@ struct LocalShellHandle {
     writer: Box<dyn Write + Send>,
     killer: Box<dyn ChildKiller + Send + Sync>,
     _reader_thread: thread::JoinHandle<()>,
+    _output_thread: thread::JoinHandle<()>,
     _waiter_thread: thread::JoinHandle<()>,
+}
+
+/// 向前端发送一个已聚合的本地终端输出批次。
+fn emit_local_terminal_output(app: &AppHandle, session_id: &str, data: String) {
+    if data.is_empty() {
+        return;
+    }
+    record_terminal_output_from_app(app, session_id, &data);
+    let _ = app.emit(
+        "terminal:output",
+        TerminalOutputPayload {
+            session_id: session_id.to_string(),
+            data,
+        },
+    );
 }
 
 /// 本地 Shell 共享状态。
@@ -508,34 +530,69 @@ pub fn start_local_shell(
     })?;
     let killer = child.clone_killer();
 
-    let session_id_clone = session_id.clone();
-    let app_clone = app.clone();
+    // 有界通道把 PTY 读取速度与输出聚合速度关联起来，避免读取线程无限堆积原始块。
+    let (output_tx, output_rx) = sync_channel::<Vec<u8>>(TERMINAL_OUTPUT_CHANNEL_CAPACITY);
     let reader_thread = thread::spawn(move || {
         let mut buffer = [0u8; 8192];
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break,
                 Ok(size) => {
-                    let data = String::from_utf8_lossy(&buffer[..size]).to_string();
-                    record_terminal_output_from_app(&app_clone, &session_id_clone, &data);
-                    let _ = app_clone.emit(
-                        "terminal:output",
-                        TerminalOutputPayload {
-                            session_id: session_id_clone.clone(),
-                            data,
-                        },
-                    );
+                    if output_tx.send(buffer[..size].to_vec()).is_err() {
+                        break;
+                    }
                 }
                 Err(_) => break,
             }
         }
-        let _ = session_id_clone;
+    });
+
+    let session_id_output = session_id.clone();
+    let app_output = app.clone();
+    let (output_done_tx, output_done_rx) = channel::<()>();
+    let output_thread = thread::spawn(move || {
+        let mut pending = Vec::with_capacity(TERMINAL_OUTPUT_BATCH_BYTES);
+        while let Ok(first) = output_rx.recv() {
+            pending.extend_from_slice(&first);
+            let batch_started = Instant::now();
+            let mut disconnected = false;
+            while pending.len() < TERMINAL_OUTPUT_BATCH_BYTES {
+                let remaining =
+                    TERMINAL_OUTPUT_FLUSH_INTERVAL.saturating_sub(batch_started.elapsed());
+                if remaining.is_zero() {
+                    break;
+                }
+                match output_rx.recv_timeout(remaining) {
+                    Ok(chunk) => pending.extend_from_slice(&chunk),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+            // 批次提前装满时暂停继续读取，让有界通道和 PTY 形成自然背压。
+            let remaining = TERMINAL_OUTPUT_FLUSH_INTERVAL.saturating_sub(batch_started.elapsed());
+            if !remaining.is_zero() && !disconnected {
+                thread::sleep(remaining);
+            }
+            let data = decode_terminal_output(&mut pending, disconnected);
+            emit_local_terminal_output(&app_output, &session_id_output, data);
+            if disconnected {
+                break;
+            }
+        }
+        let data = decode_terminal_output(&mut pending, true);
+        emit_local_terminal_output(&app_output, &session_id_output, data);
+        let _ = output_done_tx.send(());
     });
 
     let session_id_wait = session_id.clone();
     let app_wait = app.clone();
     let waiter_thread = thread::spawn(move || {
         let _ = child.wait();
+        // 尽量保证最后一批输出先于退出事件抵达前端，超时后仍允许会话完成清理。
+        let _ = output_done_rx.recv_timeout(Duration::from_secs(1));
         record_terminal_exit_from_app(&app_wait, &session_id_wait);
         let _ = app_wait.emit(
             "terminal:exit",
@@ -550,6 +607,7 @@ pub fn start_local_shell(
         writer,
         killer,
         _reader_thread: reader_thread,
+        _output_thread: output_thread,
         _waiter_thread: waiter_thread,
     };
 

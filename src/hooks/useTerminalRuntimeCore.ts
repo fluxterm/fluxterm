@@ -2,7 +2,7 @@
  * 终端运行时核心 Hook。
  * 职责：
  * 1. 管理 xterm 实例创建、挂载、重建与销毁。
- * 2. 维护终端输出缓存，保证 split/重挂载后仍能回放完整会话内容。
+ * 2. 串行排空终端输出，并为未挂载会话保留有界尾部缓存。
  * 3. 提供搜索、复制、链接菜单和尺寸同步等终端能力。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,7 +40,9 @@ import {
   COMMAND_CAPTURE_DEBOUNCE_MS,
   DEFAULT_TERMINAL_SCROLLBACK,
   SELECTION_AUTO_COPY_DEBOUNCE_MS,
+  TERMINAL_DETACHED_BUFFER_MAX_CHARS,
   TERMINAL_MOUNT_RETRY_LIMIT,
+  TERMINAL_OUTPUT_WRITE_BATCH_CHARS,
 } from "@/features/terminal/core/constants";
 import { registerTerminalOutputListener } from "@/features/terminal/core/listeners";
 import { extractErrorMessage } from "@/shared/errors/appError";
@@ -204,6 +206,10 @@ type TerminalBundle = {
   container: HTMLDivElement;
   host: HTMLDivElement;
   disposables: Disposable[];
+  outputQueue: string[];
+  outputQueuedChars: number;
+  outputWritePending: boolean;
+  outputDrainTimer: number | null;
 };
 
 type FocusedLineState = {
@@ -578,6 +584,7 @@ export default function useTerminalRuntime({
     parseWorkingDirectoryFromPrompt,
   );
   const appendSessionBufferRef = useRef(appendSessionBuffer);
+  const writeToBundleRef = useRef(writeToBundle);
   const scheduleCommandCaptureRefreshRef = useRef(
     scheduleCommandCaptureRefresh,
   );
@@ -692,6 +699,7 @@ export default function useTerminalRuntime({
     parseWorkingDirectoryFromPromptRef.current =
       parseWorkingDirectoryFromPrompt;
     appendSessionBufferRef.current = appendSessionBuffer;
+    writeToBundleRef.current = writeToBundle;
     scheduleCommandCaptureRefreshRef.current = scheduleCommandCaptureRefresh;
     ensureTerminalRef.current = ensureTerminal;
     observeTerminalContainerRef.current = observeTerminalContainer;
@@ -1062,13 +1070,93 @@ export default function useTerminalRuntime({
     observer.observe(container);
   }
 
-  function writeToBundle(bundle: TerminalBundle, data: string) {
-    bundle.terminal.write(data);
+  /**
+   * 从队首提取一个有界批次，同时避免在 UTF-16 代理项中间切断字符串。
+   */
+  function takeTerminalOutputBatch(bundle: TerminalBundle) {
+    let batch = "";
+    while (
+      bundle.outputQueue.length > 0 &&
+      batch.length < TERMINAL_OUTPUT_WRITE_BATCH_CHARS
+    ) {
+      const next = bundle.outputQueue[0];
+      const remaining = TERMINAL_OUTPUT_WRITE_BATCH_CHARS - batch.length;
+      let takeLength = Math.min(next.length, remaining);
+      if (
+        takeLength > 0 &&
+        takeLength < next.length &&
+        /[\uD800-\uDBFF]/.test(next[takeLength - 1]) &&
+        /[\uDC00-\uDFFF]/.test(next[takeLength])
+      ) {
+        takeLength -= 1;
+      }
+      if (takeLength === 0) break;
+      batch += next.slice(0, takeLength);
+      bundle.outputQueuedChars -= takeLength;
+      if (takeLength === next.length) {
+        bundle.outputQueue.shift();
+      } else {
+        bundle.outputQueue[0] = next.slice(takeLength);
+      }
+    }
+    return batch;
   }
 
+  /**
+   * 等待 xterm 完成当前批次后再调度下一批，给键盘和窗口事件留出执行机会。
+   */
+  function drainTerminalOutput(sessionId: string, bundle: TerminalBundle) {
+    if (
+      bundle.outputWritePending ||
+      bundle.outputDrainTimer !== null ||
+      bundle.outputQueuedChars === 0
+    ) {
+      return;
+    }
+    const data = takeTerminalOutputBatch(bundle);
+    if (!data) return;
+    bundle.outputWritePending = true;
+    osc7SeenDuringWriteRef.current[sessionId] = false;
+    bundle.terminal.write(data, () => {
+      const currentBundle = terminalsRef.current[sessionId];
+      if (currentBundle !== bundle) return;
+      const suppressPromptPathPublish = Boolean(
+        osc7SeenDuringWriteRef.current[sessionId],
+      );
+      delete osc7SeenDuringWriteRef.current[sessionId];
+      parseWorkingDirectoryFromPromptRef.current(sessionId, data, {
+        suppressPathPublish: suppressPromptPathPublish,
+      });
+      scheduleCommandCaptureRefreshRef.current(sessionId);
+      bundle.outputWritePending = false;
+      if (bundle.outputQueuedChars === 0) return;
+      bundle.outputDrainTimer = window.setTimeout(() => {
+        bundle.outputDrainTimer = null;
+        drainTerminalOutput(sessionId, bundle);
+      }, 0);
+    });
+  }
+
+  /** 将输出加入当前会话的串行 xterm 写队列。 */
+  function writeToBundle(
+    sessionId: string,
+    bundle: TerminalBundle,
+    data: string,
+  ) {
+    if (!data) return;
+    bundle.outputQueue.push(data);
+    bundle.outputQueuedChars += data.length;
+    drainTerminalOutput(sessionId, bundle);
+  }
+
+  /** 为尚未挂载的会话保留有界尾部输出。 */
   function appendSessionBuffer(sessionId: string, data: string) {
     const buffer = sessionBuffersRef.current[sessionId] ?? "";
-    sessionBuffersRef.current[sessionId] = buffer + data;
+    const next = buffer + data;
+    sessionBuffersRef.current[sessionId] =
+      next.length <= TERMINAL_DETACHED_BUFFER_MAX_CHARS
+        ? next
+        : next.slice(-TERMINAL_DETACHED_BUFFER_MAX_CHARS);
   }
 
   /**
@@ -1551,6 +1639,10 @@ export default function useTerminalRuntime({
       container,
       host,
       disposables: [],
+      outputQueue: [],
+      outputQueuedChars: 0,
+      outputWritePending: false,
+      outputDrainTimer: null,
     };
 
     bundle.disposables.push(
@@ -1895,7 +1987,8 @@ export default function useTerminalRuntime({
 
     const bufferedData = sessionBuffersRef.current[sessionId];
     if (bufferedData) {
-      writeToBundle(bundle, bufferedData);
+      sessionBuffersRef.current[sessionId] = "";
+      writeToBundle(sessionId, bundle, bufferedData);
     }
 
     // 首次挂载时，pane/header 布局和字体测量可能还没稳定。
@@ -1921,6 +2014,11 @@ export default function useTerminalRuntime({
     disposeSelectionAutoCopyTimer(sessionId);
     disposeFocusedLine(sessionId);
     disposePromptParseState(sessionId);
+    if (bundle.outputDrainTimer !== null) {
+      window.clearTimeout(bundle.outputDrainTimer);
+    }
+    bundle.outputQueue.length = 0;
+    bundle.outputQueuedChars = 0;
     bundle.disposables.forEach((disposable) => disposable.dispose());
     bundle.terminal.dispose();
     delete terminalsRef.current[sessionId];
@@ -1975,21 +2073,12 @@ export default function useTerminalRuntime({
     const registerListeners = async () => {
       const outputUnlisten = await registerTerminalOutputListener(
         ({ sessionId, data }) => {
-          appendSessionBufferRef.current(sessionId, data);
           const bundle = terminalsRef.current[sessionId];
-          let suppressPromptPathPublish: boolean = false;
           if (bundle) {
-            osc7SeenDuringWriteRef.current[sessionId] = false;
-            writeToBundle(bundle, data);
-            suppressPromptPathPublish = Boolean(
-              osc7SeenDuringWriteRef.current[sessionId],
-            );
-            delete osc7SeenDuringWriteRef.current[sessionId];
-            scheduleCommandCaptureRefreshRef.current(sessionId);
+            writeToBundleRef.current(sessionId, bundle, data);
+          } else {
+            appendSessionBufferRef.current(sessionId, data);
           }
-          parseWorkingDirectoryFromPromptRef.current(sessionId, data, {
-            suppressPathPublish: suppressPromptPathPublish,
-          });
         },
       );
       if (cancelled) {
