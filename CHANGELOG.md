@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-13
+
 ### Fixed
 
 - **终端高频输出稳定性**: 修复本地 Shell、WSL 和 SSH 会话持续高频输出时可能导致应用无响应、内容显示异常以及无法及时中断命令的问题。
@@ -686,6 +688,7 @@
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
 
+[0.7.1]: https://github.com/fluxterm/fluxterm/compare/0.7.0...0.7.1
 [0.7.0]: https://github.com/fluxterm/fluxterm/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/fluxterm/fluxterm/compare/0.6.0...0.6.1
 [0.6.0]: https://github.com/fluxterm/fluxterm/compare/0.5.0...0.6.0
