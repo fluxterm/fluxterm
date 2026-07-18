@@ -275,6 +275,9 @@ function LeafPaneView({
 }: LeafPaneViewProps) {
   const [dragPreview, setDragPreview] = useState<TabDragPreview | null>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const autocompleteItemRefs = useRef<Record<string, HTMLDivElement | null>>(
+    {},
+  );
   const previousTabRectsRef = useRef<Map<string, DOMRect>>(new Map());
   const orderedSessionIds = dragPreview?.sessionIds ?? node.sessionIds;
 
@@ -346,6 +349,16 @@ function LeafPaneView({
       ? autocomplete
       : null;
   const paneAutocompleteAnchor = paneAutocomplete ? autocompleteAnchor : null;
+  const selectedAutocompleteCommand =
+    paneAutocomplete?.items[paneAutocomplete.selectedIndex]?.command ?? null;
+
+  useLayoutEffect(() => {
+    if (!selectedAutocompleteCommand) return;
+    autocompleteItemRefs.current[selectedAutocompleteCommand]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    });
+  }, [selectedAutocompleteCommand]);
 
   return (
     <div
@@ -509,6 +522,9 @@ function LeafPaneView({
                   {paneAutocomplete.items.map((item, index) => (
                     <div
                       key={item.command}
+                      ref={(element) => {
+                        autocompleteItemRefs.current[item.command] = element;
+                      }}
                       className={`terminal-autocomplete-item ${
                         index === paneAutocomplete.selectedIndex ? "active" : ""
                       }`}
