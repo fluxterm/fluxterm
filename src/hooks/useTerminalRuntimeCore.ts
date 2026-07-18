@@ -893,6 +893,22 @@ export default function useTerminalRuntime({
     };
   }
 
+  /** 当前可见行已进入新提示符时，立即结束命令提交后的等待状态。 */
+  function resumeCommandCaptureAtVisiblePrompt(sessionId: string) {
+    const meta = ensureCommandCaptureMeta(sessionId);
+    if (!meta.waitingForNextPrompt) return false;
+    const currentLine = getCurrentCursorLineText(sessionId);
+    if (!looksLikePromptLine(currentLine)) return false;
+    meta.promptPrefix = currentLine;
+    meta.waitingForNextPrompt = false;
+    publishCommandCapture(sessionId, {
+      state: "listening",
+      command: "",
+      updatedAt: Date.now(),
+    });
+    return true;
+  }
+
   /**
    * 刷新当前会话的输入行监听状态。
    * 生命周期：
@@ -907,15 +923,7 @@ export default function useTerminalRuntime({
     const currentLine = getCurrentCursorLineText(sessionId);
 
     if (meta.waitingForNextPrompt) {
-      if (looksLikePromptLine(currentLine)) {
-        meta.promptPrefix = currentLine;
-        meta.waitingForNextPrompt = false;
-        publishCommandCapture(sessionId, {
-          state: "listening",
-          command: "",
-          updatedAt: Date.now(),
-        });
-      }
+      resumeCommandCaptureAtVisiblePrompt(sessionId);
       return;
     }
 
@@ -1805,6 +1813,7 @@ export default function useTerminalRuntime({
             .catch(() => {});
           return;
         }
+        resumeCommandCaptureAtVisiblePrompt(sessionId);
         const autocomplete = activeAutocompleteRef.current;
         const activeAutocomplete =
           autocomplete?.sessionId === sessionId ? autocomplete : null;
