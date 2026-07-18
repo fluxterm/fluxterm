@@ -945,7 +945,8 @@ export default function useTerminalRuntime({
 
   /**
    * 将联想候选写回当前会话输入行，但不直接提交执行。
-   * 具体做法是回退当前本地输入缓冲长度，再写入选中的完整命令。
+   * SSH 会话使用终端行编辑器的清行控制符；本地 Shell 保留逐字符删除语义。
+   * 清除序列与完整命令通过同一批输入原子写入。
    */
   async function applyAutocompleteSuggestion(
     sessionId: string,
@@ -963,10 +964,12 @@ export default function useTerminalRuntime({
       null;
     if (!selectedCommand) return false;
     const currentInput = autocompleteInputBufferRef.current[sessionId] ?? "";
-    const deleteSequence = "\u007f".repeat(currentInput.length);
+    const clearInputSequence = handlersRef.current.isLocalSession(sessionId)
+      ? "\u007f".repeat(currentInput.length)
+      : "\u0015";
     await handlersRef.current.sendSessionInput(sessionId, {
       kind: "text",
-      data: `${deleteSequence}${selectedCommand}`,
+      data: `${clearInputSequence}${selectedCommand}`,
     });
     autocompleteInputBufferRef.current[sessionId] = selectedCommand;
     delete autocompleteSuppressedInputRef.current[sessionId];

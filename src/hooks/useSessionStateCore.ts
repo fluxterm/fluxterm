@@ -255,6 +255,7 @@ export default function useSessionState({
     {},
   );
   const terminalEofRequestAtRef = useRef<Record<string, number>>({});
+  const sessionInputQueueRef = useRef<Record<string, Promise<void>>>({});
   const errorDialogShownRef = useRef<Record<string, boolean>>({});
   // 按 profile 记录待确认的 Host Key 重连链路。
   // Host Key 事件不带 sessionId，这里用 profileId 映射对应会话。
@@ -513,31 +514,46 @@ export default function useSessionState({
                 }
               : {}),
           };
+    const previousInput = sessionInputQueueRef.current[sessionId];
+    const queuedInput = (previousInput ?? Promise.resolve()).then(async () => {
+      try {
+        const result = await callTauri<unknown>(command, payload);
+        if (kind === "serial") {
+          const bytes =
+            input.kind === "binary"
+              ? input.data
+              : Array.isArray(result)
+                ? result.filter(
+                    (value): value is number => typeof value === "number",
+                  )
+                : [];
+          window.dispatchEvent(
+            new CustomEvent("fluxterm:serial-transmit", {
+              detail: { sessionId, data: bytes },
+            }),
+          );
+        }
+        return result;
+      } catch (err) {
+        // 本地 Shell 进程退出后，若 terminal:exit 事件未及时到达，
+        // 这里以写入失败作为兜底信号，确保会话进入断开状态并可回车重连。
+        if (isLocalSession(sessionId)) {
+          handleSessionDisconnected(sessionId);
+        }
+        throw err;
+      }
+    });
+    const queueTail = queuedInput.then(
+      () => undefined,
+      () => undefined,
+    );
+    sessionInputQueueRef.current[sessionId] = queueTail;
     try {
-      const result = await callTauri<unknown>(command, payload);
-      if (kind === "serial") {
-        const bytes =
-          input.kind === "binary"
-            ? input.data
-            : Array.isArray(result)
-              ? result.filter(
-                  (value): value is number => typeof value === "number",
-                )
-              : [];
-        window.dispatchEvent(
-          new CustomEvent("fluxterm:serial-transmit", {
-            detail: { sessionId, data: bytes },
-          }),
-        );
+      return await queuedInput;
+    } finally {
+      if (sessionInputQueueRef.current[sessionId] === queueTail) {
+        delete sessionInputQueueRef.current[sessionId];
       }
-      return result;
-    } catch (err) {
-      // 本地 Shell 进程退出后，若 terminal:exit 事件未及时到达，
-      // 这里以写入失败作为兜底信号，确保会话进入断开状态并可回车重连。
-      if (isLocalSession(sessionId)) {
-        handleSessionDisconnected(sessionId);
-      }
-      throw err;
     }
   }
 
