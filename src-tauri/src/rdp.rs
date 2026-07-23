@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use engine::EngineError;
 use rdp_core::{
-    RdpRuntime, RuntimeConnectRequest, RuntimeError, RuntimeInputEvent, RuntimePerformanceFlags,
-    RuntimeSessionSnapshot,
+    RdpRuntime, RuntimeAudioState, RuntimeConnectRequest, RuntimeError, RuntimeInputEvent,
+    RuntimePerformanceFlags, RuntimeSessionSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -122,6 +122,17 @@ pub enum RdpSessionState {
     CertificatePrompt,
 }
 
+/// RDP 会话音频状态。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RdpSessionAudioState {
+    Idle,
+    Negotiating,
+    Playing,
+    Muted,
+    Error,
+}
+
 /// RDP 证书确认信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -142,6 +153,9 @@ pub struct RdpSessionSnapshot {
     pub width: u32,
     pub height: u32,
     pub ws_url: Option<String>,
+    pub audio_enabled: bool,
+    pub audio_muted: bool,
+    pub audio_state: RdpSessionAudioState,
     pub last_error: Option<EngineError>,
     pub certificate_prompt: Option<RdpCertificatePrompt>,
 }
@@ -206,6 +220,9 @@ impl RdpState {
             width: initial_width,
             height: initial_height,
             ws_url: None,
+            audio_enabled: true,
+            audio_muted: false,
+            audio_state: RdpSessionAudioState::Idle,
             last_error: None,
             certificate_prompt: None,
         };
@@ -264,6 +281,7 @@ impl RdpState {
         let runtime_snapshot = self
             .runtime
             .disconnect_session(session_id)
+            .await
             .map_err(runtime_error)?;
         let snapshot = self.update_session_snapshot(session_id, |snapshot| {
             *snapshot = merge_runtime_snapshot(snapshot.clone(), runtime_snapshot);
@@ -305,6 +323,23 @@ impl RdpState {
         self.runtime
             .set_clipboard(session_id, text)
             .map_err(runtime_error)
+    }
+
+    /// 设置会话级本地静音状态。
+    pub async fn set_audio_muted(&self, session_id: &str, muted: bool) -> Result<(), EngineError> {
+        self.runtime
+            .set_audio_muted(session_id, muted)
+            .map_err(runtime_error)?;
+        self.update_session_snapshot(session_id, |snapshot| {
+            snapshot.audio_muted = muted;
+            snapshot.audio_state = match (muted, &snapshot.audio_state) {
+                (_, RdpSessionAudioState::Error) => RdpSessionAudioState::Error,
+                (true, _) => RdpSessionAudioState::Muted,
+                (false, RdpSessionAudioState::Muted) => RdpSessionAudioState::Negotiating,
+                (false, state) => state.clone(),
+            };
+        })?;
+        Ok(())
     }
 
     /// 处理证书确认。
@@ -367,6 +402,9 @@ fn merge_runtime_snapshot(
         width: runtime.width.max(320),
         height: runtime.height.max(200),
         ws_url: runtime.ws_url,
+        audio_enabled: runtime.audio_enabled,
+        audio_muted: runtime.audio_muted,
+        audio_state: parse_audio_state(runtime.audio_state),
         last_error: current.last_error,
         certificate_prompt: current.certificate_prompt,
     }
@@ -384,6 +422,9 @@ fn merge_runtime_snapshot_preserving_dimensions(
         width: current.width.max(320),
         height: current.height.max(200),
         ws_url: runtime.ws_url,
+        audio_enabled: runtime.audio_enabled,
+        audio_muted: runtime.audio_muted,
+        audio_state: parse_audio_state(runtime.audio_state),
         last_error: current.last_error,
         certificate_prompt: current.certificate_prompt,
     }
@@ -398,6 +439,16 @@ fn parse_state(value: &str) -> RdpSessionState {
         "error" => RdpSessionState::Error,
         "certificate_prompt" => RdpSessionState::CertificatePrompt,
         _ => RdpSessionState::Idle,
+    }
+}
+
+fn parse_audio_state(value: RuntimeAudioState) -> RdpSessionAudioState {
+    match value {
+        RuntimeAudioState::Idle => RdpSessionAudioState::Idle,
+        RuntimeAudioState::Negotiating => RdpSessionAudioState::Negotiating,
+        RuntimeAudioState::Playing => RdpSessionAudioState::Playing,
+        RuntimeAudioState::Muted => RdpSessionAudioState::Muted,
+        RuntimeAudioState::Error => RdpSessionAudioState::Error,
     }
 }
 

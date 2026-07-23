@@ -48,7 +48,8 @@ use crate::commands::proxy::{proxy_close, proxy_close_all, proxy_list, proxy_ope
 use crate::commands::rdp::{
     rdp_profile_delete, rdp_profile_groups_list, rdp_profile_groups_save, rdp_profile_list,
     rdp_profile_save, rdp_session_cert_decide, rdp_session_connect, rdp_session_create,
-    rdp_session_disconnect, rdp_session_resize, rdp_session_send_input, rdp_session_set_clipboard,
+    rdp_session_disconnect, rdp_session_resize, rdp_session_send_input,
+    rdp_session_set_audio_muted, rdp_session_set_clipboard,
 };
 use crate::commands::remote_edit::{
     remote_edit_confirm_upload, remote_edit_dismiss_pending, remote_edit_list, remote_edit_open,
@@ -237,6 +238,7 @@ pub fn run() {
             rdp_session_send_input,
             rdp_session_resize,
             rdp_session_set_clipboard,
+            rdp_session_set_audio_muted,
             rdp_session_cert_decide,
             remote_edit_open,
             remote_edit_list,

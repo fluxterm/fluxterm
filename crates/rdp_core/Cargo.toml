@@ -18,7 +18,8 @@ thiserror = "2.0.18"
 hostname = "0.4.1"
 base64 = "0.22.1"
 png = "0.17.16"
-ironrdp = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", features = ["session", "input", "graphics", "dvc", "svc", "displaycontrol", "connector"] }
+cpal = "0.17.3"
+ironrdp = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", features = ["session", "input", "graphics", "dvc", "svc", "displaycontrol", "connector", "rdpdr", "rdpsnd"] }
 ironrdp-tls = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-tls", features = ["rustls"] }
 ironrdp-tokio = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-tokio", features = ["reqwest"] }
 ironrdp-cliprdr = { git = "https://github.com/fluxterm/IronRDP", branch = "fix/russh-061-deps", package = "ironrdp-cliprdr" }

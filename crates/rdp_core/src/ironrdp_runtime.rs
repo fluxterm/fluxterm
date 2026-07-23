@@ -31,6 +31,8 @@ use ironrdp::pdu::input::fast_path::FastPathInputEvent;
 use ironrdp::pdu::rdp::capability_sets::MajorPlatformType;
 use ironrdp::pdu::rdp::client_info::{PerformanceFlags, TimezoneInfo};
 use ironrdp::pdu::rdp::multitransport::MultitransportResponsePdu;
+use ironrdp::rdpdr::{NoopRdpdrBackend, Rdpdr};
+use ironrdp::rdpsnd::client::Rdpsnd;
 use ironrdp::session::image::DecodedImage;
 use ironrdp::session::{ActiveStage, ActiveStageOutput};
 use ironrdp_cliprdr::CliprdrClient;
@@ -43,9 +45,12 @@ use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time::Instant as TokioInstant;
 
+use crate::audio::{AudioPlaybackController, AudioProxyEvent};
 use crate::cliprdr::{CliprdrProxyEvent, FluxCliprdrBackend};
 use crate::keyboard::code_to_scancode;
-use crate::protocol::{RuntimeConnectRequest, RuntimeInputEvent, RuntimePerformanceFlags};
+use crate::protocol::{
+    RuntimeAudioState, RuntimeConnectRequest, RuntimeInputEvent, RuntimePerformanceFlags,
+};
 use crate::session_manager::SessionManager;
 use crate::session_manager::{
     RuntimeCommand, build_rgba_frame_batch_message, build_rgba_frame_message, json_message,
@@ -72,6 +77,7 @@ const HIGH_PRESSURE_COLLAPSE_RAW_RECTS: u32 = 180;
 const HIGH_PRESSURE_COLLAPSE_CYCLES: u32 = 700;
 const RDP_RUNTIME_RECTS_COLLAPSED_EVENT: &str = "rdp.runtime.rects.collapsed";
 const RDP_RUNTIME_FRAME_PERF_EVENT: &str = "rdp.runtime.frame.perf.snapshot";
+const GRACEFUL_DISCONNECT_TIMEOUT_MS: u64 = 4_000;
 
 #[derive(Debug, Clone)]
 struct FramePerfWindow {
@@ -311,11 +317,25 @@ async fn connect_and_run(
         temp_dir,
     };
     let cliprdr = CliprdrClient::new(Box::new(cliprdr_backend));
+    let (audio_tx, audio_rx) = mpsc::unbounded_channel();
+    let audio_controller = AudioPlaybackController::new(session_id.to_string(), audio_tx);
+    let rdpsnd = Rdpsnd::new(Box::new(audio_controller.create_backend()));
+    let rdpdr = Rdpdr::new(Box::new(NoopRdpdrBackend {}), "FluxTerm".to_string());
 
     let mut connector =
         connector::ClientConnector::new(build_connector_config(&prepared_connection), client_addr)
             .with_static_channel(drdynvc)
+            .with_static_channel(rdpsnd)
+            .with_static_channel(rdpdr)
             .with_static_channel(cliprdr);
+    log_telemetry(
+        TelemetryLevel::Info,
+        "rdp.audio.negotiation.started",
+        json!({
+            "sessionId": session_id,
+            "channels": ["drdynvc", "rdpsnd", "rdpdr", "cliprdr"],
+        }),
+    );
 
     let should_upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
         .await
@@ -382,6 +402,7 @@ async fn connect_and_run(
             prepared_connection.host, prepared_connection.port
         ),
     );
+    let _ = sessions.publish_audio_state(session_id, RuntimeAudioState::Idle, None);
     log_telemetry(
         TelemetryLevel::Info,
         "rdp.runtime.connected",
@@ -405,6 +426,8 @@ async fn connect_and_run(
         ctx,
         command_rx,
         cliprdr_rx,
+        audio_rx,
+        audio_controller,
         upgraded_framed,
         connection_result,
     )
@@ -423,6 +446,8 @@ async fn run_active_stage<S>(
     ctx: ActiveStageContext<'_>,
     command_rx: &mut mpsc::UnboundedReceiver<RuntimeCommand>,
     mut cliprdr_rx: mpsc::UnboundedReceiver<CliprdrProxyEvent>,
+    mut audio_rx: mpsc::UnboundedReceiver<AudioProxyEvent>,
+    audio_controller: AudioPlaybackController,
     framed: TokioFramed<S>,
     connection_result: ConnectionResult,
 ) -> Result<RuntimeCloseReason, String>
@@ -450,9 +475,25 @@ where
     let mut current_local_clipboard = String::new();
     let mut clipboard_channel_state = ClipboardChannelState::Initializing;
     let mut activation_generation: u32 = 0;
+    let mut graceful_disconnect_deadline: Option<TokioInstant> = None;
 
     loop {
         let outputs = tokio::select! {
+            _ = async {
+                if let Some(deadline) = graceful_disconnect_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                }
+            }, if graceful_disconnect_deadline.is_some() => {
+                log_telemetry(
+                    TelemetryLevel::Warn,
+                    "rdp.runtime.disconnect.timeout",
+                    json!({
+                        "sessionId": ctx.session_id,
+                        "timeoutMs": GRACEFUL_DISCONNECT_TIMEOUT_MS,
+                    }),
+                );
+                return Ok(RuntimeCloseReason::UserDisconnected);
+            }
             _ = async {
                 if let Some(deadline) = pending_flush_deadline {
                     tokio::time::sleep_until(deadline).await;
@@ -471,7 +512,21 @@ where
             }
             frame = reader.read_pdu() => {
                 let start = StdInstant::now();
-                let (action, payload) = frame.map_err(|error| format!("read_pdu failed: {error}"))?;
+                let (action, payload) = match frame {
+                    Ok(frame) => frame,
+                    Err(error) if graceful_disconnect_deadline.is_some() => {
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.runtime.disconnect.transport.closed",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "message": error.to_string(),
+                            }),
+                        );
+                        return Ok(RuntimeCloseReason::UserDisconnected);
+                    }
+                    Err(error) => return Err(format!("read_pdu failed: {error}")),
+                };
                 perf_window.read_pdu_cpu_us += elapsed_micros_u64(start.elapsed());
 
                 let start = StdInstant::now();
@@ -713,10 +768,26 @@ where
                     }
                 }
             }
+            audio_event = audio_rx.recv() => {
+                let Some(audio_event) = audio_event else {
+                    continue;
+                };
+                match audio_event {
+                    AudioProxyEvent::StateChanged { state, message } => {
+                        let _ = ctx.sessions.publish_audio_state(ctx.session_id, state, message);
+                        Vec::new()
+                    }
+                }
+            }
             command = command_rx.recv() => {
                 let Some(command) = command else {
                     return Ok(RuntimeCloseReason::UserDisconnected);
                 };
+                if graceful_disconnect_deadline.is_some()
+                    && !matches!(command, RuntimeCommand::Disconnect)
+                {
+                    continue;
+                }
                 match command {
                     RuntimeCommand::Input(input) => {
                         let events = translate_input_event(&mut input_db, input);
@@ -820,24 +891,32 @@ where
                             Vec::new()
                         }
                     }
+                    RuntimeCommand::AudioMute(muted) => {
+                        audio_controller.set_muted(muted);
+                        Vec::new()
+                    }
                     RuntimeCommand::Disconnect => {
-                        log_telemetry(
-                            TelemetryLevel::Info,
-                            "rdp.runtime.disconnect.requested",
-                            json!({ "sessionId": ctx.session_id }),
-                        );
-                        for output in active_stage
-                            .graceful_shutdown()
-                            .map_err(|error| format!("graceful shutdown failed: {error}"))?
-                        {
-                            if let ActiveStageOutput::ResponseFrame(frame) = output {
-                                writer
-                                    .write_all(&frame)
-                                    .await
-                                    .map_err(|error| format!("write shutdown frame failed: {error}"))?;
-                            }
+                        if graceful_disconnect_deadline.is_some() {
+                            Vec::new()
+                        } else {
+                            log_telemetry(
+                                TelemetryLevel::Info,
+                                "rdp.runtime.disconnect.requested",
+                                json!({
+                                    "sessionId": ctx.session_id,
+                                    "timeoutMs": GRACEFUL_DISCONNECT_TIMEOUT_MS,
+                                }),
+                            );
+                            graceful_disconnect_deadline = Some(
+                                TokioInstant::now()
+                                    + tokio::time::Duration::from_millis(
+                                        GRACEFUL_DISCONNECT_TIMEOUT_MS,
+                                    ),
+                            );
+                            active_stage
+                                .graceful_shutdown()
+                                .map_err(|error| format!("graceful shutdown failed: {error}"))?
                         }
-                        return Ok(RuntimeCloseReason::UserDisconnected);
                     }
                     RuntimeCommand::CertificateDecision => Vec::new(),
                 }
@@ -977,7 +1056,20 @@ where
                         }),
                     );
                 }
-                ActiveStageOutput::Terminate(_) => return Ok(RuntimeCloseReason::ServerClosed),
+                ActiveStageOutput::Terminate(reason) => {
+                    if graceful_disconnect_deadline.is_some() {
+                        log_telemetry(
+                            TelemetryLevel::Info,
+                            "rdp.runtime.disconnect.acknowledged",
+                            json!({
+                                "sessionId": ctx.session_id,
+                                "reason": format!("{reason:?}"),
+                            }),
+                        );
+                        return Ok(RuntimeCloseReason::UserDisconnected);
+                    }
+                    return Ok(RuntimeCloseReason::ServerClosed);
+                }
             }
         }
 
@@ -1515,7 +1607,7 @@ fn build_connector_config(connection: &PreparedConnection) -> connector::Config 
         enable_server_pointer: true,
         request_data: None,
         autologon: false,
-        enable_audio_playback: false,
+        enable_audio_playback: true,
         pointer_software_rendering: false,
         // 体验标志由前端 Profile 驱动，这里只做协议位映射。
         performance_flags: build_performance_flags(&connection.performance_flags),

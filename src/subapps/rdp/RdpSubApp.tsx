@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { FiActivity, FiClipboard, FiX } from "react-icons/fi";
+import {
+  FiActivity,
+  FiClipboard,
+  FiVolume2,
+  FiVolumeX,
+  FiX,
+} from "react-icons/fi";
 import type { Locale, Translate } from "@/i18n";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 import {
@@ -31,6 +37,7 @@ import {
   disconnectRdpSession,
   listRdpProfiles,
   resizeRdpSession,
+  setRdpAudioMuted,
   sendRdpInput,
   setRdpClipboard,
 } from "@/features/rdp/core/commands";
@@ -60,6 +67,12 @@ type RdpWireEvent =
     }
   | { type: "cursor"; cursor: string }
   | { type: "clipboard"; direction: string; text: string }
+  | {
+      type: "audio-state";
+      state: RdpSessionSnapshot["audioState"];
+      muted: boolean;
+      message?: string;
+    }
   | { type: "input-ack"; kind: string }
   | { type: "error"; code: string; message: string };
 
@@ -131,6 +144,16 @@ function getSessionResolutionValue(session: RdpSessionSnapshot | null) {
   if (!session) return "--";
   if (session.width <= 0 || session.height <= 0) return "--";
   return `${session.width} × ${session.height}`;
+}
+
+/** 获取当前会话音频状态的本地化文案。 */
+function getSessionAudioStateLabel(
+  session: RdpSessionSnapshot | null,
+  t: Translate,
+) {
+  if (!session?.audioEnabled) return t("rdp.audio.state.unavailable");
+  if (session.audioMuted) return t("rdp.audio.state.muted");
+  return t(`rdp.audio.state.${session.audioState}`);
 }
 
 function getStatusIndicatorTone(perf: RdpPerfSnapshot): RdpStatusIndicatorTone {
@@ -328,6 +351,8 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const mainThreadBridgeRef = useRef<RdpMainThreadBridge | null>(null);
+  const rendererCleanupTimerRef = useRef<number | null>(null);
+  const canvasTransferredRef = useRef(false);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const lastSyncTextRef = useRef<string | null>(null);
@@ -389,6 +414,15 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     activeTab?.profile ?? null,
     activePerf,
     t,
+  );
+  const audioStatusValue = getSessionAudioStateLabel(
+    activeTab?.session ?? null,
+    t,
+  );
+  const canToggleAudio = Boolean(
+    activeTab?.session.audioEnabled &&
+    activeTab.session.state !== "disconnected" &&
+    activeTab.session.state !== "error",
   );
 
   /** 统一全屏切换逻辑，确保 Tauri 窗口和 DOM 状态同步 */
@@ -619,6 +653,17 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         }
         return;
       }
+      if (payload.type === "audio-state") {
+        updateSessionTab(sessionId, (tab) => ({
+          ...tab,
+          session: {
+            ...tab.session,
+            audioState: payload.state,
+            audioMuted: payload.muted,
+          },
+        }));
+        return;
+      }
       if (payload.type === "error") {
         updateSessionTab(sessionId, (tab) => ({
           ...tab,
@@ -799,6 +844,26 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
   /** 初始化 Web Worker 和 OffscreenCanvas */
   useEffect(() => {
+    if (rendererCleanupTimerRef.current !== null) {
+      window.clearTimeout(rendererCleanupTimerRef.current);
+      rendererCleanupTimerRef.current = null;
+    }
+
+    const scheduleRendererCleanup = () => {
+      if (rendererCleanupTimerRef.current !== null) {
+        window.clearTimeout(rendererCleanupTimerRef.current);
+      }
+      // React StrictMode 会在开发态执行一次 setup → cleanup → setup。
+      // 延后销毁可让第二次 setup 复用已接管 canvas 的 renderer，同时真实卸载仍会完成清理。
+      rendererCleanupTimerRef.current = window.setTimeout(() => {
+        rendererCleanupTimerRef.current = null;
+        workerRef.current?.terminate();
+        workerRef.current = null;
+        mainThreadBridgeRef.current?.terminate();
+        mainThreadBridgeRef.current = null;
+      }, 0);
+    };
+
     if (
       canvasRef.current &&
       !workerRef.current &&
@@ -861,14 +926,12 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       // 一旦真实 canvas 被 transferControlToOffscreen() 转移，主线程就无法再复用它做回退渲染。
       // 因此 Linux 先固定走主线程 WebGL fallback，避免“Worker 初始化失败后无法恢复”的空白状态。
       if (isLinux && createMainThreadBridge("linux_webkitgtk")) {
-        return () => {
-          mainThreadBridgeRef.current?.terminate();
-          mainThreadBridgeRef.current = null;
-        };
+        return scheduleRendererCleanup;
       }
 
       try {
         const offscreen = canvas.transferControlToOffscreen();
+        canvasTransferredRef.current = true;
         const worker = new Worker(new URL("./rdp.worker.ts", import.meta.url), {
           type: "module",
         });
@@ -896,15 +959,12 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
             typeof canvas.transferControlToOffscreen === "function",
           error: getErrorFields(error),
         });
-        createMainThreadBridge("worker_init_failed");
+        if (!canvasTransferredRef.current) {
+          createMainThreadBridge("worker_init_failed");
+        }
       }
     }
-    return () => {
-      workerRef.current?.terminate();
-      workerRef.current = null;
-      mainThreadBridgeRef.current?.terminate();
-      mainThreadBridgeRef.current = null;
-    };
+    return scheduleRendererCleanup;
   }, [handleRendererMessage, isLinux]);
 
   useEffect(() => {
@@ -1554,6 +1614,33 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     }
   }
 
+  /** 切换当前活动会话的本地静音状态。 */
+  async function handleToggleAudioMute() {
+    if (!activeTab || !canToggleAudio) return;
+    const nextMuted = !activeTab.session.audioMuted;
+    try {
+      await setRdpAudioMuted(activeTab.session.sessionId, nextMuted, {
+        traceId: activeTab.traceId,
+      });
+      updateSessionTab(activeTab.session.sessionId, (tab) => ({
+        ...tab,
+        session: {
+          ...tab.session,
+          audioMuted: nextMuted,
+        },
+      }));
+    } catch (error) {
+      logRdpSubAppEvent("warn", "rdp.audio.mute.failed", {
+        traceId: activeTab.traceId,
+        sessionId: activeTab.session.sessionId,
+        error:
+          error instanceof Error
+            ? { name: error.name, message: error.message }
+            : { message: String(error) },
+      });
+    }
+  }
+
   return (
     <div
       ref={shellRef}
@@ -1582,7 +1669,6 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
                     className={`rdp-tab ${isActive ? "is-active" : ""} ${isDisconnected ? "is-disconnected" : ""}`.trim()}
                     data-ui="rdp-tab"
                     onClick={() => handleActivateSession(tab.session.sessionId)}
-                    title={tab.statusText}
                   >
                     <span className={`rdp-tab-dot is-${tab.session.state}`} />
                     <span className="rdp-tab-copy">{tabLabel}</span>
@@ -1731,6 +1817,26 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
                   value: getSessionResolutionValue(activeTab?.session ?? null),
                 })}
               </span>
+              <button
+                type="button"
+                className="rdp-audio-toggle"
+                data-ui="rdp-audio-toggle"
+                data-state={activeTab?.session.audioState ?? "idle"}
+                aria-label={
+                  activeTab?.session.audioMuted
+                    ? t("rdp.audio.actions.unmute")
+                    : t("rdp.audio.actions.mute")
+                }
+                aria-pressed={activeTab?.session.audioMuted ?? false}
+                disabled={!canToggleAudio}
+                onClick={() => void handleToggleAudioMute()}
+              >
+                {activeTab?.session.audioMuted ? (
+                  <FiVolumeX aria-hidden="true" />
+                ) : (
+                  <FiVolume2 aria-hidden="true" />
+                )}
+              </button>
               <div
                 ref={statusPanelRef}
                 className="rdp-status-panel-anchor"
@@ -1791,6 +1897,20 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
                         <span>{t("rdp.statusPanel.clipboard")}</span>
                       </span>
                       <strong>{clipboardStatusValue}</strong>
+                    </div>
+                    <div
+                      className="rdp-status-panel-row"
+                      data-slot="rdp-status-audio"
+                    >
+                      <span className="rdp-status-panel-label">
+                        {activeTab?.session.audioMuted ? (
+                          <FiVolumeX aria-hidden="true" />
+                        ) : (
+                          <FiVolume2 aria-hidden="true" />
+                        )}
+                        <span>{t("rdp.statusPanel.audio")}</span>
+                      </span>
+                      <strong>{audioStatusValue}</strong>
                     </div>
                     <div
                       className="rdp-status-panel-legend"

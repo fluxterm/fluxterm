@@ -474,6 +474,26 @@ pub async fn rdp_session_set_clipboard(
 }
 
 #[tauri::command]
+/// 设置 RDP 会话静音状态。
+pub async fn rdp_session_set_audio_muted(
+    rdp: State<'_, RdpState>,
+    session_id: String,
+    muted: bool,
+    trace_id: Option<String>,
+) -> Result<(), EngineError> {
+    log_telemetry(
+        TelemetryLevel::Debug,
+        "rdp.audio.mute.command",
+        trace_id.as_deref(),
+        json!({
+            "sessionId": session_id,
+            "muted": muted,
+        }),
+    );
+    rdp.set_audio_muted(&session_id, muted).await
+}
+
+#[tauri::command]
 /// 响应 RDP 证书确认。
 pub async fn rdp_session_cert_decide(
     rdp: State<'_, RdpState>,
@@ -572,5 +592,8 @@ fn session_payload(snapshot: &RdpSessionSnapshot) -> serde_json::Value {
         "width": snapshot.width,
         "height": snapshot.height,
         "hasWsUrl": snapshot.ws_url.is_some(),
+        "audioEnabled": snapshot.audio_enabled,
+        "audioMuted": snapshot.audio_muted,
+        "audioState": &snapshot.audio_state,
     })
 }

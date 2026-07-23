@@ -404,6 +404,52 @@
   box-shadow: 0 0 0 2px rgba(10, 14, 20, 0.88);
 }
 
+.rdp-audio-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(10, 14, 20, 0.45);
+  color: var(--text-secondary, rgba(255, 255, 255, 0.72));
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.rdp-audio-toggle:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--text-primary, rgba(255, 255, 255, 0.92));
+}
+
+.rdp-audio-toggle:focus-visible {
+  outline: 2px solid rgba(124, 195, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.rdp-audio-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rdp-audio-toggle[data-state="playing"] {
+  color: rgba(110, 231, 183, 0.95);
+}
+
+.rdp-audio-toggle[data-state="muted"],
+.rdp-audio-toggle[data-state="negotiating"] {
+  color: rgba(250, 204, 21, 0.95);
+}
+
+.rdp-audio-toggle[data-state="error"] {
+  color: rgba(248, 113, 113, 0.95);
+}
+
 .rdp-status-panel {
   position: absolute;
   right: 0;
