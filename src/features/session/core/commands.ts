@@ -13,11 +13,7 @@ import type {
   SessionKind,
   SessionStateUi,
 } from "@/types";
-import {
-  extractErrorMessage,
-  translateAppError,
-} from "@/shared/errors/appError";
-import { warn as logWarn } from "@/shared/logging/telemetry";
+import { translateAppError } from "@/shared/errors/appError";
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
@@ -30,8 +26,6 @@ type ConnectProfileCommandParams = {
   setSessionStates: Setter<Record<string, SessionStateUi>>;
   setSessionReasons: Setter<Record<string, DisconnectReason>>;
   t: Translate;
-  logInfo: (message: string) => void;
-  logError: (message: string) => void;
   onSessionCreated?: (session: Session) => void;
   shouldSuppressError?: () => boolean;
   openDialog: (payload: {
@@ -54,30 +48,13 @@ export async function connectProfileCommand({
   setSessionStates,
   setSessionReasons,
   t,
-  logInfo,
-  logError,
   onSessionCreated,
   shouldSuppressError,
   openDialog,
 }: ConnectProfileCommandParams) {
-  logInfo(
-    JSON.stringify({
-      event: "ssh.connect.start",
-      profileId: profile.id,
-      host: profile.host,
-      authType: profile.authType,
-    }),
-  );
   try {
     const result = await createSshSession(profile);
     const existingState = sessionStatesRef.current[result.sessionId];
-    logInfo(
-      JSON.stringify({
-        event: "ssh.connect.session.created",
-        profileId: profile.id,
-        sessionId: result.sessionId,
-      }),
-    );
     onSessionCreated?.(result);
     setSessions((prev) => prev.concat(result));
     attachSessionToWorkspace(result.sessionId);
@@ -105,35 +82,7 @@ export async function connectProfileCommand({
         : "";
     const errorMessage = translateAppError(err, t);
     if (code === "ssh_host_key_unknown" || code === "ssh_host_key_mismatch") {
-      void logWarn(
-        JSON.stringify({
-          event: "ssh.connect.hostkey.pending",
-          profileId: profile.id,
-          host: profile.host,
-          error: extractErrorMessage(err),
-        }),
-      );
       throw err;
-    }
-    if (code === "security_locked") {
-      // 锁定是用户主动触发的受控状态，不属于系统异常，按 warning 记录即可。
-      void logWarn(
-        JSON.stringify({
-          event: "ssh.connect.security.locked",
-          profileId: profile.id,
-          host: profile.host,
-          error: errorMessage,
-        }),
-      );
-    } else {
-      logError(
-        JSON.stringify({
-          event: "ssh.connect.failed",
-          profileId: profile.id,
-          host: profile.host,
-          error: errorMessage,
-        }),
-      );
     }
     openDialog({
       title: t("dialog.sshErrorTitle"),

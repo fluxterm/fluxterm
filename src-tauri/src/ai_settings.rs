@@ -5,14 +5,12 @@ use std::fs;
 
 use engine::EngineError;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tauri::{AppHandle, Manager};
 
 use crate::config_paths::resolve_ai_settings_path;
 use crate::security::{CryptoService, SecretStore};
 use crate::security_store::read_security_config;
 use crate::state::SecurityState;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::utils::write_atomic;
 
 const DEFAULT_SELECTION_MAX_CHARS: usize = 1_500;
@@ -22,7 +20,6 @@ const DEFAULT_SELECTION_RECENT_OUTPUT_MAX_CHARS: usize = 600;
 const DEFAULT_SELECTION_RECENT_OUTPUT_MAX_SNIPPETS: usize = 2;
 const DEFAULT_REQUEST_CACHE_TTL_MS: u64 = 15_000;
 const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 20_000;
-const DEFAULT_DEBUG_LOGGING_ENABLED: bool = true;
 const CURRENT_AI_SETTINGS_VERSION: u32 = 1;
 
 /// 终端 AI 助手落盘结构。
@@ -44,8 +41,6 @@ pub struct AiSettings {
     pub request_cache_ttl_ms: u64,
     #[serde(default = "default_request_timeout_ms")]
     pub request_timeout_ms: u64,
-    #[serde(default = "default_debug_logging_enabled")]
-    pub debug_logging_enabled: bool,
     #[serde(default)]
     pub active_provider_id: String,
     #[serde(default)]
@@ -111,7 +106,6 @@ pub struct AiSettingsView {
     pub selection_recent_output_max_snippets: usize,
     pub request_cache_ttl_ms: u64,
     pub request_timeout_ms: u64,
-    pub debug_logging_enabled: bool,
     pub active_provider_id: String,
     pub providers: Vec<AiProviderView>,
 }
@@ -140,7 +134,6 @@ pub struct AiSettingsSaveInput {
     pub selection_recent_output_max_snippets: usize,
     pub request_cache_ttl_ms: u64,
     pub request_timeout_ms: u64,
-    pub debug_logging_enabled: bool,
     pub active_provider_id: String,
     pub providers: Vec<AiProviderInput>,
 }
@@ -172,14 +165,6 @@ pub enum SecretFieldUpdate {
 pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
     let path = resolve_ai_settings_path(app)?;
     if !path.exists() {
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "ai.settings.read.skipped",
-            None,
-            json!({
-                "reason": "notFound",
-            }),
-        );
         return Ok(default_ai_settings());
     }
     let content = fs::read_to_string(&path).map_err(|err| {
@@ -277,10 +262,6 @@ fn default_request_timeout_ms() -> u64 {
     DEFAULT_REQUEST_TIMEOUT_MS
 }
 
-fn default_debug_logging_enabled() -> bool {
-    DEFAULT_DEBUG_LOGGING_ENABLED
-}
-
 fn default_ai_settings() -> AiSettings {
     AiSettings {
         version: CURRENT_AI_SETTINGS_VERSION,
@@ -291,7 +272,6 @@ fn default_ai_settings() -> AiSettings {
         selection_recent_output_max_snippets: default_selection_recent_output_max_snippets(),
         request_cache_ttl_ms: default_request_cache_ttl_ms(),
         request_timeout_ms: default_request_timeout_ms(),
-        debug_logging_enabled: default_debug_logging_enabled(),
         active_provider_id: String::new(),
         providers: Vec::new(),
     }
@@ -369,7 +349,6 @@ fn build_settings_view(settings: AiSettings) -> AiSettingsView {
         selection_recent_output_max_snippets: settings.selection_recent_output_max_snippets,
         request_cache_ttl_ms: settings.request_cache_ttl_ms,
         request_timeout_ms: settings.request_timeout_ms,
-        debug_logging_enabled: settings.debug_logging_enabled,
         active_provider_id: settings.active_provider_id,
         providers: settings
             .providers
@@ -432,7 +411,6 @@ fn build_ai_settings_from_input(
         selection_recent_output_max_snippets: input.selection_recent_output_max_snippets,
         request_cache_ttl_ms: input.request_cache_ttl_ms,
         request_timeout_ms: input.request_timeout_ms,
-        debug_logging_enabled: input.debug_logging_enabled,
         active_provider_id: input.active_provider_id,
         providers: next_providers,
     })

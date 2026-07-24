@@ -1,7 +1,9 @@
 //! 引擎核心实现。
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
+use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
@@ -9,9 +11,10 @@ use uuid::Uuid;
 
 use crate::error::EngineError;
 use crate::proxy_backend::{BuiltinProxyBackend, ProxyBackend};
-use crate::session::{ExpectedHostKey, SessionCommand, SessionHandle, run_session_loop};
+use crate::session::{
+    ExpectedHostKey, SessionCommand, SessionHandle, SessionLoopRequest, run_session_loop,
+};
 use crate::ssh_transport::JumpHostSpec;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EventCallback, HostProfile, ProxyRuntime, ProxySpec, Session, SessionKind, SessionState,
     SftpEntry, SshTunnelRuntime, SshTunnelSpec, TerminalSize,
@@ -48,6 +51,7 @@ impl Engine {
         profile: HostProfile,
         expected_host_key: Option<ExpectedHostKey>,
         jump_spec: JumpHostSpec,
+        operation_id: String,
         size: TerminalSize,
         on_event: EventCallback,
     ) -> Result<Session, EngineError> {
@@ -55,14 +59,17 @@ impl Engine {
         let created_at = now_epoch();
         let (tx, rx) = mpsc::unbounded_channel();
 
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ssh.connect.start",
-            None,
+        log_event!(
+            LogLevel::Debug,
+            "ssh.session.connect.started",
+            Some(operation_id.as_str()),
             json!({
                 "profileId": profile.id.clone(),
                 "host": profile.host.clone(),
                 "user": profile.username.clone(),
+                "port": profile.port,
+                "authType": format!("{:?}", profile.auth_type),
+                "connectionPurpose": "session",
             }),
         );
         on_event(crate::types::EngineEvent::SessionStatus {
@@ -75,19 +82,45 @@ impl Engine {
         let session_id_clone = session_id.clone();
         let profile_clone = profile.clone();
         let on_event_clone = Arc::clone(&on_event);
+        let operation_id_clone = operation_id.clone();
+        let started_at = Instant::now();
+        let failure_profile = profile.clone();
 
         runtime.spawn(async move {
-            let result = run_session_loop(
-                session_id_clone.clone(),
-                profile_clone,
+            let result = run_session_loop(SessionLoopRequest {
+                session_id: session_id_clone.clone(),
+                profile: profile_clone,
                 expected_host_key,
                 jump_spec,
+                operation_id: operation_id_clone.clone(),
                 size,
                 rx,
-                on_event_clone,
-            )
+                on_event: on_event_clone,
+            })
             .await;
             if let Err(err) = result {
+                let duration_ms =
+                    u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+                log_event!(
+                    LogLevel::Warn,
+                    "ssh.session.connect.failed",
+                    Some(operation_id_clone.as_str()),
+                    json!({
+                        "sessionId": &session_id_clone,
+                        "profileId": &failure_profile.id,
+                        "host": &failure_profile.host,
+                        "user": &failure_profile.username,
+                        "port": failure_profile.port,
+                        "authType": format!("{:?}", failure_profile.auth_type),
+                        "connectionPurpose": "session",
+                        "durationMs": duration_ms,
+                        "error": {
+                            "code": &err.code,
+                            "message": &err.message,
+                            "detail": &err.detail,
+                        }
+                    }),
+                );
                 on_event(crate::types::EngineEvent::SessionStatus {
                     session_id: session_id_clone.clone(),
                     state: SessionState::Error,
@@ -592,14 +625,18 @@ impl Engine {
         &self,
         spec: ProxySpec,
         on_event: EventCallback,
-        trace_id: Option<&str>,
+        operation_id: Option<&str>,
     ) -> Result<ProxyRuntime, EngineError> {
-        self.proxy_backend.open(spec, on_event, trace_id)
+        self.proxy_backend.open(spec, on_event, operation_id)
     }
 
     /// 关闭全局代理实例。
-    pub fn proxy_close(&self, proxy_id: &str, trace_id: Option<&str>) -> Result<(), EngineError> {
-        self.proxy_backend.close(proxy_id, trace_id)
+    pub fn proxy_close(
+        &self,
+        proxy_id: &str,
+        operation_id: Option<&str>,
+    ) -> Result<(), EngineError> {
+        self.proxy_backend.close(proxy_id, operation_id)
     }
 
     /// 获取全局代理实例列表。
@@ -608,8 +645,8 @@ impl Engine {
     }
 
     /// 关闭全部全局代理实例。
-    pub fn proxy_close_all(&self, trace_id: Option<&str>) -> Result<(), EngineError> {
-        self.proxy_backend.close_all(trace_id)
+    pub fn proxy_close_all(&self, operation_id: Option<&str>) -> Result<(), EngineError> {
+        self.proxy_backend.close_all(operation_id)
     }
 
     /// 等待后台响应并转换为同步结果。

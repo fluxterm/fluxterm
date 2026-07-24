@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { debug as logDebug } from "@/shared/logging/telemetry";
 import {
   aiSessionChatStreamCancel,
   aiSessionChatStreamStart,
@@ -44,7 +43,6 @@ type AiSessionSyncPayload = {
 type UseAiStateProps = {
   activeSessionId: string | null;
   locale: Locale;
-  debugLoggingEnabled: boolean;
   aiAvailable: boolean;
   aiUnavailableMessage: string | null;
   selectionMaxChars?: number;
@@ -115,7 +113,6 @@ function truncateSelectionText(value: string, maxChars: number) {
 export default function useAiState({
   activeSessionId,
   locale,
-  debugLoggingEnabled,
   aiAvailable,
   aiUnavailableMessage,
   selectionMaxChars,
@@ -174,17 +171,8 @@ export default function useAiState({
         }
         return next;
       });
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event: "ai.session.chat.error",
-            sessionId: payload.sessionId,
-            error: translateAppError(payload.error, t),
-          }),
-        );
-      }
     },
-    [debugLoggingEnabled, t],
+    [t],
   );
 
   useEffect(() => {
@@ -330,24 +318,6 @@ export default function useAiState({
     setErrorMessage(null);
 
     try {
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event:
-              userMessage.source === "selection"
-                ? "ai.selection.request"
-                : "ai.session.chat.request",
-            sessionId: activeId,
-            requestId: nextRequestId,
-            responseLanguageStrategy:
-              userMessage.source === "selection"
-                ? "follow_ui"
-                : "follow_user_input",
-            uiLanguage: locale,
-            content: userMessage.content,
-          }),
-        );
-      }
       await aiSessionChatStreamStart({
         requestId: nextRequestId,
         sessionId: activeId,
@@ -371,19 +341,6 @@ export default function useAiState({
       });
       return true;
     } catch (error) {
-      if (debugLoggingEnabled) {
-        void logDebug(
-          JSON.stringify({
-            event:
-              userMessage.source === "selection"
-                ? "ai.selection.error"
-                : "ai.session.chat.error",
-            sessionId: activeId,
-            requestId: nextRequestId,
-            error: translateAppError(error, t),
-          }),
-        );
-      }
       pendingRequestIdRef.current = null;
       setMessages((prev) => {
         // 请求启动失败时同时回滚 user 与 assistant 占位，恢复发送前状态。

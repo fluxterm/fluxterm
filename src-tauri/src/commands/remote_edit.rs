@@ -1,5 +1,9 @@
 //! 远端文件编辑命令。
+use std::time::Instant;
+
 use engine::SftpEntry;
+use fluxterm_logging::{LogLevel, log_event};
+use serde::Deserialize;
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -9,7 +13,17 @@ use crate::remote_edit::{
     spawn_remote_edit_monitor,
 };
 use crate::state::EngineState;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// 打开远端编辑会话所需的完整请求。
+pub struct RemoteEditOpenRequest {
+    session_id: String,
+    target: RemoteEditTarget,
+    entry: SftpEntry,
+    default_editor_path: Option<String>,
+    operation_id: String,
+}
 
 #[tauri::command]
 /// 打开远端文件并登记远端编辑实例。
@@ -17,18 +31,23 @@ pub async fn remote_edit_open(
     app: AppHandle,
     state: State<'_, EngineState>,
     remote_edit_state: State<'_, RemoteEditState>,
-    session_id: String,
-    target: RemoteEditTarget,
-    entry: SftpEntry,
-    default_editor_path: Option<String>,
+    request: RemoteEditOpenRequest,
 ) -> Result<RemoteEditSnapshot, engine::EngineError> {
+    let RemoteEditOpenRequest {
+        session_id,
+        target,
+        entry,
+        default_editor_path,
+        operation_id,
+    } = request;
+    let started_at = Instant::now();
     let engine = std::sync::Arc::clone(&state.engine);
     let app_handle = app.clone();
     let session_id_for_open = session_id.clone();
     let target_for_open = target.clone();
     let entry_for_open = entry.clone();
     let default_editor_path_for_open = default_editor_path.clone();
-    let (snapshot, instance) = tauri::async_runtime::spawn_blocking(move || {
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
         remote_edit_prepare_open(
             &app_handle,
             &engine,
@@ -38,28 +57,49 @@ pub async fn remote_edit_open(
             default_editor_path_for_open.as_deref(),
         )
     })
-    .await
-    .map_err(|err| {
-        engine::EngineError::with_detail(
+    .await;
+    let prepared = match prepared {
+        Ok(result) => result,
+        Err(error) => Err(engine::EngineError::with_detail(
             "session_command_failed",
             "Failed to open the remote edit session",
-            err.to_string(),
-        )
-    })??;
+            error.to_string(),
+        )),
+    };
+    let (snapshot, instance) = match prepared {
+        Ok(value) => value,
+        Err(error) => {
+            log_event!(
+                LogLevel::Warn,
+                "remote.edit.open.failed",
+                Some(operation_id.as_str()),
+                json!({
+                    "sessionId": session_id,
+                    "durationMs": started_at.elapsed().as_millis() as u64,
+                    "error": {
+                        "code": &error.code,
+                        "message": "Remote edit session could not be opened",
+                        "detail": &error.detail,
+                    },
+                }),
+            );
+            return Err(error);
+        }
+    };
     if let Some(instance) = instance {
         let instance = remote_edit_state.upsert(instance).await;
         emit_remote_edit_update(&app, &snapshot);
         spawn_remote_edit_monitor(app.clone(), instance).await;
     }
-    log_telemetry(
-        TelemetryLevel::Info,
-        "remote.edit.open.success",
-        None,
+    log_event!(
+        LogLevel::Info,
+        "remote.edit.open.succeeded",
+        Some(operation_id.as_str()),
         json!({
             "sessionId": snapshot.session_id,
             "instanceId": snapshot.instance_id,
-            "remotePath": snapshot.remote_path,
             "trackChanges": snapshot.track_changes,
+            "durationMs": started_at.elapsed().as_millis() as u64,
         }),
     );
     Ok(snapshot)
@@ -80,7 +120,9 @@ pub async fn remote_edit_confirm_upload(
     state: State<'_, EngineState>,
     remote_edit_state: State<'_, RemoteEditState>,
     instance_id: String,
+    operation_id: String,
 ) -> Result<RemoteEditSnapshot, engine::EngineError> {
+    let started_at = Instant::now();
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
             "remote_edit_not_found",
@@ -98,16 +140,6 @@ pub async fn remote_edit_confirm_upload(
         guard.snapshot.status = RemoteEditStatus::Uploading;
         guard.snapshot.last_error_code = None;
         guard.snapshot.last_error = None;
-        log_telemetry(
-            TelemetryLevel::Info,
-            "remote.edit.upload.started",
-            None,
-            json!({
-                "sessionId": guard.snapshot.session_id,
-                "instanceId": guard.snapshot.instance_id,
-                "remotePath": guard.snapshot.remote_path,
-            }),
-        );
         emit_remote_edit_update(&app, &guard.snapshot);
     }
 
@@ -161,14 +193,15 @@ pub async fn remote_edit_confirm_upload(
                 guard.snapshot.last_error_code = None;
                 guard.snapshot.last_error = None;
                 persist_remote_edit_instance(&app, &guard)?;
-                log_telemetry(
-                    TelemetryLevel::Info,
-                    "remote.edit.upload.success",
-                    None,
+                log_event!(
+                    LogLevel::Info,
+                    "remote.edit.upload.succeeded",
+                    Some(operation_id.as_str()),
                     json!({
                         "sessionId": guard.snapshot.session_id,
                         "instanceId": guard.snapshot.instance_id,
-                        "remotePath": guard.snapshot.remote_path,
+                        "bytes": guard.snapshot.remote_size,
+                        "durationMs": started_at.elapsed().as_millis() as u64,
                     }),
                 );
                 emit_remote_edit_update(&app, &guard.snapshot);
@@ -187,15 +220,19 @@ pub async fn remote_edit_confirm_upload(
                 guard.snapshot.last_error_code = Some(error.code.clone());
                 guard.snapshot.last_error = Some(error.message.clone());
                 guard.pending_snapshot = None;
-                log_telemetry(
-                    TelemetryLevel::Warn,
+                log_event!(
+                    LogLevel::Warn,
                     "remote.edit.upload.failed",
-                    None,
+                    Some(operation_id.as_str()),
                     json!({
                         "sessionId": guard.snapshot.session_id,
                         "instanceId": guard.snapshot.instance_id,
-                        "remotePath": guard.snapshot.remote_path,
-                        "errorCode": error.code,
+                        "durationMs": started_at.elapsed().as_millis() as u64,
+                        "error": {
+                            "code": error.code,
+                            "message": "Remote edit changes could not be uploaded",
+                            "detail": error.detail,
+                        },
                     }),
                 );
                 emit_remote_edit_update(&app, &guard.snapshot);
@@ -212,6 +249,7 @@ pub async fn remote_edit_dismiss_pending(
     app: AppHandle,
     remote_edit_state: State<'_, RemoteEditState>,
     instance_id: String,
+    operation_id: String,
 ) -> Result<RemoteEditSnapshot, engine::EngineError> {
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
@@ -235,14 +273,13 @@ pub async fn remote_edit_dismiss_pending(
         if !matches!(guard.snapshot.status, RemoteEditStatus::SyncFailed) {
             guard.snapshot.last_error_code = None;
         }
-        log_telemetry(
-            TelemetryLevel::Info,
-            "remote.edit.upload.dismissed",
-            None,
+        log_event!(
+            LogLevel::Info,
+            "remote.edit.upload.cancelled",
+            Some(operation_id.as_str()),
             json!({
                 "sessionId": guard.snapshot.session_id,
                 "instanceId": guard.snapshot.instance_id,
-                "remotePath": guard.snapshot.remote_path,
             }),
         );
         emit_remote_edit_update(&app, &guard.snapshot);

@@ -10,7 +10,6 @@ mod ironrdp_runtime;
 mod keyboard;
 mod protocol;
 mod session_manager;
-mod telemetry;
 
 use std::sync::Arc;
 
@@ -208,13 +207,15 @@ impl RdpRuntime {
         &self,
         session_id: &str,
         request: RuntimeConnectRequest,
+        operation_id: String,
     ) -> RuntimeResult<RuntimeSessionSnapshot> {
         let bridge = self.bridge.ensure_ready(self.sessions.clone()).await?;
         let ws_url = format!(
             "{}/v1/bridge/{}?token={}",
             bridge.base_url, session_id, bridge.token
         );
-        self.sessions.connect_session(session_id, request, ws_url)
+        self.sessions
+            .connect_session(session_id, request, ws_url, operation_id)
     }
 
     /// 断开指定的 RDP 会话。

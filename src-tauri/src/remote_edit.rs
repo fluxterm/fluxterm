@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine::{Engine, EngineError, SftpEntry};
+use fluxterm_logging::{LogLevel, log_event};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -21,7 +22,6 @@ use time::{OffsetDateTime, format_description::BorrowedFormatItem, macros::forma
 use tokio::sync::{Mutex, RwLock, watch};
 
 use crate::config_paths::resolve_data_root_dir;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 const REMOTE_FILE_CACHE_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 const REMOTE_FILE_CACHE_CLEANUP_MARKER: &str = ".cleanup-meta.json";
@@ -264,10 +264,6 @@ fn legacy_cleanup_day_to_date(days_since_unix_epoch: i64) -> Option<String> {
         .and_then(|value| value.format(CLEANUP_DATE_FORMAT).ok())
 }
 
-fn log_remote_edit_event(level: TelemetryLevel, event: &str, fields: serde_json::Value) {
-    log_telemetry(level, event, None, fields);
-}
-
 fn is_cleanup_marker_current(raw: &str, current_day: &str) -> bool {
     let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(raw) else {
         return false;
@@ -394,11 +390,12 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
             err.to_string(),
         )
     })?;
-    log_remote_edit_event(
-        TelemetryLevel::Info,
+    log_event!(
+        LogLevel::Debug,
         "remote.edit.cache.cleanup",
+        None,
         json!({
-            "removedPaths": removed_count,
+            "removedEntries": removed_count,
             "prunedIndexEntries": pruned_index_entries,
             "retentionMs": REMOTE_FILE_CACHE_RETENTION_MS,
         }),
@@ -799,7 +796,7 @@ pub(crate) fn remote_edit_prepare_open(
     let index = load_remote_edit_index(app)?;
     let index_entry = index.entries.get(&instance_id).cloned();
 
-    let (downloaded_at, baseline, open_mode) = if local_exists {
+    let (downloaded_at, baseline) = if local_exists {
         let existing_index_entry = index_entry.ok_or_else(|| {
             EngineError::new(
                 "remote_edit_workspace_invalid",
@@ -821,7 +818,6 @@ pub(crate) fn remote_edit_prepare_open(
             (
                 existing_index_entry.downloaded_at,
                 existing_index_entry.baseline,
-                "reused_local_workspace",
             )
         } else {
             engine.sftp_download(
@@ -829,11 +825,7 @@ pub(crate) fn remote_edit_prepare_open(
                 &remote_entry.path,
                 local_path.to_string_lossy().as_ref(),
             )?;
-            (
-                now_epoch_millis(),
-                read_local_file_snapshot(&local_path)?,
-                "redownloaded_remote_file",
-            )
+            (now_epoch_millis(), read_local_file_snapshot(&local_path)?)
         }
     } else {
         if index_entry.is_some() {
@@ -844,11 +836,7 @@ pub(crate) fn remote_edit_prepare_open(
             &remote_entry.path,
             local_path.to_string_lossy().as_ref(),
         )?;
-        (
-            now_epoch_millis(),
-            read_local_file_snapshot(&local_path)?,
-            "created_local_workspace",
-        )
+        (now_epoch_millis(), read_local_file_snapshot(&local_path)?)
     };
 
     let track_changes = is_remote_entry_editable_text(&remote_entry);
@@ -889,18 +877,6 @@ pub(crate) fn remote_edit_prepare_open(
             baseline: baseline.clone(),
         },
     )?;
-    log_remote_edit_event(
-        TelemetryLevel::Info,
-        "remote.edit.open.prepared",
-        json!({
-            "sessionId": session_id,
-            "instanceId": snapshot.instance_id,
-            "remotePath": snapshot.remote_path,
-            "localPath": snapshot.local_path,
-            "trackChanges": snapshot.track_changes,
-            "mode": open_mode,
-        }),
-    );
     if !track_changes {
         return Ok((snapshot, None));
     }
@@ -974,9 +950,27 @@ pub(crate) async fn spawn_remote_edit_monitor(
                         Ok(snapshot) => snapshot,
                         Err(error) => {
                             let mut guard = instance.lock().await;
+                            let is_new_failure = guard.snapshot.status != RemoteEditStatus::SyncFailed
+                                || guard.snapshot.last_error_code.as_deref() != Some(error.code.as_str());
                             guard.snapshot.status = RemoteEditStatus::SyncFailed;
                             guard.snapshot.last_error_code = Some(error.code.clone());
                             guard.snapshot.last_error = Some(error.message.clone());
+                            if is_new_failure {
+                                log_event!(
+                                    LogLevel::Warn,
+                                    "remote.edit.monitor.failed",
+                                    None,
+                                    json!({
+                                        "sessionId": guard.snapshot.session_id,
+                                        "instanceId": guard.snapshot.instance_id,
+                                        "error": {
+                                            "code": error.code,
+                                            "message": "Remote edit monitor failed",
+                                            "detail": error.detail,
+                                        },
+                                    }),
+                                );
+                            }
                             emit_remote_edit_update(&app, &guard.snapshot);
                             continue;
                         }
@@ -998,13 +992,13 @@ pub(crate) async fn spawn_remote_edit_monitor(
                     guard.snapshot.last_error_code = None;
                     guard.snapshot.last_error = None;
                     guard.pending_snapshot = Some(current_snapshot);
-                    log_remote_edit_event(
-                        TelemetryLevel::Info,
+                    log_event!(
+                        LogLevel::Debug,
                         "remote.edit.local.change.detected",
+                        None,
                         json!({
                             "sessionId": guard.snapshot.session_id,
                             "instanceId": guard.snapshot.instance_id,
-                            "remotePath": guard.snapshot.remote_path,
                         }),
                     );
                     emit_remote_edit_update(&app, &guard.snapshot);

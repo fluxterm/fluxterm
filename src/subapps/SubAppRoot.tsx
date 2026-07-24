@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "@/App.css";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { warn } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import useAppSettings, {
   DEFAULT_BACKGROUND_IMAGE_SURFACE_ALPHA,
   MAX_BACKGROUND_IMAGE_SURFACE_ALPHA,
@@ -306,13 +306,15 @@ export default function SubAppRoot() {
         await waitForNextPaint(2);
         if (disposed) return;
         setSubAppWindowAppearanceReady(true);
-        void warn(
-          JSON.stringify({
-            event: "subapp.background.image.load.failed",
-            asset: effectiveBackgroundImageAsset,
-            error: extractErrorMessage(error),
-          }),
-        );
+        logWarn("subapp.background.media.load.failed", {
+          subappId: subAppId ?? "unknown",
+          mediaType: normalizedBackgroundMediaType,
+          error: {
+            code: "subapp_background_media_load_failed",
+            message: "Sub-application background media could not be loaded",
+            detail: extractErrorMessage(error),
+          },
+        });
       }
     })();
 
@@ -328,6 +330,7 @@ export default function SubAppRoot() {
     normalizedBackgroundMediaType,
     effectiveThemeId,
     settingsLoaded,
+    subAppId,
   ]);
 
   useEffect(() => {

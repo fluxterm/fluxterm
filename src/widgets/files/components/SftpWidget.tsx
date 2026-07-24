@@ -3,7 +3,7 @@
  * 负责目录浏览、文件操作和文件组件上下文菜单。
  */
 import { useEffect, useRef, useState } from "react";
-import { error as logError, warn as logWarn } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import { openPath } from "@tauri-apps/plugin-opener";
 import type { IconType } from "react-icons";
 import type { Locale, Translate } from "@/i18n";
@@ -361,22 +361,17 @@ export default function SftpWidget({
                   )
                     ? t("sftp.openInFileManagerDenied")
                     : t("sftp.openInFileManagerFailed");
-                  const logOpenFailure = errorMessage.includes(
-                    "Not allowed to open path",
-                  )
-                    ? logWarn
-                    : logError;
                   pushToast({
                     level: "error",
                     message,
                   });
-                  void logOpenFailure(
-                    JSON.stringify({
-                      event: "sftp.open.in.file.manager.failed",
-                      path: currentPath,
-                      message: errorMessage,
-                    }),
-                  );
+                  logWarn("file.manager.open.failed", {
+                    error: {
+                      code: "file_manager_open_failed",
+                      message: "File manager open failed",
+                      detail: errorMessage,
+                    },
+                  });
                 } finally {
                   closeActionsMenu();
                 }
@@ -471,23 +466,13 @@ export default function SftpWidget({
     }
     try {
       await onOpenFile(entry);
-    } catch (error) {
-      const message = extractErrorMessage(error);
+    } catch {
       pushToast({
         level: "error",
         message: isRemote
           ? t("sftp.downloadForOpenFailed")
           : t("sftp.openFileFailed"),
       });
-      void logError(
-        JSON.stringify({
-          event: isRemote
-            ? "sftp:open-remote-file-failed"
-            : "local:file-open-failed",
-          path: entry.path,
-          message,
-        }),
-      );
     }
   }
 

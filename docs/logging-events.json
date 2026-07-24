@@ -1,0 +1,2228 @@
+{
+  "schemaVersion": 1,
+  "events": [
+    {
+      "name": "ai.settings.active.provider.changed",
+      "level": "debug",
+      "owner": "webview",
+      "message": "AI settings active provider changed",
+      "requiredFields": [],
+      "allowedFields": ["providerId"]
+    },
+    {
+      "name": "ai.settings.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "AI settings load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "ai.settings.loaded",
+      "level": "debug",
+      "owner": "webview",
+      "message": "AI settings loaded",
+      "requiredFields": [],
+      "allowedFields": [
+        "activeProviderPresent",
+        "providerCount",
+        "selectionMaxChars",
+        "sessionRecentOutputMaxChars"
+      ]
+    },
+    {
+      "name": "ai.settings.persisted",
+      "level": "debug",
+      "owner": "webview",
+      "message": "AI settings persisted",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "ai.settings.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "AI settings save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "app.update.check.available",
+      "level": "info",
+      "owner": "webview",
+      "message": "app update check available",
+      "requiredFields": [],
+      "allowedFields": ["version"]
+    },
+    {
+      "name": "app.update.check.current",
+      "level": "info",
+      "owner": "webview",
+      "message": "app update check current",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "app.update.check.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "app update check failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "app.update.install.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "app update install failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "app.update.install.succeeded",
+      "level": "info",
+      "owner": "webview",
+      "message": "app update install succeeded",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "app.update.relaunch.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "app update relaunch failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "config.directory.open.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "config directory open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "config.path.resolve.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "config path resolve failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sourceType"]
+    },
+    {
+      "name": "config.path.resolve.succeeded",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "config path resolve succeeded",
+      "requiredFields": [],
+      "allowedFields": ["sourceType"]
+    },
+    {
+      "name": "data.directory.open.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "data directory open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "file.manager.open.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "file manager open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "file.open.editor.invalid",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "file open editor invalid",
+      "requiredFields": [],
+      "allowedFields": ["error", "operationId"]
+    },
+    {
+      "name": "file.open.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "file open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["durationMs", "error", "operationId"]
+    },
+    {
+      "name": "file.open.fallback",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "file open fallback",
+      "requiredFields": [],
+      "allowedFields": ["error", "operationId"]
+    },
+    {
+      "name": "file.open.succeeded",
+      "level": "info",
+      "owner": "tauri",
+      "message": "file open succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs", "opener", "operationId"]
+    },
+    {
+      "name": "file.write.atomic.succeeded",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "file write atomic succeeded",
+      "requiredFields": [],
+      "allowedFields": ["size"]
+    },
+    {
+      "name": "file.write.directory.created",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "file write directory created",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "history.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "history load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "history.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "history save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "layout.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "layout load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "layout.loaded",
+      "level": "debug",
+      "owner": "webview",
+      "message": "layout loaded",
+      "requiredFields": [],
+      "allowedFields": [
+        "collapsedSections",
+        "floatingCount",
+        "sizeCount",
+        "slotCount"
+      ]
+    },
+    {
+      "name": "layout.persisted",
+      "level": "debug",
+      "owner": "webview",
+      "message": "layout persisted",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "layout.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "layout save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "logging.configuration.invalid",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "logging configuration invalid",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "logging.record.invalid",
+      "level": "warn",
+      "owner": "logging",
+      "message": "logging record invalid",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "mac.app.menu.apply.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "mac app menu apply failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "openai.request.cancelled",
+      "level": "info",
+      "owner": "openai",
+      "message": "openai request cancelled",
+      "requiredFields": [],
+      "allowedFields": [
+        "durationMs",
+        "model",
+        "operationId",
+        "provider",
+        "status"
+      ]
+    },
+    {
+      "name": "openai.request.failed",
+      "level": "warn",
+      "owner": "openai",
+      "message": "openai request failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "durationMs",
+        "error",
+        "model",
+        "operationId",
+        "provider",
+        "status"
+      ]
+    },
+    {
+      "name": "openai.request.succeeded",
+      "level": "info",
+      "owner": "openai",
+      "message": "openai request succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "durationMs",
+        "model",
+        "operationId",
+        "provider",
+        "status"
+      ]
+    },
+    {
+      "name": "proxy.close.all.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "proxy close all failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["count", "durationMs", "error", "operationId"]
+    },
+    {
+      "name": "proxy.close.all.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy close all started",
+      "requiredFields": [],
+      "allowedFields": ["count", "operationId"]
+    },
+    {
+      "name": "proxy.close.all.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "proxy close all succeeded",
+      "requiredFields": [],
+      "allowedFields": ["count", "durationMs", "operationId"]
+    },
+    {
+      "name": "proxy.close.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "proxy close failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["durationMs", "error", "operationId", "proxyId"]
+    },
+    {
+      "name": "proxy.close.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy close started",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "proxyId"]
+    },
+    {
+      "name": "proxy.close.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "proxy close succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs", "operationId", "proxyId"]
+    },
+    {
+      "name": "proxy.connection.closed",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy connection closed",
+      "requiredFields": [],
+      "allowedFields": [
+        "activeConnections",
+        "bindHost",
+        "bindPort",
+        "connectionId",
+        "operationId",
+        "peerAddr",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.connection.failed",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy connection failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "connectionId",
+        "durationMs",
+        "error",
+        "maxActiveConnections",
+        "operationId",
+        "peerAddr",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.connection.opened",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy connection opened",
+      "requiredFields": [],
+      "allowedFields": [
+        "activeConnections",
+        "bindHost",
+        "bindPort",
+        "connectionId",
+        "operationId",
+        "peerAddr",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.connection.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy connection succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "bytesIn",
+        "bytesOut",
+        "connectionId",
+        "durationMs",
+        "operationId",
+        "peerAddr",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.create.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "proxy create failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "durationMs",
+        "error",
+        "operationId",
+        "protocol"
+      ]
+    },
+    {
+      "name": "proxy.create.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy create started",
+      "requiredFields": [],
+      "allowedFields": [
+        "authEnabled",
+        "bindHost",
+        "bindPort",
+        "operationId",
+        "protocol"
+      ]
+    },
+    {
+      "name": "proxy.create.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "proxy create succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "durationMs",
+        "operationId",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.handshake.failed",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy handshake failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "connectionId",
+        "error",
+        "handshakeProtocol",
+        "operationId",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.handshake.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy handshake started",
+      "requiredFields": [],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "connectionId",
+        "handshakeProtocol",
+        "operationId",
+        "peerAddr",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.handshake.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "proxy handshake succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "connectionId",
+        "handshakeProtocol",
+        "operationId",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.runtime.accept.failed",
+      "level": "error",
+      "owner": "engine",
+      "message": "proxy runtime accept failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "error",
+        "operationId",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "proxy.runtime.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "proxy runtime failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "error",
+        "operationId",
+        "protocol",
+        "proxyId"
+      ]
+    },
+    {
+      "name": "quickbar.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "quickbar load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "quickbar.loaded",
+      "level": "debug",
+      "owner": "webview",
+      "message": "quickbar loaded",
+      "requiredFields": [],
+      "allowedFields": ["commands", "groups"]
+    },
+    {
+      "name": "quickbar.persisted",
+      "level": "debug",
+      "owner": "webview",
+      "message": "quickbar persisted",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "quickbar.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "quickbar save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "rdp.audio.format.invalid",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP audio format invalid",
+      "requiredFields": [],
+      "allowedFields": ["error", "formatNo", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.format.selected",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP audio format selected",
+      "requiredFields": [],
+      "allowedFields": [
+        "bitsPerSample",
+        "channels",
+        "formatNo",
+        "sampleRate",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.audio.mute.changed",
+      "level": "info",
+      "owner": "rdp_core",
+      "message": "RDP audio mute changed",
+      "requiredFields": [],
+      "allowedFields": ["muted", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.mute.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP audio mute failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.negotiation.started",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP audio negotiation started",
+      "requiredFields": [],
+      "allowedFields": ["channels", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.playback.closed",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP audio playback closed",
+      "requiredFields": [],
+      "allowedFields": ["sessionId"]
+    },
+    {
+      "name": "rdp.audio.playback.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP audio playback failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.playback.join.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP audio playback join failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "rdp.audio.playback.started",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP audio playback started",
+      "requiredFields": [],
+      "allowedFields": ["sessionId"]
+    },
+    {
+      "name": "rdp.bridge.attach.rejected",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP bridge attach rejected",
+      "requiredFields": [],
+      "allowedFields": [
+        "error",
+        "hasWsUrl",
+        "height",
+        "sessionId",
+        "state",
+        "width"
+      ]
+    },
+    {
+      "name": "rdp.bridge.auth.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP bridge auth failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "reason", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.channel.closed",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge channel closed",
+      "requiredFields": [],
+      "allowedFields": ["sessionId"]
+    },
+    {
+      "name": "rdp.bridge.client.close.received",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge client close received",
+      "requiredFields": [],
+      "allowedFields": ["hasCloseFrame", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.closed",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge closed",
+      "requiredFields": [],
+      "allowedFields": ["sessionId", "state"]
+    },
+    {
+      "name": "rdp.bridge.connect.dispatch",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP bridge connect dispatch",
+      "requiredFields": [],
+      "allowedFields": [
+        "bridgeState",
+        "operationId",
+        "rendererMode",
+        "sessionId",
+        "sessionState"
+      ]
+    },
+    {
+      "name": "rdp.bridge.connect.skipped",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP bridge connect skipped",
+      "requiredFields": [],
+      "allowedFields": [
+        "bridgeState",
+        "operationId",
+        "reason",
+        "rendererMode",
+        "sessionId",
+        "sessionState"
+      ]
+    },
+    {
+      "name": "rdp.bridge.connected",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP bridge connected",
+      "requiredFields": [],
+      "allowedFields": ["operationId"]
+    },
+    {
+      "name": "rdp.bridge.disconnected",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP bridge disconnected",
+      "requiredFields": [],
+      "allowedFields": ["operationId"]
+    },
+    {
+      "name": "rdp.bridge.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP bridge failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId"]
+    },
+    {
+      "name": "rdp.bridge.opened",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge opened",
+      "requiredFields": [],
+      "allowedFields": ["height", "sessionId", "state", "width"]
+    },
+    {
+      "name": "rdp.bridge.receive.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP bridge receive failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.receiver.lagged",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge receiver lagged",
+      "requiredFields": [],
+      "allowedFields": ["lagged", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.request.received",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge request received",
+      "requiredFields": [],
+      "allowedFields": ["hasToken", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.send.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP bridge send failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.server.failed",
+      "level": "error",
+      "owner": "rdp_core",
+      "message": "RDP bridge server failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "rdp.bridge.server.ready",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge server ready",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "rdp.bridge.subscribe.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP bridge subscribe failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "rdp.bridge.upgrade.succeeded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP bridge upgrade succeeded",
+      "requiredFields": [],
+      "allowedFields": ["hasWsUrl", "height", "sessionId", "state", "width"]
+    },
+    {
+      "name": "rdp.clipboard.sync",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP clipboard sync",
+      "requiredFields": [],
+      "allowedFields": ["direction", "operationId", "textLength"]
+    },
+    {
+      "name": "rdp.cliprdr.backend.data.request",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr backend data request",
+      "requiredFields": [],
+      "allowedFields": ["format"]
+    },
+    {
+      "name": "rdp.cliprdr.backend.data.response",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr backend data response",
+      "requiredFields": [],
+      "allowedFields": ["dataLen"]
+    },
+    {
+      "name": "rdp.cliprdr.backend.ready",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr backend ready",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "rdp.cliprdr.backend.remote.copy",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr backend remote copy",
+      "requiredFields": [],
+      "allowedFields": ["formatCount"]
+    },
+    {
+      "name": "rdp.cliprdr.backend.request.format.list",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr backend request format list",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "rdp.cliprdr.channel.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr channel failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "activationGeneration",
+        "error",
+        "operation",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.data.request",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr data request",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "format",
+        "localClipboardLen",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.data.response.received",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr data response received",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "dataLen",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.data.response.submit",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr data response submit",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "localClipboardLen",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.data.response.unavailable",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr data response unavailable",
+      "requiredFields": [],
+      "allowedFields": ["activationGeneration", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.cliprdr.initial.sync",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr initial sync",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "localClipboardLen",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.initial.sync.skipped",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr initial sync skipped",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.initial.sync.unavailable",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr initial sync unavailable",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.local.clipboard.forwarded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr local clipboard forwarded",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "operationId",
+        "sessionId",
+        "textLen"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.local.clipboard.skipped",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr local clipboard skipped",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "operationId",
+        "sessionId",
+        "textLen"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.local.copy.advertise",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr local copy advertise",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "operationId",
+        "sessionId",
+        "textLen"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.local.copy.unavailable",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr local copy unavailable",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "operationId",
+        "sessionId",
+        "textLen"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.paste.request",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr paste request",
+      "requiredFields": [],
+      "allowedFields": [
+        "ClipboardFormatId",
+        "activationGeneration",
+        "clipboardChannelState",
+        "format",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.cliprdr.paste.request.unavailable",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr paste request unavailable",
+      "requiredFields": [],
+      "allowedFields": ["activationGeneration", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.cliprdr.remote.format.list",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP cliprdr remote format list",
+      "requiredFields": [],
+      "allowedFields": [
+        "activationGeneration",
+        "clipboardChannelState",
+        "containsUnicodeText",
+        "formatCount",
+        "formats",
+        "operationId",
+        "reason",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.fullscreen.transition.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP fullscreen transition failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "rdp.profile.resolve.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP profile resolve failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId"]
+    },
+    {
+      "name": "rdp.renderer.diagnostic",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP renderer diagnostic",
+      "requiredFields": [],
+      "allowedFields": ["diagnosticKind", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.renderer.fallback.failed",
+      "level": "error",
+      "owner": "webview",
+      "message": "RDP renderer fallback failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "rdp.renderer.fallback.ready",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP renderer fallback ready",
+      "requiredFields": [],
+      "allowedFields": ["rendererMode"]
+    },
+    {
+      "name": "rdp.runtime.autodetect.reported",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime autodetect reported",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "request", "sessionId"]
+    },
+    {
+      "name": "rdp.runtime.certificate.interactive.unsupported",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP runtime certificate interactive unsupported",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.runtime.closed",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime closed",
+      "requiredFields": [],
+      "allowedFields": [
+        "closeReason",
+        "close_reason",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.runtime.disconnect.acknowledged",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime disconnect acknowledged",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "reason", "sessionId"]
+    },
+    {
+      "name": "rdp.runtime.disconnect.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP runtime disconnect failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId", "timeoutMs"]
+    },
+    {
+      "name": "rdp.runtime.disconnect.requested",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime disconnect requested",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "sessionId", "timeoutMs"]
+    },
+    {
+      "name": "rdp.runtime.disconnect.transport.closed",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime disconnect transport closed",
+      "requiredFields": [],
+      "allowedFields": ["operationId", "reason", "sessionId"]
+    },
+    {
+      "name": "rdp.runtime.first.frame",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime first frame",
+      "requiredFields": [],
+      "allowedFields": ["height", "operationId", "sessionId", "width"]
+    },
+    {
+      "name": "rdp.runtime.multitransport.declined",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP runtime multitransport declined",
+      "requiredFields": [],
+      "allowedFields": [
+        "operationId",
+        "requestId",
+        "requestedProtocol",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.runtime.reactivated",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime reactivated",
+      "requiredFields": [],
+      "allowedFields": ["height", "operationId", "sessionId", "width"]
+    },
+    {
+      "name": "rdp.runtime.ready",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime ready",
+      "requiredFields": [],
+      "allowedFields": [
+        "height",
+        "host",
+        "operationId",
+        "port",
+        "sessionId",
+        "width"
+      ]
+    },
+    {
+      "name": "rdp.runtime.resize.encoded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime resize encoded",
+      "requiredFields": [],
+      "allowedFields": ["height", "operationId", "sessionId", "width"]
+    },
+    {
+      "name": "rdp.runtime.started",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime started",
+      "requiredFields": [],
+      "allowedFields": [
+        "hasDomain",
+        "hasUsername",
+        "host",
+        "operationId",
+        "port",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.runtime.tcp.connected",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime tcp connected",
+      "requiredFields": [],
+      "allowedFields": [
+        "hasClientHostname",
+        "hasDomain",
+        "hasUsername",
+        "host",
+        "operationId",
+        "port",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "rdp.runtime.tls.upgraded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP runtime TLS upgraded",
+      "requiredFields": [],
+      "allowedFields": ["host", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.certificate.decided",
+      "level": "info",
+      "owner": "rdp_core",
+      "message": "RDP session certificate decided",
+      "requiredFields": [],
+      "allowedFields": ["accept", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.clear.succeeded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session clear succeeded",
+      "requiredFields": [],
+      "allowedFields": ["count"]
+    },
+    {
+      "name": "rdp.session.connect.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP session connect failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.connect.started",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session connect started",
+      "requiredFields": [],
+      "allowedFields": [
+        "height",
+        "operationId",
+        "profileId",
+        "sessionId",
+        "width"
+      ]
+    },
+    {
+      "name": "rdp.session.connect.succeeded",
+      "level": "info",
+      "owner": "rdp_core",
+      "message": "RDP session connect succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "durationMs",
+        "height",
+        "operationId",
+        "profileId",
+        "sessionId",
+        "width"
+      ]
+    },
+    {
+      "name": "rdp.session.create.reused",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session create reused",
+      "requiredFields": [],
+      "allowedFields": ["profileId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.create.succeeded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session create succeeded",
+      "requiredFields": [],
+      "allowedFields": ["height", "profileId", "sessionId", "width"]
+    },
+    {
+      "name": "rdp.session.disconnect.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP session disconnect failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId", "timeoutMs"]
+    },
+    {
+      "name": "rdp.session.disconnect.succeeded",
+      "level": "info",
+      "owner": "rdp_core",
+      "message": "RDP session disconnect succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.disconnect.task.failed",
+      "level": "warn",
+      "owner": "rdp_core",
+      "message": "RDP session disconnect task failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId"]
+    },
+    {
+      "name": "rdp.session.remove.succeeded",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session remove succeeded",
+      "requiredFields": [],
+      "allowedFields": ["sessionId"]
+    },
+    {
+      "name": "rdp.session.resize.requested",
+      "level": "debug",
+      "owner": "rdp_core",
+      "message": "RDP session resize requested",
+      "requiredFields": [],
+      "allowedFields": ["height", "operationId", "sessionId", "width"]
+    },
+    {
+      "name": "rdp.worker.init.failed",
+      "level": "error",
+      "owner": "webview",
+      "message": "RDP worker init failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "hasTransferControlToOffscreen"]
+    },
+    {
+      "name": "rdp.worker.init.started",
+      "level": "debug",
+      "owner": "webview",
+      "message": "RDP worker init started",
+      "requiredFields": [],
+      "allowedFields": [
+        "hasCanvas",
+        "hasTransferControlToOffscreen",
+        "preferMainThreadFallback"
+      ]
+    },
+    {
+      "name": "rdp.worker.message.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "RDP worker message failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "rdp.worker.runtime.error",
+      "level": "error",
+      "owner": "webview",
+      "message": "RDP worker runtime error",
+      "requiredFields": [],
+      "allowedFields": ["colno", "error", "lineno"]
+    },
+    {
+      "name": "remote.edit.cache.cleanup",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "remote edit cache cleanup",
+      "requiredFields": [],
+      "allowedFields": ["prunedIndexEntries", "removedEntries", "retentionMs"]
+    },
+    {
+      "name": "remote.edit.local.change.detected",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "remote edit local change detected",
+      "requiredFields": [],
+      "allowedFields": ["instanceId", "sessionId"]
+    },
+    {
+      "name": "remote.edit.monitor.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "remote edit monitor failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "instanceId", "sessionId"]
+    },
+    {
+      "name": "remote.edit.open.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "remote edit open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["durationMs", "error", "operationId", "sessionId"]
+    },
+    {
+      "name": "remote.edit.open.succeeded",
+      "level": "info",
+      "owner": "tauri",
+      "message": "remote edit open succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "durationMs",
+        "instanceId",
+        "operationId",
+        "sessionId",
+        "trackChanges"
+      ]
+    },
+    {
+      "name": "remote.edit.upload.cancelled",
+      "level": "info",
+      "owner": "tauri",
+      "message": "remote edit upload cancelled",
+      "requiredFields": [],
+      "allowedFields": ["instanceId", "operationId", "sessionId"]
+    },
+    {
+      "name": "remote.edit.upload.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "remote edit upload failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "durationMs",
+        "error",
+        "instanceId",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "remote.edit.upload.succeeded",
+      "level": "info",
+      "owner": "tauri",
+      "message": "remote edit upload succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "bytes",
+        "durationMs",
+        "instanceId",
+        "operationId",
+        "sessionId"
+      ]
+    },
+    {
+      "name": "resource.monitor.local.started",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "resource monitor local started",
+      "requiredFields": [],
+      "allowedFields": ["intervalSec", "sessionId"]
+    },
+    {
+      "name": "resource.monitor.ssh.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "resource monitor SSH failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "connectionPurpose",
+        "error",
+        "host",
+        "operationId",
+        "profileId",
+        "sessionId",
+        "user"
+      ]
+    },
+    {
+      "name": "resource.monitor.ssh.ready",
+      "level": "info",
+      "owner": "engine",
+      "message": "resource monitor SSH ready",
+      "requiredFields": [],
+      "allowedFields": [
+        "connectionPurpose",
+        "host",
+        "operationId",
+        "profileId",
+        "sessionId",
+        "user"
+      ]
+    },
+    {
+      "name": "resource.monitor.ssh.sample.failed",
+      "level": "debug",
+      "owner": "engine",
+      "message": "resource monitor SSH sample failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "operationId", "sessionId"]
+    },
+    {
+      "name": "resource.monitor.ssh.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "resource monitor SSH started",
+      "requiredFields": [],
+      "allowedFields": [
+        "connectionPurpose",
+        "host",
+        "operationId",
+        "profileId",
+        "sessionId",
+        "user"
+      ]
+    },
+    {
+      "name": "resource.monitor.stop.succeeded",
+      "level": "debug",
+      "owner": "tauri",
+      "message": "resource monitor stop succeeded",
+      "requiredFields": [],
+      "allowedFields": ["sessionId"]
+    },
+    {
+      "name": "serial.session.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "serial session failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "session.settings.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "session settings load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "session.settings.loaded",
+      "level": "debug",
+      "owner": "webview",
+      "message": "session settings loaded",
+      "requiredFields": [],
+      "allowedFields": [
+        "keyCount",
+        "resourceMonitorEnabled",
+        "terminalPathSyncEnabled"
+      ]
+    },
+    {
+      "name": "session.settings.persisted",
+      "level": "debug",
+      "owner": "webview",
+      "message": "session settings persisted",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "session.settings.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "session settings save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "settings.background.media.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "settings background media load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "mediaType"]
+    },
+    {
+      "name": "settings.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "settings load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "settings.loaded",
+      "level": "debug",
+      "owner": "webview",
+      "message": "settings loaded",
+      "requiredFields": [],
+      "allowedFields": ["hasBackgroundMedia", "hasShellId", "keyCount"]
+    },
+    {
+      "name": "settings.persisted",
+      "level": "debug",
+      "owner": "webview",
+      "message": "settings persisted",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "settings.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "settings save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "settings.shell.initialize.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "settings shell initialize failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "settings.shell.refreshed",
+      "level": "debug",
+      "owner": "webview",
+      "message": "settings shell refreshed",
+      "requiredFields": [],
+      "allowedFields": [
+        "availableShellCount",
+        "fallbackUsed",
+        "savedShellId",
+        "selectedShellId"
+      ]
+    },
+    {
+      "name": "sftp.download.dir.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download dir failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.download.dir.file.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download dir file failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.download.dir.mkdir.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download dir mkdir failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.download.dir.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP download dir started",
+      "requiredFields": [],
+      "allowedFields": ["mode", "sessionId"]
+    },
+    {
+      "name": "sftp.download.dir.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SFTP download dir succeeded",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.download.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.download.scan.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download scan failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.download.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP download started",
+      "requiredFields": [],
+      "allowedFields": ["sessionId", "totalBytes"]
+    },
+    {
+      "name": "sftp.download.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SFTP download succeeded",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.download.worker.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP download worker failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.home.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP home failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["durationMs", "error"]
+    },
+    {
+      "name": "sftp.home.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP home started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.home.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP home succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs"]
+    },
+    {
+      "name": "sftp.initialization.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP initialization failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "mode", "stage", "timeoutMs"]
+    },
+    {
+      "name": "sftp.list.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP list failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.list.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP list started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.list.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP list succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs", "entryCount"]
+    },
+    {
+      "name": "sftp.mkdir.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP mkdir failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.mkdir.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP mkdir started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.mkdir.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP mkdir succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs"]
+    },
+    {
+      "name": "sftp.remove.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP remove failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.remove.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP remove started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.remove.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP remove succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs"]
+    },
+    {
+      "name": "sftp.rename.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP rename failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.rename.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP rename started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.rename.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP rename succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs"]
+    },
+    {
+      "name": "sftp.resolve.path.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP resolve path failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.resolve.path.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP resolve path started",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.resolve.path.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP resolve path succeeded",
+      "requiredFields": [],
+      "allowedFields": ["durationMs"]
+    },
+    {
+      "name": "sftp.terminal.directory.sync.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "SFTP terminal directory sync failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "sessionId"]
+    },
+    {
+      "name": "sftp.upload.batch.cancelled",
+      "level": "info",
+      "owner": "engine",
+      "message": "SFTP upload batch cancelled",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.upload.batch.dir.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch dir failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.batch.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.batch.file.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch file failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.batch.mkdir.parent.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch mkdir parent failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.batch.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP upload batch started",
+      "requiredFields": [],
+      "allowedFields": ["mode", "sessionId"]
+    },
+    {
+      "name": "sftp.upload.batch.stream.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch stream failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.batch.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SFTP upload batch succeeded",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "sftp.upload.batch.worker.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload batch worker failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SFTP upload failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "sftp.upload.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SFTP upload started",
+      "requiredFields": [],
+      "allowedFields": ["sessionId", "totalBytes"]
+    },
+    {
+      "name": "sftp.upload.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SFTP upload succeeded",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "ssh.authentication.failed",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SSH authentication failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "error",
+        "host",
+        "messageKey",
+        "operationId",
+        "profileId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.authentication.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SSH authentication started",
+      "requiredFields": [],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "host",
+        "operationId",
+        "profileId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.authentication.succeeded",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SSH authentication succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "host",
+        "operationId",
+        "profileId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.session.connect.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SSH session connect failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "durationMs",
+        "error",
+        "host",
+        "port",
+        "profileId",
+        "sessionId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.session.connect.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SSH session connect started",
+      "requiredFields": [],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "host",
+        "operationId",
+        "port",
+        "profileId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.session.connect.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SSH session connect succeeded",
+      "requiredFields": [],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "durationMs",
+        "host",
+        "operationId",
+        "port",
+        "profileId",
+        "sessionId",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.session.disconnected",
+      "level": "info",
+      "owner": "engine",
+      "message": "SSH session disconnected",
+      "requiredFields": [],
+      "allowedFields": ["durationMs", "operationId", "reason", "sessionId"]
+    },
+    {
+      "name": "ssh.session.plan.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "SSH session plan failed",
+      "requiredFields": ["error"],
+      "allowedFields": [
+        "authType",
+        "connectionPurpose",
+        "durationMs",
+        "error",
+        "host",
+        "operationId",
+        "port",
+        "profileId",
+        "stage",
+        "user"
+      ]
+    },
+    {
+      "name": "ssh.tunnel.close.succeeded",
+      "level": "info",
+      "owner": "engine",
+      "message": "SSH tunnel close succeeded",
+      "requiredFields": [],
+      "allowedFields": ["tunnelId"]
+    },
+    {
+      "name": "ssh.tunnel.open.failed",
+      "level": "warn",
+      "owner": "engine",
+      "message": "SSH tunnel open failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "tunnelId"]
+    },
+    {
+      "name": "ssh.tunnel.open.started",
+      "level": "debug",
+      "owner": "engine",
+      "message": "SSH tunnel open started",
+      "requiredFields": [],
+      "allowedFields": [
+        "bindHost",
+        "bindPort",
+        "kind",
+        "sessionId",
+        "targetHost",
+        "targetPort",
+        "tunnelId"
+      ]
+    },
+    {
+      "name": "subapp.background.media.load.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "subapp background media load failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "mediaType", "subappId"]
+    },
+    {
+      "name": "terminal.cwd.sync.paused",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal cwd sync paused",
+      "requiredFields": [],
+      "allowedFields": ["reason", "sessionId"]
+    },
+    {
+      "name": "terminal.cwd.sync.resumed",
+      "level": "debug",
+      "owner": "webview",
+      "message": "terminal cwd sync resumed",
+      "requiredFields": [],
+      "allowedFields": ["reason", "sessionId"]
+    },
+    {
+      "name": "terminal.cwd.sync.unsupported",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal cwd sync unsupported",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
+      "name": "terminal.focused.line.copy.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal focused line copy failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "textLength"]
+    },
+    {
+      "name": "terminal.search.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal search failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "keywordLength"]
+    },
+    {
+      "name": "terminal.search.unavailable",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal search unavailable",
+      "requiredFields": [],
+      "allowedFields": ["error", "keywordLength"]
+    },
+    {
+      "name": "terminal.selection.auto.copy.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "terminal selection auto copy failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error", "textLength"]
+    }
+  ]
+}

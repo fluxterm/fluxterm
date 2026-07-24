@@ -26,14 +26,15 @@ use std::time::Duration;
 use engine::{
     EngineEvent, EventCallback, ExpectedHostKey, HostProfile, JumpHostSpec, ResourceCpuSnapshot,
     ResourceMemorySnapshot, ResourceMonitorStatus, ResourceMonitorUnsupportedReason,
-    SessionResourceSnapshot, monitor::run_ssh_resource_monitor, util::now_epoch,
+    SessionResourceSnapshot,
+    monitor::{SshResourceMonitorRequest, run_ssh_resource_monitor},
+    util::now_epoch,
 };
+use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
 use sysinfo::System;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
-
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 pub const MIN_RESOURCE_MONITOR_INTERVAL_SEC: u64 = 3;
 const INITIAL_RESOURCE_SAMPLE_WINDOW: Duration = Duration::from_secs(1);
@@ -45,6 +46,17 @@ struct ResourceMonitorHandle {
 /// 资源监控共享状态。
 pub struct ResourceMonitorState {
     monitors: Mutex<HashMap<String, ResourceMonitorHandle>>,
+}
+
+/// 启动独立 SSH 资源监控所需的完整上下文。
+pub(crate) struct SshResourceMonitorStartRequest {
+    pub(crate) app: AppHandle,
+    pub(crate) session_id: String,
+    pub(crate) profile: HostProfile,
+    pub(crate) operation_id: String,
+    pub(crate) expected_host_key: Option<ExpectedHostKey>,
+    pub(crate) jump_spec: JumpHostSpec,
+    pub(crate) interval_sec: u64,
 }
 
 impl Default for ResourceMonitorState {
@@ -66,9 +78,9 @@ impl ResourceMonitorState {
             .expect("resource monitor lock poisoned")
             .insert(session_id.clone(), ResourceMonitorHandle { stop_tx });
 
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "resource.monitor.local.start",
+        log_event!(
+            LogLevel::Debug,
+            "resource.monitor.local.started",
             None,
             json!({
                 "sessionId": session_id.clone(),
@@ -81,15 +93,16 @@ impl ResourceMonitorState {
     }
 
     /// 启动远端 SSH 资源监控。
-    pub fn start_ssh(
-        &self,
-        app: AppHandle,
-        session_id: String,
-        profile: HostProfile,
-        expected_host_key: Option<ExpectedHostKey>,
-        jump_spec: JumpHostSpec,
-        interval_sec: u64,
-    ) {
+    pub(crate) fn start_ssh(&self, request: SshResourceMonitorStartRequest) {
+        let SshResourceMonitorStartRequest {
+            app,
+            session_id,
+            profile,
+            operation_id,
+            expected_host_key,
+            jump_spec,
+            interval_sec,
+        } = request;
         self.stop(&session_id);
         let interval_sec = interval_sec.max(MIN_RESOURCE_MONITOR_INTERVAL_SEC);
         let (stop_tx, stop_rx) = watch::channel(false);
@@ -97,42 +110,38 @@ impl ResourceMonitorState {
             .lock()
             .expect("resource monitor lock poisoned")
             .insert(session_id.clone(), ResourceMonitorHandle { stop_tx });
+        let profile_id = profile.id.clone();
+        let host = profile.host.clone();
+        let user = profile.username.clone();
 
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "resource.monitor.ssh.start",
-            None,
-            json!({
-                "sessionId": session_id.clone(),
-                "profileId": profile.id.clone(),
-                "host": profile.host.clone(),
-                "intervalSec": interval_sec,
-            }),
-        );
         tauri::async_runtime::spawn(async move {
             let on_event = build_resource_event_bridge(app.clone());
-            if let Err(error) = run_ssh_resource_monitor(
-                session_id.clone(),
+            if let Err(error) = run_ssh_resource_monitor(SshResourceMonitorRequest {
+                session_id: session_id.clone(),
                 profile,
+                operation_id: operation_id.clone(),
                 expected_host_key,
                 jump_spec,
                 interval_sec,
                 stop_rx,
                 on_event,
-            )
+            })
             .await
             {
-                log_telemetry(
-                    TelemetryLevel::Warn,
+                log_event!(
+                    LogLevel::Warn,
                     "resource.monitor.ssh.failed",
-                    None,
+                    Some(&operation_id),
                     json!({
                         "sessionId": session_id.clone(),
-                        "phase": "runSshMonitor",
+                        "profileId": profile_id,
+                        "host": host,
+                        "user": user,
+                        "connectionPurpose": "resourceMonitor",
                         "error": {
                             "code": error.code.clone(),
-                            "message": error.message.clone(),
-                            "detail": error.detail.clone(),
+                            "message": "Resource monitor SSH connection failed",
+                            "detail": error.detail.clone().unwrap_or(error.message.clone()),
                         }
                     }),
                 );
@@ -159,9 +168,9 @@ impl ResourceMonitorState {
             .remove(session_id);
         if let Some(handle) = handle {
             let _ = handle.stop_tx.send(true);
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "resource.monitor.stop.success",
+            log_event!(
+                LogLevel::Debug,
+                "resource.monitor.stop.succeeded",
                 None,
                 json!({
                     "sessionId": session_id,

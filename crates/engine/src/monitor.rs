@@ -10,12 +10,12 @@ use crate::auth::{AuthPurpose, authenticate};
 use crate::error::EngineError;
 use crate::session::{ClientHandler, ExpectedHostKey};
 use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EngineEvent, EventCallback, HostProfile, ResourceCpuSnapshot, ResourceMemorySnapshot,
     ResourceMonitorStatus, ResourceMonitorUnsupportedReason, SessionResourceSnapshot,
 };
 use crate::util::now_epoch;
+use fluxterm_logging::{LogLevel, log_event};
 
 const REMOTE_RESOURCE_COMMAND: &str = "cat /proc/stat 2>/dev/null; printf '\\n'; cat /proc/meminfo 2>/dev/null; printf '\\n'; cat /proc/uptime 2>/dev/null";
 const INITIAL_RESOURCE_SAMPLE_WINDOW: Duration = Duration::from_secs(1);
@@ -46,23 +46,51 @@ impl CpuCounters {
     }
 }
 
+/// 独立 SSH 资源监控循环的完整运行上下文。
+pub struct SshResourceMonitorRequest {
+    pub session_id: String,
+    pub profile: HostProfile,
+    pub operation_id: String,
+    pub expected_host_key: Option<ExpectedHostKey>,
+    pub jump_spec: JumpHostSpec,
+    pub interval_sec: u64,
+    pub stop_rx: watch::Receiver<bool>,
+    pub on_event: EventCallback,
+}
+
 /// 运行独立 SSH 资源监控循环，仅用于远端 Linux 主机。
 pub async fn run_ssh_resource_monitor(
-    session_id: String,
-    profile: HostProfile,
-    expected_host_key: Option<ExpectedHostKey>,
-    jump_spec: JumpHostSpec,
-    interval_sec: u64,
-    mut stop_rx: watch::Receiver<bool>,
-    on_event: EventCallback,
+    request: SshResourceMonitorRequest,
 ) -> Result<(), EngineError> {
+    let SshResourceMonitorRequest {
+        session_id,
+        profile,
+        operation_id,
+        expected_host_key,
+        jump_spec,
+        interval_sec,
+        mut stop_rx,
+        on_event,
+    } = request;
+    log_event!(
+        LogLevel::Debug,
+        "resource.monitor.ssh.started",
+        Some(&operation_id),
+        json!({
+            "sessionId": session_id.clone(),
+            "profileId": profile.id.clone(),
+            "host": profile.host.clone(),
+            "user": profile.username.clone(),
+            "connectionPurpose": "resourceMonitor",
+        }),
+    );
     let handler = match expected_host_key {
         Some(expected) => ClientHandler::with_expected(expected),
         None => ClientHandler::unchecked(),
     };
     let connection = timeout(
         Duration::from_secs(SSH_RESOURCE_MONITOR_CONNECT_TIMEOUT_SECS),
-        connect_ssh_client(&profile, None, &jump_spec, handler),
+        connect_ssh_client(&profile, None, &jump_spec, handler, Some(&operation_id)),
     )
     .await
     .map_err(|err| {
@@ -81,7 +109,13 @@ pub async fn run_ssh_resource_monitor(
     })?;
     let mut session = connection.handle;
 
-    authenticate(&mut session, &profile, AuthPurpose::ResourceMonitor).await?;
+    authenticate(
+        &mut session,
+        &profile,
+        AuthPurpose::ResourceMonitor,
+        Some(&operation_id),
+    )
+    .await?;
 
     let baseline_output = exec_remote_resource_command(&session).await?;
     let baseline_cpu = parse_cpu_counters(&baseline_output)?;
@@ -98,11 +132,24 @@ pub async fn run_ssh_resource_monitor(
     if *stop_rx.borrow() {
         return Ok(());
     }
+    log_event!(
+        LogLevel::Info,
+        "resource.monitor.ssh.ready",
+        Some(&operation_id),
+        json!({
+            "sessionId": session_id.clone(),
+            "profileId": profile.id.clone(),
+            "host": profile.host.clone(),
+            "user": profile.username.clone(),
+            "connectionPurpose": "resourceMonitor",
+        }),
+    );
     on_event(EngineEvent::SessionResource(snapshot));
 
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_sec.max(3)));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     ticker.tick().await;
+    let mut sample_failure_active = false;
 
     loop {
         tokio::select! {
@@ -114,6 +161,7 @@ pub async fn run_ssh_resource_monitor(
             _ = ticker.tick() => {
                 match sample_linux_resource_snapshot(&session_id, &session, previous_cpu).await {
                     Ok((snapshot, current_cpu)) => {
+                        sample_failure_active = false;
                         previous_cpu = current_cpu;
                         on_event(EngineEvent::SessionResource(snapshot));
                     }
@@ -133,19 +181,22 @@ pub async fn run_ssh_resource_monitor(
                         break;
                     }
                     Err(error) => {
-                        log_telemetry(
-                            TelemetryLevel::Debug,
-                            "resource.monitor.ssh.sample.failed",
-                            None,
-                            json!({
-                                "sessionId": session_id,
-                                "error": {
-                                    "code": error.code,
-                                    "message": error.message,
-                                    "detail": error.detail,
-                                }
-                            }),
-                        );
+                        if !sample_failure_active {
+                            sample_failure_active = true;
+                            log_event!(
+                                LogLevel::Debug,
+                                "resource.monitor.ssh.sample.failed",
+                                Some(&operation_id),
+                                json!({
+                                    "sessionId": session_id,
+                                    "error": {
+                                        "code": error.code,
+                                        "message": error.message,
+                                        "detail": error.detail,
+                                    }
+                                }),
+                            );
+                        }
                     }
                 }
             }

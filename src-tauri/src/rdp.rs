@@ -247,6 +247,7 @@ impl RdpState {
     pub async fn connect_session(
         &self,
         session_id: &str,
+        operation_id: String,
     ) -> Result<RdpSessionSnapshot, EngineError> {
         let (current, profile) = self.get_session_with_profile(session_id)?;
         let runtime_snapshot = self
@@ -265,6 +266,7 @@ impl RdpState {
                     height: current.height,
                     performance_flags: convert_performance_flags(profile.performance_flags.clone()),
                 },
+                operation_id,
             )
             .await
             .map_err(runtime_error)?;

@@ -24,8 +24,8 @@ use uuid::Uuid;
 
 use crate::protocol::RuntimeSessionSnapshot;
 use crate::session_manager::{SessionManager, json_message};
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::{RuntimeError, RuntimeResult};
+use fluxterm_logging::{LogLevel, log_event};
 
 /// 内部应用状态。
 #[derive(Debug, Clone)]
@@ -93,13 +93,15 @@ impl BridgeServer {
         // 在后台启动服务器任务
         tokio::spawn(async move {
             if let Err(error) = axum::serve(listener, app).await {
-                log_telemetry(
-                    TelemetryLevel::Error,
+                log_event!(
+                    LogLevel::Error,
                     "rdp.bridge.server.failed",
+                    None,
                     json!({
                         "error": {
                             "code": "rdp_bridge_server_failed",
-                            "message": error.to_string(),
+                            "message": "RDP bridge server failed",
+                            "detail": error.to_string(),
                         },
                     }),
                 );
@@ -110,11 +112,7 @@ impl BridgeServer {
             base_url: format!("ws://{}", addr),
             token,
         };
-        log_telemetry(
-            TelemetryLevel::Info,
-            "rdp.bridge.server.ready",
-            json!({ "baseUrl": &info.base_url }),
-        );
+        log_event!(LogLevel::Debug, "rdp.bridge.server.ready", None, json!({}),);
         *inner = Some(info.clone());
         Ok(info)
     }
@@ -134,9 +132,10 @@ async fn handle_bridge_ws(
     State(state): State<Arc<AppState>>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    log_telemetry(
-        TelemetryLevel::Debug,
+    log_event!(
+        LogLevel::Debug,
         "rdp.bridge.request.received",
+        None,
         json!({
             "sessionId": &session_id,
             "hasToken": query.token.is_some(),
@@ -144,12 +143,17 @@ async fn handle_bridge_ws(
     );
 
     let Some(token) = query.token.as_deref() else {
-        log_telemetry(
-            TelemetryLevel::Warn,
+        log_event!(
+            LogLevel::Warn,
             "rdp.bridge.auth.failed",
+            None,
             json!({
                 "sessionId": &session_id,
                 "reason": "missing_token",
+                "error": {
+                    "code": "rdp_bridge_token_missing",
+                    "message": "RDP bridge authentication failed",
+                },
             }),
         );
         return Err((
@@ -159,12 +163,17 @@ async fn handle_bridge_ws(
     };
 
     if token != state.token {
-        log_telemetry(
-            TelemetryLevel::Warn,
+        log_event!(
+            LogLevel::Warn,
             "rdp.bridge.auth.failed",
+            None,
             json!({
                 "sessionId": &session_id,
                 "reason": "token_mismatch",
+                "error": {
+                    "code": "rdp_bridge_token_mismatch",
+                    "message": "RDP bridge authentication failed",
+                },
             }),
         );
         return Err((
@@ -175,14 +184,16 @@ async fn handle_bridge_ws(
     let (snapshot, rx) = match state.sessions.subscribe(&session_id) {
         Ok(result) => result,
         Err(error) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
+            log_event!(
+                LogLevel::Warn,
                 "rdp.bridge.subscribe.failed",
+                None,
                 json!({
-                    "sessionId": session_id,
+                    "sessionId": &session_id,
                     "error": {
                         "code": &error.code,
-                        "message": &error.message,
+                        "message": "RDP bridge subscription failed",
+                        "detail": error.detail.clone().unwrap_or(error.message.clone()),
                     },
                 }),
             );
@@ -190,15 +201,20 @@ async fn handle_bridge_ws(
         }
     };
     if !can_attach_bridge(&snapshot, token) {
-        log_telemetry(
-            TelemetryLevel::Warn,
+        log_event!(
+            LogLevel::Warn,
             "rdp.bridge.attach.rejected",
+            None,
             json!({
                 "sessionId": &session_id,
                 "state": &snapshot.state,
                 "hasWsUrl": snapshot.ws_url.is_some(),
                 "width": snapshot.width,
                 "height": snapshot.height,
+                "error": {
+                    "code": "rdp_bridge_attach_rejected",
+                    "message": "RDP bridge attachment rejected",
+                },
             }),
         );
         return Err((
@@ -206,9 +222,10 @@ async fn handle_bridge_ws(
             "The RDP session bridge is no longer valid; reconnect the session".to_string(),
         ));
     }
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.bridge.upgrade.accepted",
+    log_event!(
+        LogLevel::Debug,
+        "rdp.bridge.upgrade.succeeded",
+        None,
         json!({
             "sessionId": &session_id,
             "state": &snapshot.state,
@@ -226,9 +243,10 @@ async fn run_bridge_socket(
     snapshot: RuntimeSessionSnapshot,
     mut rx: broadcast::Receiver<axum::extract::ws::Message>,
 ) {
-    log_telemetry(
-        TelemetryLevel::Info,
-        "rdp.bridge.open",
+    log_event!(
+        LogLevel::Debug,
+        "rdp.bridge.opened",
+        None,
         json!({
             "sessionId": &snapshot.session_id,
             "state": &snapshot.state,
@@ -267,20 +285,28 @@ async fn run_bridge_socket(
                 match outbound {
                     Ok(message) => {
                         if socket.send(message).await.is_err() {
-                            log_telemetry(
-                                TelemetryLevel::Warn,
-                                "rdp.bridge.send.failed",
-                                json!({ "sessionId": &snapshot.session_id }),
+                            log_event!(
+            LogLevel::Warn,
+            "rdp.bridge.send.failed",
+            None,
+            json!({
+                                "sessionId": &snapshot.session_id,
+                                "error": {
+                                    "code": "rdp_bridge_send_failed",
+                                    "message": "RDP bridge send failed",
+                                },
+                            }),
                             );
                             break;
                         }
                     }
                     Err(RecvError::Lagged(count)) => {
                         // 客户端消费太慢，跳过过期帧以维持实时性
-                        log_telemetry(
-                            TelemetryLevel::Warn,
-                            "rdp.bridge.receiver.lagged",
-                            json!({
+                        log_event!(
+            LogLevel::Debug,
+            "rdp.bridge.receiver.lagged",
+            None,
+            json!({
                                 "sessionId": &snapshot.session_id,
                                 "lagged": count,
                             }),
@@ -288,10 +314,11 @@ async fn run_bridge_socket(
                         continue;
                     }
                     Err(RecvError::Closed) => {
-                        log_telemetry(
-                            TelemetryLevel::Warn,
-                            "rdp.bridge.channel.closed",
-                            json!({ "sessionId": &snapshot.session_id }),
+                        log_event!(
+            LogLevel::Debug,
+            "rdp.bridge.channel.closed",
+            None,
+            json!({ "sessionId": &snapshot.session_id }),
                         );
                         break;
                     }
@@ -301,17 +328,13 @@ async fn run_bridge_socket(
             inbound = socket.recv() => {
                 match inbound {
                     Some(Ok(axum::extract::ws::Message::Close(frame))) => {
-                        log_telemetry(
-                            TelemetryLevel::Info,
-                            "rdp.bridge.client.close.received",
-                            json!({
+                        log_event!(
+            LogLevel::Debug,
+            "rdp.bridge.client.close.received",
+            None,
+            json!({
                                 "sessionId": &snapshot.session_id,
-                                "close": frame.map(|item| {
-                                    json!({
-                                        "code": item.code,
-                                        "reason": item.reason.to_string(),
-                                    })
-                                }),
+                                "hasCloseFrame": frame.is_some(),
                             }),
                         );
                         break;
@@ -319,14 +342,16 @@ async fn run_bridge_socket(
                     None => break,
                     Some(Ok(_)) => {}
                     Some(Err(error)) => {
-                        log_telemetry(
-                            TelemetryLevel::Warn,
-                            "rdp.bridge.receive.failed",
-                            json!({
+                        log_event!(
+            LogLevel::Warn,
+            "rdp.bridge.receive.failed",
+            None,
+            json!({
                                 "sessionId": &snapshot.session_id,
                                 "error": {
                                     "code": "rdp_bridge_receive_failed",
-                                    "message": error.to_string(),
+                                    "message": "RDP bridge receive failed",
+                                    "detail": error.to_string(),
                                 },
                             }),
                         );
@@ -336,9 +361,10 @@ async fn run_bridge_socket(
             }
         }
     }
-    log_telemetry(
-        TelemetryLevel::Info,
+    log_event!(
+        LogLevel::Debug,
         "rdp.bridge.closed",
+        None,
         json!({
             "sessionId": &snapshot.session_id,
             "state": &snapshot.state,

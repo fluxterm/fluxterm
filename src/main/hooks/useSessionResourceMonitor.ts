@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
+import { createOperationId } from "@/shared/logging";
 import { MIN_RESOURCE_MONITOR_INTERVAL_SEC } from "@/hooks/useSessionSettings";
 import {
   startLocalResourceMonitor,
@@ -194,9 +195,11 @@ export default function useSessionResourceMonitor({
       if (isLocalActiveSession) {
         await startLocalResourceMonitor(activeSessionId, normalizedInterval);
       } else if (activeSessionProfile) {
+        const operationId = createOperationId();
         await startSshResourceMonitor(
           activeSessionId,
           activeSessionProfile,
+          operationId,
           normalizedInterval,
         );
       }

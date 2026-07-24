@@ -10,7 +10,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { warn } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import type {
   CommandHistoryBucket,
@@ -101,12 +101,13 @@ export async function loadCommandHistoryStore() {
     }
     return normalizeCommandHistoryStore(JSON.parse(raw));
   } catch (error) {
-    void warn(
-      JSON.stringify({
-        event: "history.load.failed",
-        error: extractErrorMessage(error),
-      }),
-    );
+    logWarn("history.load.failed", {
+      error: {
+        code: "command_history_load_failed",
+        message: "Command history could not be loaded",
+        detail: extractErrorMessage(error),
+      },
+    });
     return {
       version: STORE_VERSION,
       buckets: {},
@@ -122,11 +123,12 @@ export async function saveCommandHistoryStore(store: CommandHistoryStore) {
     const path = await getCommandHistoryPath();
     await writeTextFile(path, JSON.stringify(store, null, 2));
   } catch (error) {
-    void warn(
-      JSON.stringify({
-        event: "history.save.failed",
-        error: extractErrorMessage(error),
-      }),
-    );
+    logWarn("history.save.failed", {
+      error: {
+        code: "command_history_save_failed",
+        message: "Command history could not be saved",
+        detail: extractErrorMessage(error),
+      },
+    });
   }
 }

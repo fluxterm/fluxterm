@@ -7,7 +7,7 @@ import {
   openProxy,
 } from "@/features/proxy/core/commands";
 import { registerProxyListeners } from "@/features/proxy/core/listeners";
-import { createTraceId, logTelemetry } from "@/shared/logging/telemetry";
+import { createOperationId } from "@/shared/logging";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 
 type ProxyTimelineEvent = {
@@ -57,12 +57,9 @@ export default function useProxyState() {
       setProxies(list);
       pushTimeline({
         level: "info",
-        event: "proxy.list.success",
+        event: "proxy.list.succeeded",
         message: `list=${list.length}`,
       });
-      logTelemetry("debug", "proxy.list.success", {
-        count: list.length,
-      }).catch(() => {});
     } catch (error) {
       pushTimeline({
         level: "warn",
@@ -70,12 +67,6 @@ export default function useProxyState() {
         message: error instanceof Error ? error.message : String(error),
         code: "proxy_list_failed",
       });
-      logTelemetry("warn", "proxy.list.failed", {
-        error: {
-          code: "proxy_list_failed",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      }).catch(() => {});
       throw error;
     } finally {
       setLoading(false);
@@ -86,16 +77,6 @@ export default function useProxyState() {
     let disposed = false;
     let unlisten: (() => void) | null = null;
     void registerProxyListeners((payload) => {
-      logTelemetry("debug", "proxy.runtime.update", {
-        proxyId: payload.proxyId,
-        protocol: payload.protocol,
-        status: payload.status,
-        bindHost: payload.bindHost,
-        bindPort: payload.bindPort,
-        activeConnections: payload.activeConnections,
-        bytesIn: payload.bytesIn,
-        bytesOut: payload.bytesOut,
-      }).catch(() => {});
       if (payload.lastError?.message) {
         pushTimeline({
           level: "warn",
@@ -147,27 +128,14 @@ export default function useProxyState() {
 
   const create = useCallback(
     async (spec: ProxySpec) => {
-      const traceId = createTraceId();
-      logTelemetry("debug", "proxy.create.start", {
-        traceId,
-        protocol: spec.protocol,
-        bindHost: spec.bindHost,
-        bindPort: spec.bindPort,
-        authEnabled: Boolean(spec.auth),
-      }).catch(() => {});
+      const operationId = createOperationId();
       try {
-        await openProxy(spec, traceId);
+        await openProxy(spec, operationId);
         pushTimeline({
           level: "info",
-          event: "proxy.create.success",
+          event: "proxy.create.succeeded",
           message: `${spec.protocol} ${spec.bindHost}:${spec.bindPort}`,
         });
-        logTelemetry("debug", "proxy.create.success", {
-          traceId,
-          protocol: spec.protocol,
-          bindHost: spec.bindHost,
-          bindPort: spec.bindPort,
-        }).catch(() => {});
       } catch (error) {
         pushTimeline({
           level: "warn",
@@ -175,16 +143,6 @@ export default function useProxyState() {
           message: error instanceof Error ? error.message : String(error),
           code: "proxy_create_failed",
         });
-        logTelemetry("warn", "proxy.create.failed", {
-          traceId,
-          protocol: spec.protocol,
-          bindHost: spec.bindHost,
-          bindPort: spec.bindPort,
-          error: {
-            code: "proxy_create_failed",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        }).catch(() => {});
         throw error;
       }
     },
@@ -193,23 +151,15 @@ export default function useProxyState() {
 
   const close = useCallback(
     async (proxyId: string) => {
-      const traceId = createTraceId();
-      logTelemetry("debug", "proxy.close.start", {
-        traceId,
-        proxyId,
-      }).catch(() => {});
+      const operationId = createOperationId();
       try {
-        await closeProxy(proxyId, traceId);
+        await closeProxy(proxyId, operationId);
         pushTimeline({
           level: "info",
-          event: "proxy.close.success",
+          event: "proxy.close.succeeded",
           proxyId,
           message: proxyId,
         });
-        logTelemetry("debug", "proxy.close.success", {
-          traceId,
-          proxyId,
-        }).catch(() => {});
       } catch (error) {
         pushTimeline({
           level: "warn",
@@ -218,14 +168,6 @@ export default function useProxyState() {
           message: error instanceof Error ? error.message : String(error),
           code: "proxy_close_failed",
         });
-        logTelemetry("warn", "proxy.close.failed", {
-          traceId,
-          proxyId,
-          error: {
-            code: "proxy_close_failed",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        }).catch(() => {});
         throw error;
       }
     },
@@ -233,20 +175,14 @@ export default function useProxyState() {
   );
 
   const closeAll = useCallback(async () => {
-    const traceId = createTraceId();
-    logTelemetry("debug", "proxy.close.all.start", {
-      traceId,
-    }).catch(() => {});
+    const operationId = createOperationId();
     try {
-      await closeAllProxies(traceId);
+      await closeAllProxies(operationId);
       pushTimeline({
         level: "info",
-        event: "proxy.close.all.success",
+        event: "proxy.close.all.succeeded",
         message: "close all",
       });
-      logTelemetry("debug", "proxy.close.all.success", {
-        traceId,
-      }).catch(() => {});
     } catch (error) {
       pushTimeline({
         level: "warn",
@@ -254,13 +190,6 @@ export default function useProxyState() {
         message: error instanceof Error ? error.message : String(error),
         code: "proxy_close_all_failed",
       });
-      logTelemetry("warn", "proxy.close.all.failed", {
-        traceId,
-        error: {
-          code: "proxy_close_all_failed",
-          message: error instanceof Error ? error.message : String(error),
-        },
-      }).catch(() => {});
       throw error;
     }
   }, [pushTimeline]);

@@ -11,7 +11,6 @@ pub mod serial;
 pub mod session;
 pub mod sftp;
 pub mod ssh_transport;
-pub mod telemetry;
 pub mod types;
 pub mod util;
 

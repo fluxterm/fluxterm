@@ -20,11 +20,13 @@ export function startLocalResourceMonitor(
 export function startSshResourceMonitor(
   sessionId: string,
   profile: HostProfile,
+  operationId: string,
   intervalSec: number,
 ) {
   return callTauri("resource_monitor_start_ssh", {
     sessionId,
     profile,
+    operationId,
     intervalSec,
   });
 }

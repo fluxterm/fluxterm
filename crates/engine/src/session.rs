@@ -16,8 +16,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex as StdMutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use fluxterm_logging::{LogLevel, log_event};
 use russh::client;
 use russh::keys::{self, PublicKeyBase64};
 use serde_json::json;
@@ -34,7 +35,6 @@ use crate::sftp::{
     sftp_remove, sftp_rename, sftp_resolve_path, sftp_stat, sftp_upload, sftp_upload_batch,
 };
 use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EngineEvent, EventCallback, HostProfile, SessionState, SftpEntry, SshTunnelKind,
     SshTunnelRuntime, SshTunnelSpec, SshTunnelStatus, TerminalSize,
@@ -338,9 +338,9 @@ async fn open_local_or_dynamic_tunnel(
     on_event: EventCallback,
 ) -> Result<TunnelHandle, EngineError> {
     let tunnel_id = Uuid::new_v4().to_string();
-    log_telemetry(
-        TelemetryLevel::Info,
-        "ssh.tunnel.open.start",
+    log_event!(
+        LogLevel::Debug,
+        "ssh.tunnel.open.started",
         None,
         json!({
             "sessionId": session_id.clone(),
@@ -362,8 +362,8 @@ async fn open_local_or_dynamic_tunnel(
     let listener = TcpListener::bind(format!("{}:{}", spec.bind_host, spec.bind_port))
         .await
         .map_err(|err| {
-            log_telemetry(
-                TelemetryLevel::Warn,
+            log_event!(
+                LogLevel::Warn,
                 "ssh.tunnel.open.failed",
                 None,
                 json!({
@@ -469,9 +469,9 @@ async fn open_local_or_dynamic_tunnel(
         let mut g = runtime_clone.lock().await;
         g.status = SshTunnelStatus::Stopped;
         g.active_connections = 0;
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ssh.tunnel.close.success",
+        log_event!(
+            LogLevel::Info,
+            "ssh.tunnel.close.succeeded",
             None,
             json!({
                 "tunnelId": g.tunnel_id.clone(),
@@ -494,9 +494,9 @@ async fn open_remote_tunnel(
     on_event: EventCallback,
 ) -> Result<TunnelHandle, EngineError> {
     let tunnel_id = Uuid::new_v4().to_string();
-    log_telemetry(
-        TelemetryLevel::Info,
-        "ssh.tunnel.open.start",
+    log_event!(
+        LogLevel::Debug,
+        "ssh.tunnel.open.started",
         None,
         json!({
             "sessionId": session_id.clone(),
@@ -521,8 +521,8 @@ async fn open_remote_tunnel(
         .tcpip_forward(spec.bind_host.clone(), spec.bind_port as u32)
         .await
         .map_err(|err| {
-            log_telemetry(
-                TelemetryLevel::Warn,
+            log_event!(
+                LogLevel::Warn,
                 "ssh.tunnel.open.failed",
                 None,
                 json!({
@@ -573,9 +573,9 @@ async fn open_remote_tunnel(
         remote_routes.write().await.remove(&bind_port);
         let mut g = runtime_clone.lock().await;
         g.status = SshTunnelStatus::Stopped;
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ssh.tunnel.close.success",
+        log_event!(
+            LogLevel::Info,
+            "ssh.tunnel.close.succeeded",
             None,
             json!({
                 "tunnelId": g.tunnel_id.clone(),
@@ -720,16 +720,31 @@ async fn socks5_connect_handshake(
     Ok((host, port, stream))
 }
 
+/// SSH 会话主循环的完整运行上下文。
+pub(crate) struct SessionLoopRequest {
+    pub(crate) session_id: String,
+    pub(crate) profile: HostProfile,
+    pub(crate) expected_host_key: Option<ExpectedHostKey>,
+    pub(crate) jump_spec: JumpHostSpec,
+    pub(crate) operation_id: String,
+    pub(crate) size: TerminalSize,
+    pub(crate) rx: mpsc::UnboundedReceiver<SessionCommand>,
+    pub(crate) on_event: EventCallback,
+}
+
 /// 会话主循环，负责 SSH 与 SFTP 命令处理。
-pub async fn run_session_loop(
-    session_id: String,
-    profile: HostProfile,
-    expected_host_key: Option<ExpectedHostKey>,
-    jump_spec: JumpHostSpec,
-    size: TerminalSize,
-    mut rx: mpsc::UnboundedReceiver<SessionCommand>,
-    on_event: EventCallback,
-) -> Result<(), EngineError> {
+pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), EngineError> {
+    let SessionLoopRequest {
+        session_id,
+        profile,
+        expected_host_key,
+        jump_spec,
+        operation_id,
+        size,
+        mut rx,
+        on_event,
+    } = request;
+    let connect_started_at = Instant::now();
     // 正式 SSH 握手同样需要超时保护，覆盖 HostKeyPolicy::Off 等不走预检的路径。
     const SSH_CONNECT_TIMEOUT_SECS: u64 = 8;
     let host_key_state = HostKeyCheckState {
@@ -750,6 +765,7 @@ pub async fn run_session_loop(
                 session_id: session_id.clone(),
                 on_event: Some(Arc::clone(&on_event)),
             },
+            Some(&operation_id),
         ),
     )
     .await
@@ -773,7 +789,13 @@ pub async fn run_session_loop(
     })?;
     let mut session = connection.handle;
 
-    authenticate(&mut session, &profile, AuthPurpose::Session).await?;
+    authenticate(
+        &mut session,
+        &profile,
+        AuthPurpose::Session,
+        Some(operation_id.as_str()),
+    )
+    .await?;
 
     let mut channel = session.channel_open_session().await.map_err(|err| {
         EngineError::with_detail(
@@ -807,6 +829,23 @@ pub async fn run_session_loop(
     // 只有在 PTY 和交互 shell 都就绪后，前端才应把会话视为真正可用。
     // 这样 files 面板首轮触发的 SFTP 初始化不会抢在首屏横幅/提示符输出之前，
     // 避免首个 SSH 会话在冷启动阶段出现“横幅缺失 + SFTP checking 卡住”的竞态。
+    let connect_duration_ms =
+        u64::try_from(connect_started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
+    log_event!(
+        LogLevel::Info,
+        "ssh.session.connect.succeeded",
+        Some(operation_id.as_str()),
+        json!({
+            "sessionId": &session_id,
+            "profileId": &profile.id,
+            "host": &profile.host,
+            "user": &profile.username,
+            "port": profile.port,
+            "authType": format!("{:?}", profile.auth_type),
+            "connectionPurpose": "session",
+            "durationMs": connect_duration_ms,
+        }),
+    );
     on_event(EngineEvent::SessionStatus {
         session_id: session_id.clone(),
         state: SessionState::Connected,
@@ -1101,6 +1140,17 @@ pub async fn run_session_loop(
     on_event(EngineEvent::TerminalExit {
         session_id: session_id.clone(),
     });
+    log_event!(
+        LogLevel::Info,
+        "ssh.session.disconnected",
+        Some(operation_id.as_str()),
+        json!({
+            "sessionId": &session_id,
+            "reason": "sessionEnded",
+            "durationMs": u64::try_from(connect_started_at.elapsed().as_millis())
+                .unwrap_or(u64::MAX),
+        }),
+    );
     on_event(EngineEvent::SessionStatus {
         session_id,
         state: SessionState::Disconnected,

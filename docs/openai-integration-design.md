@@ -222,7 +222,6 @@ type AiExplainSelectionResponse = {
   "selectionRecentOutputMaxChars": 600,
   "selectionRecentOutputMaxSnippets": 2,
   "requestCacheTtlMs": 15000,
-  "debugLoggingEnabled": true,
   "activeOpenAiConfigId": "default",
   "openaiConfigs": [
     {
@@ -246,7 +245,7 @@ type AiExplainSelectionResponse = {
 - `activeOpenAiConfigId` 由 `AI助手` 分区维护
 - `openaiConfigs[].name`、`openaiConfigs[].baseUrl`、`openaiConfigs[].model` 与 `openaiConfigs[].apiKeyRef` 由 `OpenAI` 分区维护
 - `apiKeyRef` 使用既有 `enc:v1:` 加密方案保存
-- `debugLoggingEnabled` 控制是否记录最终发送给模型的消息与返回内容
+- 日志仅记录提供方、模型、请求状态、耗时和稳定错误码；不得记录消息、Prompt、终端上下文、选中文本或响应原文
 - 当前仍可通过 `OPENAI_TIMEOUT_MS` 控制统一请求超时
 - 当前激活接入的 `baseUrl` 与 `model` 任一缺失时，AI 助手不可用，前端显示配置提示
 

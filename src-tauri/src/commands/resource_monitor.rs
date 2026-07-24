@@ -1,9 +1,13 @@
 //! 资源监控命令。
 use engine::{EngineError, HostProfile};
+use fluxterm_logging::{LogLevel, log_event};
+use serde_json::json;
 use tauri::{AppHandle, State};
 
 use crate::commands::ssh::resolve_ssh_connect_plan;
-use crate::resource_monitor::{MIN_RESOURCE_MONITOR_INTERVAL_SEC, ResourceMonitorState};
+use crate::resource_monitor::{
+    MIN_RESOURCE_MONITOR_INTERVAL_SEC, ResourceMonitorState, SshResourceMonitorStartRequest,
+};
 use crate::state::SecurityState;
 
 #[tauri::command]
@@ -30,17 +34,39 @@ pub async fn resource_monitor_start_ssh(
     security: State<'_, SecurityState>,
     session_id: String,
     profile: HostProfile,
+    operation_id: String,
     interval_sec: u64,
 ) -> Result<(), EngineError> {
-    let plan = resolve_ssh_connect_plan(&app, &security, &profile).await?;
-    state.start_ssh(
+    let plan = resolve_ssh_connect_plan(&app, &security, &profile)
+        .await
+        .inspect_err(|error| {
+            log_event!(
+                LogLevel::Warn,
+                "resource.monitor.ssh.failed",
+                Some(&operation_id),
+                json!({
+                    "sessionId": session_id.clone(),
+                    "profileId": profile.id.clone(),
+                    "host": profile.host.clone(),
+                    "user": profile.username.clone(),
+                    "connectionPurpose": "resourceMonitor",
+                    "error": {
+                        "code": error.code.clone(),
+                        "message": "Resource monitor SSH connection failed",
+                        "detail": error.detail.clone().unwrap_or(error.message.clone()),
+                    }
+                }),
+            );
+        })?;
+    state.start_ssh(SshResourceMonitorStartRequest {
         app,
         session_id,
-        plan.profile,
-        plan.expected_host_key,
-        plan.jump_spec,
-        interval_sec.max(MIN_RESOURCE_MONITOR_INTERVAL_SEC),
-    );
+        profile: plan.profile,
+        operation_id,
+        expected_host_key: plan.expected_host_key,
+        jump_spec: plan.jump_spec,
+        interval_sec: interval_sec.max(MIN_RESOURCE_MONITOR_INTERVAL_SEC),
+    });
     Ok(())
 }
 

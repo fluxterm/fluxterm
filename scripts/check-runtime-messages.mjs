@@ -101,7 +101,10 @@ function findCallBlocks(source, calleePattern, allowSingleQuote = true) {
       if (current === ")") {
         depth -= 1;
         if (depth === 0) {
-          blocks.push({ index: match.index, text: source.slice(match.index, index + 1) });
+          blocks.push({
+            index: match.index,
+            text: source.slice(match.index, index + 1),
+          });
           break;
         }
       }
@@ -145,7 +148,7 @@ function checkFile(path) {
         "RuntimeError::new",
         "OpenAiError::[A-Za-z_]+",
       ]
-    : ["new\\s+AppError", "logTelemetry", "logDebug", "logInfo", "logWarn", "logError"];
+    : ["new\\s+AppError", "logDebug", "logInfo", "logWarn", "logError"];
 
   for (const callee of callPatterns) {
     for (const block of findCallBlocks(source, callee, !isRust)) {
@@ -166,7 +169,11 @@ function checkFile(path) {
   }
 }
 
-const roots = [join(root, "crates"), join(root, "src-tauri", "src"), join(root, "src")];
+const roots = [
+  join(root, "crates"),
+  join(root, "src-tauri", "src"),
+  join(root, "src"),
+];
 checkFixtures();
 for (const sourceRoot of roots) {
   for (const file of walk(sourceRoot)) checkFile(file);

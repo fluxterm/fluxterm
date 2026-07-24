@@ -13,7 +13,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { debug, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import type { Translate, TranslationKey } from "@/i18n";
 import type {
   QuickBarConfig,
@@ -236,12 +236,6 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
       const existsFile = await exists(path);
       if (!existsFile) {
         loadedRef.current = true;
-        void debug(
-          JSON.stringify({
-            event: "quickbar.load.skip",
-            reason: "file-not-exists",
-          }),
-        );
         return;
       }
       const raw = await readTextFile(path);
@@ -254,20 +248,18 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
       setShowGroupTitle(normalized.showGroupTitle ?? true);
       setGroups(normalized.groups);
       setCommands(normalized.commands);
-      void debug(
-        JSON.stringify({
-          event: "quickbar.loaded",
-          groups: normalized.groups.length,
-          commands: normalized.commands.length,
-        }),
-      );
+      logDebug("quickbar.loaded", {
+        groups: normalized.groups.length,
+        commands: normalized.commands.length,
+      });
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "quickbar.load.failed",
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("quickbar.load.failed", {
+        error: {
+          code: "quickbar_load_failed",
+          message: "Quick bar configuration could not be loaded",
+          detail: extractErrorMessage(error),
+        },
+      });
     } finally {
       loadedRef.current = true;
     }
@@ -323,26 +315,20 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
       window.clearTimeout(saveTimerRef.current);
     }
 
-    void debug(
-      JSON.stringify({
-        event: "quickbar.save.scheduled",
-        debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
-      }),
-    );
-
     saveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
           await saveConfig(currentConfig);
           lastSavedConfigRef.current = configStr;
-          void debug(JSON.stringify({ event: "quickbar.persisted" }));
+          logDebug("quickbar.persisted");
         } catch (error) {
-          void warn(
-            JSON.stringify({
-              event: "quickbar.save.failed",
-              error: extractErrorMessage(error),
-            }),
-          );
+          logWarn("quickbar.save.failed", {
+            error: {
+              code: "quickbar_save_failed",
+              message: "Quick bar configuration could not be saved",
+              detail: extractErrorMessage(error),
+            },
+          });
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);

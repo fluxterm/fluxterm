@@ -2052,7 +2052,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "encoding_rs",
- "fluxterm-telemetry",
+ "fluxterm-logging",
  "futures-util",
  "log",
  "regex",
@@ -2304,7 +2304,7 @@ dependencies = [
  "base64 0.22.1",
  "dotenvy",
  "engine",
- "fluxterm-telemetry",
+ "fluxterm-logging",
  "futures-util",
  "log",
  "openai",
@@ -2336,10 +2336,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "fluxterm-telemetry"
+name = "fluxterm-logging"
 version = "0.7.1"
 dependencies = [
+ "log",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -4781,7 +4783,7 @@ dependencies = [
 name = "openai"
 version = "0.7.1"
 dependencies = [
- "fluxterm-telemetry",
+ "fluxterm-logging",
  "log",
  "reqwest 0.12.28",
  "serde",
@@ -5953,7 +5955,7 @@ dependencies = [
  "base64 0.22.1",
  "cpal",
  "criterion",
- "fluxterm-telemetry",
+ "fluxterm-logging",
  "hostname",
  "ironrdp",
  "ironrdp-cliprdr",

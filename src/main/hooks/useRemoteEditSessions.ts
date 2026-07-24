@@ -13,7 +13,6 @@ import {
   openRemoteFileForEditing,
 } from "@/features/file-open/core/commands";
 import { registerRemoteEditListener } from "@/features/file-open/core/listeners";
-import { logTelemetry } from "@/shared/logging/telemetry";
 import { translateAppError } from "@/shared/errors/appError";
 import type {
   HostProfile,
@@ -98,11 +97,6 @@ export default function useRemoteEditSessions({
       const previous =
         remoteEditSessionsRef.current[payload.instanceId] ?? null;
       if (previous?.status === "uploading" && payload.status === "synced") {
-        void logTelemetry("info", "remote.edit.upload.success", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-        });
         pushToast({
           level: "success",
           message: t("sftp.remoteEdit.uploadSuccess", {
@@ -115,12 +109,6 @@ export default function useRemoteEditSessions({
         payload.lastError &&
         previous?.lastError !== payload.lastError
       ) {
-        void logTelemetry("warn", "remote.edit.sync.failed", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-          errorCode: payload.lastErrorCode,
-        });
         const translatedMessage = payload.lastErrorCode
           ? translateAppError(
               {
@@ -146,11 +134,6 @@ export default function useRemoteEditSessions({
         return;
       }
       if (remoteEditAutoUploadBySession[payload.sessionId]) {
-        void logTelemetry("info", "remote.edit.upload.auto.confirmed", {
-          sessionId: payload.sessionId,
-          instanceId: payload.instanceId,
-          remotePath: payload.remotePath,
-        });
         void confirmRemoteEditUpload(payload.instanceId).catch((error) => {
           pushToast({
             level: "error",
@@ -169,11 +152,6 @@ export default function useRemoteEditSessions({
         profile?.name && profile.host
           ? `${profile.name} (${profile.host})`
           : profile?.host || profile?.name || payload.sessionId;
-      void logTelemetry("info", "remote.edit.upload.prompted", {
-        sessionId: payload.sessionId,
-        instanceId: payload.instanceId,
-        remotePath: payload.remotePath,
-      });
       openDialog({
         title: t("sftp.remoteEdit.confirmTitle"),
         message: t("sftp.remoteEdit.confirmMessage", {
@@ -185,11 +163,6 @@ export default function useRemoteEditSessions({
         secondaryLabel: t("sftp.remoteEdit.confirmAllInSession"),
         cancelLabel: t("actions.cancel"),
         onConfirm: () => {
-          void logTelemetry("info", "remote.edit.upload.confirmed", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
           void confirmRemoteEditUpload(payload.instanceId).catch((error) => {
             pushToast({
               level: "error",
@@ -198,11 +171,6 @@ export default function useRemoteEditSessions({
           });
         },
         onSecondary: () => {
-          void logTelemetry("info", "remote.edit.upload.auto.enabled", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
           setRemoteEditAutoUploadBySession((current) => ({
             ...current,
             [payload.sessionId]: true,
@@ -215,11 +183,6 @@ export default function useRemoteEditSessions({
           });
         },
         onCancel: () => {
-          void logTelemetry("info", "remote.edit.upload.cancelled", {
-            sessionId: payload.sessionId,
-            instanceId: payload.instanceId,
-            remotePath: payload.remotePath,
-          });
           void dismissRemoteEditPending(payload.instanceId).catch(() => {});
         },
       });
@@ -268,12 +231,6 @@ export default function useRemoteEditSessions({
         entry,
         fileDefaultEditorPath,
       );
-      void logTelemetry("info", "remote.edit.open.success", {
-        sessionId,
-        instanceId: opened.instanceId,
-        remotePath: entry.path,
-        trackChanges: opened.trackChanges,
-      });
       pushToast({
         level: "success",
         message: opened.trackChanges

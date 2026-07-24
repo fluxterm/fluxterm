@@ -22,7 +22,6 @@ export type AiSettingsView = {
   selectionRecentOutputMaxSnippets: number;
   requestCacheTtlMs: number;
   requestTimeoutMs: number;
-  debugLoggingEnabled: boolean;
   activeProviderId: string;
   providers: AiProviderView[];
 };
@@ -52,7 +51,6 @@ export type AiSettingsSaveInput = {
   selectionRecentOutputMaxSnippets: number;
   requestCacheTtlMs: number;
   requestTimeoutMs: number;
-  debugLoggingEnabled: boolean;
   activeProviderId: string;
   providers: AiProviderInput[];
 };

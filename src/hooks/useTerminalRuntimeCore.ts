@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { warn } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { IDecoration, IMarker, Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
@@ -1260,20 +1260,16 @@ export default function useTerminalRuntime({
 
   function disablePromptParsing(
     sessionId: string,
-    sample: string,
+    _sample: string,
     reason: "unsupported-shell-prompt",
   ) {
     if (disabledPromptParsingRef.current[sessionId]) return;
     disabledPromptParsingRef.current[sessionId] = true;
     handlersRef.current.onPathSyncSupportChange?.(sessionId, "unsupported");
-    void warn(
-      JSON.stringify({
-        event: "terminal.cwd.sync.unsupported.prompt",
-        sessionId,
-        reason,
-        promptSample: sample.slice(0, 200),
-      }),
-    );
+    logWarn("terminal.cwd.sync.unsupported", {
+      sessionId,
+      reason,
+    });
   }
 
   function publishWorkingDirectoryFromOsc7(sessionId: string, data: string) {
@@ -1965,14 +1961,15 @@ export default function useTerminalRuntime({
           const text = term.getSelection();
           if (!text) return;
           writeText(text).catch((error) => {
-            void warn(
-              JSON.stringify({
-                event: "terminal.selection.auto.copy.failed",
-                sessionId,
-                textLength: text.length,
-                error: extractErrorMessage(error),
-              }),
-            );
+            logWarn("terminal.selection.auto.copy.failed", {
+              sessionId,
+              textLength: text.length,
+              error: {
+                code: "terminal_selection_auto_copy_failed",
+                message: "Terminal selection could not be copied",
+                detail: extractErrorMessage(error),
+              },
+            });
           });
         }, SELECTION_AUTO_COPY_DEBOUNCE_MS);
       }),
@@ -2318,14 +2315,15 @@ export default function useTerminalRuntime({
       await writeText(text);
       return true;
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "terminal.focused.line.copy.failed",
-          sessionId,
-          textLength: text.length,
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("terminal.focused.line.copy.failed", {
+        sessionId,
+        textLength: text.length,
+        error: {
+          code: "terminal_line_copy_failed",
+          message: "Terminal line could not be copied",
+          detail: extractErrorMessage(error),
+        },
+      });
       return false;
     }
   }
@@ -2458,14 +2456,15 @@ export default function useTerminalRuntime({
     if (!bundle || !sessionId || !value) return false;
 
     if (!bundle.searchAddon) {
-      void warn(
-        JSON.stringify({
-          event: "terminal.search.addon.missing",
-          sessionId,
-          direction,
-          keywordLength: value.length,
-        }),
-      );
+      logWarn("terminal.search.unavailable", {
+        sessionId,
+        direction,
+        keywordLength: value.length,
+        error: {
+          code: "terminal_search_unavailable",
+          message: "Terminal search is unavailable",
+        },
+      });
       return false;
     }
 
@@ -2474,15 +2473,16 @@ export default function useTerminalRuntime({
         ? bundle.searchAddon.findNext(value, options)
         : bundle.searchAddon.findPrevious(value, options);
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "terminal.search.addon.failed",
-          sessionId,
-          direction,
-          keywordLength: value.length,
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("terminal.search.failed", {
+        sessionId,
+        direction,
+        keywordLength: value.length,
+        error: {
+          code: "terminal_search_failed",
+          message: "Terminal search failed",
+          detail: extractErrorMessage(error),
+        },
+      });
       return false;
     }
   }

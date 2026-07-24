@@ -19,14 +19,15 @@ pub mod ssh_config_import;
 pub mod ssh_host_keys;
 pub mod ssh_profile_store;
 pub mod state;
-pub mod telemetry;
 pub mod utils;
 
 use std::sync::Arc;
 
 use engine::Engine;
+use fluxterm_logging::{LogLevel, log_event};
 use log::LevelFilter;
 use rustls::crypto::aws_lc_rs;
+use serde_json::json;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
@@ -83,25 +84,21 @@ use crate::remote_edit::RemoteEditState;
 use crate::resource_monitor::ResourceMonitorState;
 use crate::state::{EngineState, SecurityState, SerialState};
 
-fn resolve_log_level() -> LevelFilter {
-    let raw = std::env::var("RUST_LOG").unwrap_or_default();
+fn resolve_log_level() -> (LevelFilter, Option<String>) {
+    let Ok(raw) = std::env::var("FLUXTERM_LOG_LEVEL") else {
+        return (LevelFilter::Info, None);
+    };
     let normalized = raw.trim().to_ascii_lowercase();
-    if normalized.contains("trace") {
-        return LevelFilter::Trace;
-    }
-    if normalized.contains("debug") {
-        return LevelFilter::Debug;
-    }
-    if normalized.contains("warn") {
-        return LevelFilter::Warn;
-    }
-    if normalized.contains("error") {
-        return LevelFilter::Error;
-    }
-    if normalized.contains("off") {
-        return LevelFilter::Off;
-    }
-    LevelFilter::Info
+    let level = match normalized.as_str() {
+        "trace" => LevelFilter::Trace,
+        "debug" => LevelFilter::Debug,
+        "info" => LevelFilter::Info,
+        "warn" => LevelFilter::Warn,
+        "error" => LevelFilter::Error,
+        "off" => LevelFilter::Off,
+        _ => return (LevelFilter::Info, Some(raw)),
+    };
+    (level, None)
 }
 
 /// 在应用启动早期固定安装 rustls 的全局加密提供者。
@@ -119,7 +116,11 @@ pub fn run() {
         std::process::exit(1);
     }
     install_rustls_crypto_provider();
-    let log_level = resolve_log_level();
+    let (log_level, invalid_log_level) = resolve_log_level();
+    let log_targets = vec![
+        Target::new(TargetKind::Stdout),
+        Target::new(TargetKind::LogDir { file_name: None }),
+    ];
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -143,11 +144,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
-                .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: None }),
-                    Target::new(TargetKind::Webview),
-                ])
+                .targets(log_targets)
                 .level(log_level)
                 // https://github.com/tauri-apps/tauri/issues/8494 2025年7月22日 未解决
                 // 抑制 tao::platform_impl::platform::event 警告的日志
@@ -246,13 +243,26 @@ pub fn run() {
             remote_edit_dismiss_pending,
         ]);
 
-    builder
+    let app = builder
         .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
-                let rdp = app.state::<RdpState>();
-                let _ = rdp.shutdown_runtime();
-            }
-        });
+        .expect("error while building tauri application");
+    if let Some(value) = invalid_log_level {
+        log_event!(
+            LogLevel::Warn,
+            "logging.configuration.invalid",
+            json!({
+                "error": {
+                    "code": "logging_level_invalid",
+                    "message": "Logging level is invalid",
+                    "detail": value,
+                }
+            }),
+        );
+    }
+    app.run(|app, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let rdp = app.state::<RdpState>();
+            let _ = rdp.shutdown_runtime();
+        }
+    });
 }

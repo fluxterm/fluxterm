@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 import { normalizeLocalPath } from "@/features/sftp/core/path";
 import { extractErrorMessage } from "@/shared/errors/appError";
-import { info, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import type {
   HostProfile,
   LocalSessionMeta,
@@ -295,14 +295,12 @@ export default function useTerminalPathSync({
             [activeSessionId]: "paused-mismatch",
           }));
         });
-        void warn(
-          JSON.stringify({
-            event: "terminal.cwd.sync.paused.user.mismatch",
-            sessionId: activeSessionId,
-            loginUsername,
-            promptUsername,
-          }),
-        );
+        logWarn("terminal.cwd.sync.paused", {
+          sessionId: activeSessionId,
+          reason: "usernameMismatch",
+          loginUsername,
+          promptUsername,
+        });
       }
       return;
     }
@@ -313,14 +311,12 @@ export default function useTerminalPathSync({
           [activeSessionId]: "active",
         }));
       });
-      info(
-        JSON.stringify({
-          event: "terminal.cwd.sync.resumed.user.match",
-          sessionId: activeSessionId,
-          loginUsername,
-          promptUsername,
-        }),
-      ).catch(() => {});
+      logDebug("terminal.cwd.sync.resumed", {
+        sessionId: activeSessionId,
+        reason: "usernameMatched",
+        loginUsername,
+        promptUsername,
+      });
     }
     const trackedPath = tracked.path;
     const meta = localSessionMeta[activeSessionId];
@@ -368,15 +364,14 @@ export default function useTerminalPathSync({
       return;
     }
     openRemoteDir(effectiveResolvedPath).catch((error) => {
-      void warn(
-        JSON.stringify({
-          event: "sftp.sync.terminal.path.failed",
-          sessionId: activeSessionId,
-          path: effectiveResolvedPath,
-          rawPath: trackedPath,
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("sftp.terminal.directory.sync.failed", {
+        sessionId: activeSessionId,
+        error: {
+          code: "sftp_terminal_directory_sync_failed",
+          message: "SFTP directory could not follow the terminal",
+          detail: extractErrorMessage(error),
+        },
+      });
     });
     scheduleDeferredTask(() => {
       setLastSyncedTerminalPaths((prev) => ({

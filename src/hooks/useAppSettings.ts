@@ -14,7 +14,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { debug, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import type { Locale } from "@/i18n";
 import type { LocalShellConfig, LocalShellProfile, ThemeId } from "@/types";
 import { normalizeLocalShellConfig } from "@/constants/localShellConfig";
@@ -211,12 +211,6 @@ export default function useAppSettings({
     try {
       const path = await getSettingsPath();
       if (!(await exists(path))) {
-        void debug(
-          JSON.stringify({
-            event: "settings.load.skip",
-            reason: "file-not-exists",
-          }),
-        );
         return;
       }
       const raw = await readTextFile(path);
@@ -289,21 +283,19 @@ export default function useAppSettings({
       if (normalizedThemeId && themeIds.includes(normalizedThemeId)) {
         setThemeId(normalizedThemeId);
       }
-      void debug(
-        JSON.stringify({
-          event: "settings.loaded",
-          keyCount: Object.keys(parsed ?? {}).length,
-          hasShellId: typeof parsed?.shellId === "string",
-          hasBackgroundMedia: typeof parsed?.backgroundImageAsset === "string",
-        }),
-      );
+      logDebug("settings.loaded", {
+        keyCount: Object.keys(parsed ?? {}).length,
+        hasShellId: typeof parsed?.shellId === "string",
+        hasBackgroundMedia: typeof parsed?.backgroundImageAsset === "string",
+      });
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "settings.load.failed",
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("settings.load.failed", {
+        error: {
+          code: "settings_load_failed",
+          message: "Application settings could not be loaded",
+          detail: extractErrorMessage(error),
+        },
+      });
     }
   }, [themeIds]);
 
@@ -319,15 +311,12 @@ export default function useAppSettings({
         !!preferred && shells.some((shell) => shell.id === preferred);
       const selected = (preferredAvailable ? preferred : fallbackId) ?? null;
 
-      void debug(
-        JSON.stringify({
-          event: "settings.refresh.shell",
-          savedShellId: preferred ?? null,
-          availableShellIds: shells.map((shell) => shell.id),
-          selectedShellId: selected,
-          fallbackUsed: !!preferred && !preferredAvailable,
-        }),
-      );
+      logDebug("settings.shell.refreshed", {
+        savedShellId: preferred ?? null,
+        availableShellCount: shells.length,
+        selectedShellId: selected,
+        fallbackUsed: !!preferred && !preferredAvailable,
+      });
 
       return selected;
     });
@@ -365,7 +354,12 @@ export default function useAppSettings({
         if (!active) return;
         setAvailableShells([]);
         setShellId(null);
-        void warn(JSON.stringify({ event: "settings.init.shell.failed" }));
+        logWarn("settings.shell.initialize.failed", {
+          error: {
+            code: "shell_initialization_failed",
+            message: "Local shell settings could not be initialized",
+          },
+        });
       } finally {
         if (active) {
           loadedRef.current = true;
@@ -418,29 +412,23 @@ export default function useAppSettings({
     setSaveState("saving");
     setSaveError(null);
 
-    void debug(
-      JSON.stringify({
-        event: "settings.save.scheduled",
-        debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
-      }),
-    );
-
     saveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
           await saveSettings(currentSettings);
           lastSavedConfigRef.current = settingsStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "settings.persisted" }));
+          logDebug("settings.persisted");
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
-          void warn(
-            JSON.stringify({
-              event: "settings.save.failed",
-              error: extractErrorMessage(error),
-            }),
-          );
+          logWarn("settings.save.failed", {
+            error: {
+              code: "settings_save_failed",
+              message: "Application settings could not be saved",
+              detail: extractErrorMessage(error),
+            },
+          });
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);

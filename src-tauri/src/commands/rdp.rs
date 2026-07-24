@@ -1,6 +1,6 @@
 //! RDP profile 与会话命令。
+
 use engine::EngineError;
-use serde_json::json;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
@@ -12,7 +12,6 @@ use crate::rdp_profile_store::{
 use crate::security::{CryptoService, SecretStore};
 use crate::security_store::read_security_config;
 use crate::state::SecurityState;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 use super::profile::{
     dedupe_groups, normalize_profile_tags, validate_and_dedupe_groups, validate_profile_name,
@@ -22,32 +21,9 @@ use super::profile::{
 /// 读取 RDP 分组列表。
 pub fn rdp_profile_groups_list(
     app: AppHandle,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<Vec<String>, EngineError> {
-    match read_rdp_groups(&app).map(dedupe_groups) {
-        Ok(groups) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.profile.group.list.success",
-                trace_id.as_deref(),
-                json!({
-                    "count": groups.len(),
-                }),
-            );
-            Ok(groups)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.profile.group.list.failed",
-                trace_id.as_deref(),
-                json!({
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    read_rdp_groups(&app).map(dedupe_groups)
 }
 
 #[tauri::command]
@@ -55,35 +31,12 @@ pub fn rdp_profile_groups_list(
 pub fn rdp_profile_groups_save(
     app: AppHandle,
     groups: Vec<String>,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<Vec<String>, EngineError> {
-    match validate_and_dedupe_groups(groups).and_then(|next| {
+    validate_and_dedupe_groups(groups).and_then(|next| {
         write_rdp_groups(&app, &next)?;
         Ok(next)
-    }) {
-        Ok(next) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.profile.group.save.success",
-                trace_id.as_deref(),
-                json!({
-                    "count": next.len(),
-                }),
-            );
-            Ok(next)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.profile.group.save.failed",
-                trace_id.as_deref(),
-                json!({
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    })
 }
 
 #[tauri::command]
@@ -91,14 +44,15 @@ pub fn rdp_profile_groups_save(
 pub fn rdp_profile_list(
     app: AppHandle,
     security: State<'_, SecurityState>,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<Vec<RdpProfile>, EngineError> {
     let store = read_rdp_profiles(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
-    let result: Result<Vec<RdpProfile>, EngineError> = store
+
+    store
         .profiles
         .into_iter()
         .map(
@@ -116,31 +70,7 @@ pub fn rdp_profile_list(
                 Err(err) => Err(err),
             },
         )
-        .collect();
-    match result {
-        Ok(profiles) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.profile.list.success",
-                trace_id.as_deref(),
-                json!({
-                    "count": profiles.len(),
-                }),
-            );
-            Ok(profiles)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.profile.list.failed",
-                trace_id.as_deref(),
-                json!({
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+        .collect()
 }
 
 #[tauri::command]
@@ -149,7 +79,7 @@ pub fn rdp_profile_save(
     app: AppHandle,
     security: State<'_, SecurityState>,
     mut profile: RdpProfile,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<RdpProfile, EngineError> {
     let mut store = read_rdp_profiles(&app)?;
     let security_config = read_security_config(&app)?;
@@ -191,45 +121,17 @@ pub fn rdp_profile_save(
             profile.height = Some(height.max(200));
         }
     }
+
     let saved_profile = profile.clone();
-    match encrypt_rdp_profile_secrets(profile.clone(), &secret_store).and_then(|encrypted| {
-        let existing = store.profiles.iter_mut().find(|item| item.id == profile.id);
-        if let Some(item) = existing {
-            *item = encrypted;
-        } else {
-            store.profiles.push(encrypted);
-        }
-        store.updated_at = now_epoch();
-        write_rdp_profiles(&app, &store)?;
-        Ok(saved_profile)
-    }) {
-        Ok(profile) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.profile.save.success",
-                trace_id.as_deref(),
-                profile_payload(&profile),
-            );
-            Ok(profile)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.profile.save.failed",
-                trace_id.as_deref(),
-                json!({
-                    "profileId": profile.id,
-                    "resolutionMode": profile.resolution_mode,
-                    "displayStrategy": profile.display_strategy,
-                    "ignoreCertificate": profile.ignore_certificate,
-                    "tagCount": profile.tags.as_ref().map_or(0, Vec::len),
-                    "hasPassword": profile.password_ref.is_some(),
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
+    let encrypted = encrypt_rdp_profile_secrets(profile.clone(), &secret_store)?;
+    if let Some(item) = store.profiles.iter_mut().find(|item| item.id == profile.id) {
+        *item = encrypted;
+    } else {
+        store.profiles.push(encrypted);
     }
+    store.updated_at = now_epoch();
+    write_rdp_profiles(&app, &store)?;
+    Ok(saved_profile)
 }
 
 #[tauri::command]
@@ -237,43 +139,14 @@ pub fn rdp_profile_save(
 pub fn rdp_profile_delete(
     app: AppHandle,
     profile_id: String,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<bool, EngineError> {
     let mut store = read_rdp_profiles(&app)?;
     let before = store.profiles.len();
     store.profiles.retain(|item| item.id != profile_id);
     store.updated_at = now_epoch();
-    match write_rdp_profiles(&app, &store) {
-        Ok(()) => {
-            let removed = before != store.profiles.len();
-            log_telemetry(
-                TelemetryLevel::Debug,
-                if removed {
-                    "rdp.profile.delete.success"
-                } else {
-                    "rdp.profile.delete.failed"
-                },
-                trace_id.as_deref(),
-                json!({
-                    "profileId": profile_id,
-                    "removed": removed,
-                }),
-            );
-            Ok(removed)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.profile.delete.failed",
-                trace_id.as_deref(),
-                json!({
-                    "profileId": profile_id,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    write_rdp_profiles(&app, &store)?;
+    Ok(before != store.profiles.len())
 }
 
 #[tauri::command]
@@ -285,44 +158,10 @@ pub async fn rdp_session_create(
     profile_id: String,
     width: Option<u32>,
     height: Option<u32>,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<RdpSessionSnapshot, EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.session.create.start",
-        trace_id.as_deref(),
-        json!({
-            "profileId": profile_id,
-            "width": width,
-            "height": height,
-        }),
-    );
     let profile = load_profile(&app, &security, &profile_id)?;
-    match rdp.create_session(&profile, width.zip(height)).await {
-        Ok(snapshot) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.session.create.success",
-                trace_id.as_deref(),
-                session_payload(&snapshot),
-            );
-            Ok(snapshot)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.session.create.failed",
-                trace_id.as_deref(),
-                json!({
-                    "profileId": profile.id,
-                    "width": width,
-                    "height": height,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    rdp.create_session(&profile, width.zip(height)).await
 }
 
 #[tauri::command]
@@ -330,39 +169,9 @@ pub async fn rdp_session_create(
 pub async fn rdp_session_connect(
     rdp: State<'_, RdpState>,
     session_id: String,
-    trace_id: Option<String>,
+    operation_id: String,
 ) -> Result<RdpSessionSnapshot, EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.session.connect.start",
-        trace_id.as_deref(),
-        json!({
-            "sessionId": session_id,
-        }),
-    );
-    match rdp.connect_session(&session_id).await {
-        Ok(snapshot) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.session.connect.success",
-                trace_id.as_deref(),
-                session_payload(&snapshot),
-            );
-            Ok(snapshot)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.session.connect.failed",
-                trace_id.as_deref(),
-                json!({
-                    "sessionId": session_id,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    rdp.connect_session(&session_id, operation_id).await
 }
 
 #[tauri::command]
@@ -370,39 +179,9 @@ pub async fn rdp_session_connect(
 pub async fn rdp_session_disconnect(
     rdp: State<'_, RdpState>,
     session_id: String,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<RdpSessionSnapshot, EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.session.disconnect.start",
-        trace_id.as_deref(),
-        json!({
-            "sessionId": session_id,
-        }),
-    );
-    match rdp.disconnect_session(&session_id).await {
-        Ok(snapshot) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.session.disconnect.success",
-                trace_id.as_deref(),
-                session_payload(&snapshot),
-            );
-            Ok(snapshot)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.session.disconnect.failed",
-                trace_id.as_deref(),
-                json!({
-                    "sessionId": session_id,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    rdp.disconnect_session(&session_id).await
 }
 
 #[tauri::command]
@@ -411,7 +190,7 @@ pub async fn rdp_session_send_input(
     rdp: State<'_, RdpState>,
     session_id: String,
     input: RdpInputEvent,
-    _trace_id: Option<String>,
+    _operation_id: Option<String>,
 ) -> Result<(), EngineError> {
     rdp.send_input(&session_id, input).await
 }
@@ -423,43 +202,9 @@ pub async fn rdp_session_resize(
     session_id: String,
     width: u32,
     height: u32,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<RdpSessionSnapshot, EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.session.resize.start",
-        trace_id.as_deref(),
-        json!({
-            "sessionId": session_id,
-            "width": width,
-            "height": height,
-        }),
-    );
-    match rdp.resize_session(&session_id, width, height).await {
-        Ok(snapshot) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.session.resize.success",
-                trace_id.as_deref(),
-                session_payload(&snapshot),
-            );
-            Ok(snapshot)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.session.resize.failed",
-                trace_id.as_deref(),
-                json!({
-                    "sessionId": session_id,
-                    "width": width,
-                    "height": height,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    rdp.resize_session(&session_id, width, height).await
 }
 
 #[tauri::command]
@@ -468,7 +213,7 @@ pub async fn rdp_session_set_clipboard(
     rdp: State<'_, RdpState>,
     session_id: String,
     text: String,
-    _trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<(), EngineError> {
     rdp.set_clipboard(&session_id, text).await
 }
@@ -479,17 +224,8 @@ pub async fn rdp_session_set_audio_muted(
     rdp: State<'_, RdpState>,
     session_id: String,
     muted: bool,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<(), EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.audio.mute.command",
-        trace_id.as_deref(),
-        json!({
-            "sessionId": session_id,
-            "muted": muted,
-        }),
-    );
     rdp.set_audio_muted(&session_id, muted).await
 }
 
@@ -499,45 +235,9 @@ pub async fn rdp_session_cert_decide(
     rdp: State<'_, RdpState>,
     session_id: String,
     accept: bool,
-    trace_id: Option<String>,
+    _operation_id: String,
 ) -> Result<RdpSessionSnapshot, EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "rdp.session.certificate.start",
-        trace_id.as_deref(),
-        json!({
-            "sessionId": session_id,
-            "accept": accept,
-        }),
-    );
-    match rdp.decide_certificate(&session_id, accept).await {
-        Ok(snapshot) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "rdp.session.certificate.success",
-                trace_id.as_deref(),
-                json!({
-                    "sessionId": snapshot.session_id,
-                    "accept": accept,
-                    "state": snapshot.state,
-                }),
-            );
-            Ok(snapshot)
-        }
-        Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "rdp.session.certificate.failed",
-                trace_id.as_deref(),
-                json!({
-                    "sessionId": session_id,
-                    "accept": accept,
-                    "error": error_payload(&err),
-                }),
-            );
-            Err(err)
-        }
-    }
+    rdp.decide_certificate(&session_id, accept).await
 }
 
 fn load_profile(
@@ -561,39 +261,6 @@ fn load_profile(
 fn now_epoch() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|duration| duration.as_secs())
         .unwrap_or(0)
-}
-
-fn error_payload(error: &EngineError) -> serde_json::Value {
-    json!({
-        "code": &error.code,
-        "message": &error.message,
-        "detail": &error.detail,
-    })
-}
-
-fn profile_payload(profile: &RdpProfile) -> serde_json::Value {
-    json!({
-        "profileId": &profile.id,
-        "resolutionMode": &profile.resolution_mode,
-        "displayStrategy": &profile.display_strategy,
-        "ignoreCertificate": profile.ignore_certificate,
-        "tagCount": profile.tags.as_ref().map_or(0, Vec::len),
-        "hasPassword": profile.password_ref.is_some(),
-    })
-}
-
-fn session_payload(snapshot: &RdpSessionSnapshot) -> serde_json::Value {
-    json!({
-        "sessionId": &snapshot.session_id,
-        "profileId": &snapshot.profile_id,
-        "state": &snapshot.state,
-        "width": snapshot.width,
-        "height": snapshot.height,
-        "hasWsUrl": snapshot.ws_url.is_some(),
-        "audioEnabled": snapshot.audio_enabled,
-        "audioMuted": snapshot.audio_muted,
-        "audioState": &snapshot.audio_state,
-    })
 }

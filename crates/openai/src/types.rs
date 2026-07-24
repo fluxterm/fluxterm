@@ -17,7 +17,6 @@ pub struct OpenAiClientConfig {
     pub base_url: String,
     pub model: String,
     pub timeout_ms: u64,
-    pub debug_logging_enabled: bool,
 }
 
 /// 会话上下文快照。

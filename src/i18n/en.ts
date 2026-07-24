@@ -205,9 +205,6 @@ export const enUsTranslations = {
   "config.ai.manageEmpty": "No access entries yet. Add one first.",
   "config.ai.compatEmpty": "No compatible access entries. Add one first.",
   "config.ai.removeActiveOpenAiConfig": "Delete Current Access",
-  "config.ai.debugLoggingEnabled": "Enable AI Debug Logging",
-  "config.ai.debugLoggingEnabledHint":
-    "Log the final outbound model messages and returned content for debugging.",
   "config.openai.name": "Name",
   "config.openai.namePlaceholder": "OpenAI",
   "config.openai.manageHint":

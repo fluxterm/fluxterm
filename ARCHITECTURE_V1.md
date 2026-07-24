@@ -45,6 +45,13 @@ frontend (React/Vite)  --->  tauri (Rust)  --->  engine (Rust)
 - 向前端暴露 Rust 命令接口
 - 管理窗口能力权限与原生窗口行为
 
+### `crates/logging`
+
+跨 Rust crate 复用的结构化日志核心。
+
+- 负责事件校验、保留字段、脱敏、大小限制和错误结构
+- 通过 `log` facade 接入 Tauri 日志输出端
+
 ### `frontend`
 
 React 前端采用“领域能力 + 运行单元壳层”结构：
@@ -81,6 +88,7 @@ React 前端采用“领域能力 + 运行单元壳层”结构：
 - SSH 连接与资源监控连接遵循统一主机校验策略
 - 敏感凭据采用最小化明文暴露原则
 - SFTP 操作范围限定在明确目标路径
+- 日志禁止记录凭据、完整路径、文件名、终端内容、剪贴板内容和 AI 原文
 
 ## 平台说明
 
@@ -93,3 +101,4 @@ React 前端采用“领域能力 + 运行单元壳层”结构：
 - `docs/terminal-split-workspace-design.md`：终端拆分工作区与会话重建策略
 - `docs/security-crypto-refactor-design.md`：加密模块与凭据存储设计
 - `docs/serial-design.md`：串口 Widget、运行时、二进制事件与调试台设计
+- `docs/logging-spec.md`：结构化日志边界、级别、字段和所有权规范

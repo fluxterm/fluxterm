@@ -7,7 +7,7 @@ import {
   createAppEvent,
   type CreateAppEventInput,
 } from "@/features/events/core/appEvents";
-import { error as logError, info as logInfo } from "@/shared/logging/telemetry";
+import { createOperationId, logWarn } from "@/shared/logging";
 import type { Translate } from "@/i18n";
 import type {
   AppEvent,
@@ -441,17 +441,10 @@ export default function useSessionState({
 
   async function createSshSession(profile: HostProfile) {
     const { cols, rows } = getTerminalSize();
-    void logInfo(
-      JSON.stringify({
-        event: "ssh.connect.invoke",
-        profileId: profile.id,
-        host: profile.host,
-        authType: profile.authType,
-      }),
-    );
     return await callTauri<Session>("ssh_connect", {
       profile,
       size: { cols, rows },
+      operationId: createOperationId(),
     });
   }
 
@@ -701,15 +694,16 @@ export default function useSessionState({
             },
             details: payload.error ? { ...payload.error } : undefined,
           });
-          void logError(
-            JSON.stringify({
-              event: serialSession
-                ? "serial.session.error"
-                : "ssh.session.error",
+          if (serialSession) {
+            logWarn("serial.session.failed", {
               sessionId: payload.sessionId,
-              message: payload.error?.message ?? "unknown",
-            }),
-          );
+              error: {
+                code: payload.error?.code ?? "serial_session_failed",
+                message: "Serial session failed",
+                detail: payload.error?.message,
+              },
+            });
+          }
           if (!isLocalSession(payload.sessionId) && !serialSession) {
             disconnectSessionRef.current(payload.sessionId).catch(() => {});
           }
@@ -738,20 +732,6 @@ export default function useSessionState({
             titleKey: "log.event.connected",
             vars: { name: label },
           });
-          void logInfo(
-            JSON.stringify({
-              event: "ssh.session.connected",
-              sessionId: payload.sessionId,
-            }),
-          );
-        }
-        if (payload.state === "connecting") {
-          void logInfo(
-            JSON.stringify({
-              event: "ssh.session.connecting",
-              sessionId: payload.sessionId,
-            }),
-          );
         }
       },
       handleHostKeyVerificationRequired: (payload) => {
@@ -888,12 +868,6 @@ export default function useSessionState({
       setSessionStates,
       setSessionReasons,
       t,
-      logInfo: (message) => {
-        void logInfo(message);
-      },
-      logError: (message) => {
-        void logError(message);
-      },
       onSessionCreated: options?.onSessionCreated,
       shouldSuppressError: options?.shouldSuppressError,
       openDialog,

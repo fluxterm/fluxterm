@@ -25,10 +25,10 @@ use crate::proxy_error_codes::{
     PROXY_IO_WRITE_TIMEOUT, PROXY_SHUTDOWN_TIMEOUT, PROXY_SOCKS5_HANDSHAKE_FAILED,
     PROXY_SOCKS5_REQUEST_FAILED, PROXY_TRANSFER_FAILED, PROXY_UPSTREAM_CONNECT_FAILED,
 };
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     EngineEvent, EventCallback, ProxyAuth, ProxyProtocol, ProxyRuntime, ProxySpec, ProxyStatus,
 };
+use fluxterm_logging::{LogLevel, log_event};
 
 const MAX_ACTIVE_CONNECTIONS: u32 = 256;
 const HANDSHAKE_TIMEOUT_SEC: u64 = 8;
@@ -40,8 +40,8 @@ const CLOSE_FORCE_ABORT_WAIT_MS: u64 = 500;
 const TRAFFIC_UPDATE_INTERVAL_MS: u64 = 200;
 
 #[derive(Clone)]
-struct ProxyTelemetryCtx {
-    trace_id: Option<String>,
+struct ProxyLogContext {
+    operation_id: Option<String>,
     proxy_id: String,
     protocol: ProxyProtocol,
     bind_host: String,
@@ -49,8 +49,8 @@ struct ProxyTelemetryCtx {
 }
 
 #[derive(Clone)]
-struct ConnTelemetryCtx {
-    proxy: ProxyTelemetryCtx,
+struct ConnectionLogContext {
+    proxy: ProxyLogContext,
     connection_id: String,
     peer_addr: Option<String>,
 }
@@ -77,21 +77,9 @@ impl ProxyHandle {
 pub async fn open_proxy(
     spec: ProxySpec,
     on_event: EventCallback,
-    trace_id: Option<&str>,
+    operation_id: Option<&str>,
 ) -> Result<ProxyHandle, EngineError> {
     let proxy_id = Uuid::new_v4().to_string();
-    log_telemetry(
-        TelemetryLevel::Info,
-        "proxy.runtime.start",
-        trace_id,
-        json!({
-            "proxyId": proxy_id,
-            "protocol": spec.protocol,
-            "bindHost": spec.bind_host,
-            "bindPort": spec.bind_port,
-            "authEnabled": spec.auth.is_some(),
-        }),
-    );
     let runtime = Arc::new(Mutex::new(ProxyRuntime {
         proxy_id: proxy_id.clone(),
         protocol: spec.protocol,
@@ -109,21 +97,6 @@ pub async fn open_proxy(
     let listener = TcpListener::bind(format!("{}:{}", spec.bind_host, spec.bind_port))
         .await
         .map_err(|err| {
-            log_telemetry(
-                TelemetryLevel::Warn,
-                "proxy.runtime.failed",
-                trace_id,
-                json!({
-                    "proxyId": proxy_id,
-                    "bindHost": spec.bind_host,
-                    "bindPort": spec.bind_port,
-                    "error": {
-                        "code": PROXY_BIND_FAILED,
-                        "message": "Failed to bind the proxy listener",
-                        "detail": err.to_string(),
-                    }
-                }),
-            );
             EngineError::with_detail(
                 PROXY_BIND_FAILED,
                 "Failed to bind the proxy listener",
@@ -140,19 +113,8 @@ pub async fn open_proxy(
         guard.last_error = None;
     }
     let snapshot = runtime.lock().await.clone();
-    log_telemetry(
-        TelemetryLevel::Info,
-        "proxy.runtime.running",
-        trace_id,
-        json!({
-            "proxyId": proxy_id,
-            "protocol": spec.protocol,
-            "bindHost": snapshot.bind_host,
-            "bindPort": snapshot.bind_port,
-        }),
-    );
-    let proxy_log_ctx = ProxyTelemetryCtx {
-        trace_id: trace_id.map(ToString::to_string),
+    let proxy_log_ctx = ProxyLogContext {
+        operation_id: operation_id.map(ToString::to_string),
         proxy_id: proxy_id.clone(),
         protocol: spec.protocol,
         bind_host: snapshot.bind_host.clone(),
@@ -181,19 +143,19 @@ pub async fn open_proxy(
                 accepted = listener.accept() => {
                     let Ok((stream, peer_addr)) = accepted else {
                         let err = EngineError::new(PROXY_ACCEPT_FAILED, "Failed to accept the proxy connection");
-                        log_telemetry(
-                            TelemetryLevel::Warn,
-                            "proxy.connection.failed",
-                            proxy_log_ctx_for_loop.trace_id.as_deref(),
+                        log_event!(
+                            LogLevel::Error,
+                            "proxy.runtime.accept.failed",
+                            proxy_log_ctx_for_loop.operation_id.as_deref(),
                             json!({
                                 "proxyId": proxy_log_ctx_for_loop.proxy_id,
                                 "protocol": proxy_log_ctx_for_loop.protocol,
                                 "bindHost": proxy_log_ctx_for_loop.bind_host,
                                 "bindPort": proxy_log_ctx_for_loop.bind_port,
                                 "error": {
-                                    "code": err.code,
-                                    "message": err.message,
-                                    "detail": err.detail,
+                                    "code": err.code.clone(),
+                                    "message": "Proxy runtime failed",
+                                    "detail": err.detail.clone().unwrap_or(err.message.clone()),
                                 }
                             }),
                         );
@@ -204,10 +166,10 @@ pub async fn open_proxy(
                         break;
                     };
                     let Ok(connection_permit) = Arc::clone(&connection_limit_for_accept).try_acquire_owned() else {
-                        log_telemetry(
-                            TelemetryLevel::Warn,
+                        log_event!(
+                            LogLevel::Debug,
                             "proxy.connection.failed",
-                            proxy_log_ctx_for_loop.trace_id.as_deref(),
+                            proxy_log_ctx_for_loop.operation_id.as_deref(),
                             json!({
                                 "proxyId": proxy_log_ctx_for_loop.proxy_id,
                                 "protocol": proxy_log_ctx_for_loop.protocol,
@@ -236,7 +198,7 @@ pub async fn open_proxy(
                     let mut stop_rx_for_conn = stop_tx_for_accept.subscribe();
                     let spec_for_conn = spec.clone();
                     let conn_task_id = Uuid::new_v4().to_string();
-                    let conn_log_ctx = ConnTelemetryCtx {
+                    let conn_log_ctx = ConnectionLogContext {
                         proxy: proxy_log_ctx_for_loop.clone(),
                         connection_id: conn_task_id.clone(),
                         peer_addr: Some(peer_addr.to_string()),
@@ -259,10 +221,10 @@ pub async fn open_proxy(
                         };
                         match handled {
                             Ok((bytes_out, bytes_in)) => {
-                                log_telemetry(
-                                    TelemetryLevel::Debug,
-                                    "proxy.connection.success",
-                                    conn_log_ctx.proxy.trace_id.as_deref(),
+                                log_event!(
+                                    LogLevel::Debug,
+                                    "proxy.connection.succeeded",
+                                    conn_log_ctx.proxy.operation_id.as_deref(),
                                     json!({
                                         "proxyId": conn_log_ctx.proxy.proxy_id,
                                         "connectionId": conn_log_ctx.connection_id,
@@ -294,10 +256,10 @@ pub async fn open_proxy(
                                     detail_segments.push(detail);
                                 }
                                 let enriched_detail = detail_segments.join("; ");
-                                log_telemetry(
-                                    TelemetryLevel::Warn,
+                                log_event!(
+                                    LogLevel::Debug,
                                     "proxy.connection.failed",
-                                    conn_log_ctx.proxy.trace_id.as_deref(),
+                                    conn_log_ctx.proxy.operation_id.as_deref(),
                                     json!({
                                         "proxyId": conn_log_ctx.proxy.proxy_id,
                                         "connectionId": conn_log_ctx.connection_id,
@@ -308,8 +270,8 @@ pub async fn open_proxy(
                                         "durationMs": started_at.elapsed().as_millis(),
                                         "error": {
                                             "code": err_code,
-                                            "message": err_message,
-                                            "detail": err_detail,
+                                            "message": "Proxy connection failed",
+                                            "detail": err_detail.clone().unwrap_or(err_message.clone()),
                                         }
                                     }),
                                 );
@@ -353,10 +315,10 @@ pub async fn open_proxy(
                 Vec::new()
             } else {
                 let targets = guard.drain().map(|(_, handle)| handle).collect::<Vec<_>>();
-                log_telemetry(
-                    TelemetryLevel::Warn,
+                log_event!(
+                    LogLevel::Warn,
                     "proxy.runtime.failed",
-                    proxy_log_ctx_for_loop.trace_id.as_deref(),
+                    proxy_log_ctx_for_loop.operation_id.as_deref(),
                     json!({
                         "proxyId": proxy_log_ctx_for_loop.proxy_id,
                         "protocol": proxy_log_ctx_for_loop.protocol,
@@ -381,17 +343,6 @@ pub async fn open_proxy(
             let mut guard = runtime_for_loop.lock().await;
             guard.status = ProxyStatus::Stopped;
             guard.active_connections = 0;
-            log_telemetry(
-                TelemetryLevel::Info,
-                "proxy.runtime.stopped",
-                proxy_log_ctx_for_loop.trace_id.as_deref(),
-                json!({
-                    "proxyId": guard.proxy_id,
-                    "protocol": guard.protocol,
-                    "bindHost": guard.bind_host,
-                    "bindPort": guard.bind_port,
-                }),
-            );
         }
         emit_proxy_update(&on_event_for_loop, &runtime_for_loop).await;
     });
@@ -405,15 +356,15 @@ pub async fn open_proxy(
 async fn on_conn_open(
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
+    conn: &ConnectionLogContext,
 ) {
     {
         let mut guard = runtime.lock().await;
         guard.active_connections = guard.active_connections.saturating_add(1);
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "proxy.connection.open",
-            conn.proxy.trace_id.as_deref(),
+        log_event!(
+            LogLevel::Debug,
+            "proxy.connection.opened",
+            conn.proxy.operation_id.as_deref(),
             json!({
                 "proxyId": guard.proxy_id,
                 "connectionId": conn.connection_id,
@@ -431,15 +382,15 @@ async fn on_conn_open(
 async fn on_conn_close(
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
+    conn: &ConnectionLogContext,
 ) {
     {
         let mut guard = runtime.lock().await;
         guard.active_connections = guard.active_connections.saturating_sub(1);
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "proxy.connection.close",
-            conn.proxy.trace_id.as_deref(),
+        log_event!(
+            LogLevel::Debug,
+            "proxy.connection.closed",
+            conn.proxy.operation_id.as_deref(),
             json!({
                 "proxyId": guard.proxy_id,
                 "connectionId": conn.connection_id,
@@ -457,7 +408,6 @@ async fn on_conn_close(
 async fn add_traffic(
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
     bytes_out: u64,
     bytes_in: u64,
 ) {
@@ -465,21 +415,6 @@ async fn add_traffic(
         let mut guard = runtime.lock().await;
         guard.bytes_out = guard.bytes_out.saturating_add(bytes_out);
         guard.bytes_in = guard.bytes_in.saturating_add(bytes_in);
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "proxy.runtime.update",
-            conn.proxy.trace_id.as_deref(),
-            json!({
-                "proxyId": guard.proxy_id,
-                "connectionId": conn.connection_id,
-                "protocol": guard.protocol,
-                "bindHost": guard.bind_host,
-                "bindPort": guard.bind_port,
-                "activeConnections": guard.active_connections,
-                "bytesOut": guard.bytes_out,
-                "bytesIn": guard.bytes_in,
-            }),
-        );
     }
     emit_proxy_update(on_event, runtime).await;
 }
@@ -540,7 +475,7 @@ async fn handle_client(
     spec: &ProxySpec,
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
+    conn: &ConnectionLogContext,
 ) -> Result<(u64, u64), EngineError> {
     match spec.protocol {
         ProxyProtocol::Socks5 => {
@@ -557,12 +492,12 @@ async fn handle_socks5_client(
     auth: Option<&ProxyAuth>,
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
+    conn: &ConnectionLogContext,
 ) -> Result<(u64, u64), EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "proxy.handshake.start",
-        conn.proxy.trace_id.as_deref(),
+    log_event!(
+        LogLevel::Debug,
+        "proxy.handshake.started",
+        conn.proxy.operation_id.as_deref(),
         json!({
             "proxyId": conn.proxy.proxy_id,
             "connectionId": conn.connection_id,
@@ -581,10 +516,10 @@ async fn handle_socks5_client(
     .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "SOCKS5 handshake timed out"))?;
     let handshake = match handshake {
         Ok(result) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "proxy.handshake.success",
-                conn.proxy.trace_id.as_deref(),
+            log_event!(
+                LogLevel::Debug,
+                "proxy.handshake.succeeded",
+                conn.proxy.operation_id.as_deref(),
                 json!({
                     "proxyId": conn.proxy.proxy_id,
                     "connectionId": conn.connection_id,
@@ -594,18 +529,18 @@ async fn handle_socks5_client(
             result
         }
         Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
+            log_event!(
+                LogLevel::Debug,
                 "proxy.handshake.failed",
-                conn.proxy.trace_id.as_deref(),
+                conn.proxy.operation_id.as_deref(),
                 json!({
                     "proxyId": conn.proxy.proxy_id,
                     "connectionId": conn.connection_id,
                     "handshakeProtocol": "socks5",
                     "error": {
-                        "code": err.code,
-                        "message": err.message,
-                        "detail": err.detail,
+                        "code": err.code.clone(),
+                        "message": "Proxy handshake failed",
+                        "detail": err.detail.clone().unwrap_or(err.message.clone()),
                     }
                 }),
             );
@@ -613,21 +548,15 @@ async fn handle_socks5_client(
         }
     };
     clear_last_error_if_any(runtime, on_event).await;
-    relay_with_timeouts(
-        handshake.client,
-        handshake.upstream,
-        runtime,
-        on_event,
-        conn,
-    )
-    .await
-    .map_err(|err| {
-        EngineError::with_detail(
-            PROXY_TRANSFER_FAILED,
-            "Proxy forwarding failed",
-            err.to_string(),
-        )
-    })
+    relay_with_timeouts(handshake.client, handshake.upstream, runtime, on_event)
+        .await
+        .map_err(|err| {
+            EngineError::with_detail(
+                PROXY_TRANSFER_FAILED,
+                "Proxy forwarding failed",
+                err.to_string(),
+            )
+        })
 }
 
 struct Socks5HandshakeResult {
@@ -1015,12 +944,12 @@ async fn handle_http_client(
     auth: Option<&ProxyAuth>,
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
+    conn: &ConnectionLogContext,
 ) -> Result<(u64, u64), EngineError> {
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "proxy.handshake.start",
-        conn.proxy.trace_id.as_deref(),
+    log_event!(
+        LogLevel::Debug,
+        "proxy.handshake.started",
+        conn.proxy.operation_id.as_deref(),
         json!({
             "proxyId": conn.proxy.proxy_id,
             "connectionId": conn.connection_id,
@@ -1039,10 +968,10 @@ async fn handle_http_client(
     .map_err(|_| EngineError::new(PROXY_HANDSHAKE_TIMEOUT, "HTTP proxy handshake timed out"))?;
     let handshake = match handshake {
         Ok(result) => {
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "proxy.handshake.success",
-                conn.proxy.trace_id.as_deref(),
+            log_event!(
+                LogLevel::Debug,
+                "proxy.handshake.succeeded",
+                conn.proxy.operation_id.as_deref(),
                 json!({
                     "proxyId": conn.proxy.proxy_id,
                     "connectionId": conn.connection_id,
@@ -1052,18 +981,18 @@ async fn handle_http_client(
             result
         }
         Err(err) => {
-            log_telemetry(
-                TelemetryLevel::Warn,
+            log_event!(
+                LogLevel::Debug,
                 "proxy.handshake.failed",
-                conn.proxy.trace_id.as_deref(),
+                conn.proxy.operation_id.as_deref(),
                 json!({
                     "proxyId": conn.proxy.proxy_id,
                     "connectionId": conn.connection_id,
                     "handshakeProtocol": "http",
                     "error": {
-                        "code": err.code,
-                        "message": err.message,
-                        "detail": err.detail,
+                        "code": err.code.clone(),
+                        "message": "Proxy handshake failed",
+                        "detail": err.detail.clone().unwrap_or(err.message.clone()),
                     }
                 }),
             );
@@ -1072,23 +1001,18 @@ async fn handle_http_client(
     };
     clear_last_error_if_any(runtime, on_event).await;
     if handshake.initial_bytes_out > 0 {
-        add_traffic(runtime, on_event, conn, handshake.initial_bytes_out, 0).await;
+        add_traffic(runtime, on_event, handshake.initial_bytes_out, 0).await;
     }
-    let (body_out, body_in) = relay_with_timeouts(
-        handshake.client,
-        handshake.upstream,
-        runtime,
-        on_event,
-        conn,
-    )
-    .await
-    .map_err(|err| {
-        EngineError::with_detail(
-            PROXY_TRANSFER_FAILED,
-            "Proxy forwarding failed",
-            err.to_string(),
-        )
-    })?;
+    let (body_out, body_in) =
+        relay_with_timeouts(handshake.client, handshake.upstream, runtime, on_event)
+            .await
+            .map_err(|err| {
+                EngineError::with_detail(
+                    PROXY_TRANSFER_FAILED,
+                    "Proxy forwarding failed",
+                    err.to_string(),
+                )
+            })?;
     Ok((handshake.initial_bytes_out + body_out, body_in))
 }
 
@@ -1362,7 +1286,6 @@ async fn relay_with_timeouts(
     right: TcpStream,
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
 ) -> Result<(u64, u64), EngineError> {
     let (left_read, left_write) = left.into_split();
     let (right_read, right_write) = right.into_split();
@@ -1370,15 +1293,12 @@ async fn relay_with_timeouts(
     let runtime_for_in = Arc::clone(runtime);
     let on_event_for_out = Arc::clone(on_event);
     let on_event_for_in = Arc::clone(on_event);
-    let conn_for_out = conn.clone();
-    let conn_for_in = conn.clone();
     let mut left_to_right = tokio::spawn(async move {
         relay_one_way_with_timeout(
             left_read,
             right_write,
             &runtime_for_out,
             &on_event_for_out,
-            &conn_for_out,
             TrafficDirection::Out,
         )
         .await
@@ -1389,7 +1309,6 @@ async fn relay_with_timeouts(
             left_write,
             &runtime_for_in,
             &on_event_for_in,
-            &conn_for_in,
             TrafficDirection::In,
         )
         .await
@@ -1453,7 +1372,6 @@ async fn relay_one_way_with_timeout<R, W>(
     mut writer: W,
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
     direction: TrafficDirection,
 ) -> Result<u64, EngineError>
 where
@@ -1473,7 +1391,7 @@ where
         let read = match read_result {
             Ok(Ok(read)) => read,
             Ok(Err(err)) => {
-                flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
+                flush_pending_traffic(runtime, on_event, direction, pending).await;
                 return Err(EngineError::with_detail(
                     PROXY_TRANSFER_FAILED,
                     "Failed to read proxy data",
@@ -1481,7 +1399,7 @@ where
                 ));
             }
             Err(_) => {
-                flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
+                flush_pending_traffic(runtime, on_event, direction, pending).await;
                 return Err(EngineError::new(
                     PROXY_IO_READ_TIMEOUT,
                     "Read operation timed out",
@@ -1489,7 +1407,7 @@ where
             }
         };
         if read == 0 {
-            flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
+            flush_pending_traffic(runtime, on_event, direction, pending).await;
             return Ok(total);
         }
         let write_result = timeout(
@@ -1500,7 +1418,7 @@ where
         match write_result {
             Ok(Ok(())) => {}
             Ok(Err(err)) => {
-                flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
+                flush_pending_traffic(runtime, on_event, direction, pending).await;
                 return Err(EngineError::with_detail(
                     PROXY_TRANSFER_FAILED,
                     "Failed to write proxy data",
@@ -1508,7 +1426,7 @@ where
                 ));
             }
             Err(_) => {
-                flush_pending_traffic(runtime, on_event, conn, direction, pending).await;
+                flush_pending_traffic(runtime, on_event, direction, pending).await;
                 return Err(EngineError::new(
                     PROXY_IO_WRITE_TIMEOUT,
                     "Write operation timed out",
@@ -1520,8 +1438,8 @@ where
         pending = pending.saturating_add(delta);
         if pending > 0 && last_emit.elapsed() >= Duration::from_millis(TRAFFIC_UPDATE_INTERVAL_MS) {
             match direction {
-                TrafficDirection::Out => add_traffic(runtime, on_event, conn, pending, 0).await,
-                TrafficDirection::In => add_traffic(runtime, on_event, conn, 0, pending).await,
+                TrafficDirection::Out => add_traffic(runtime, on_event, pending, 0).await,
+                TrafficDirection::In => add_traffic(runtime, on_event, 0, pending).await,
             }
             pending = 0;
             last_emit = Instant::now();
@@ -1532,7 +1450,6 @@ where
 async fn flush_pending_traffic(
     runtime: &Arc<Mutex<ProxyRuntime>>,
     on_event: &EventCallback,
-    conn: &ConnTelemetryCtx,
     direction: TrafficDirection,
     pending: u64,
 ) {
@@ -1540,8 +1457,8 @@ async fn flush_pending_traffic(
         return;
     }
     match direction {
-        TrafficDirection::Out => add_traffic(runtime, on_event, conn, pending, 0).await,
-        TrafficDirection::In => add_traffic(runtime, on_event, conn, 0, pending).await,
+        TrafficDirection::Out => add_traffic(runtime, on_event, pending, 0).await,
+        TrafficDirection::In => add_traffic(runtime, on_event, 0, pending).await,
     }
 }
 

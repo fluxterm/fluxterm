@@ -128,7 +128,6 @@ pub fn read_provider_config_by_id(
         base_url,
         model,
         timeout_ms: ai_settings.request_timeout_ms,
-        debug_logging_enabled: ai_settings.debug_logging_enabled,
     })
 }
 

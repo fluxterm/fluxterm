@@ -11,10 +11,13 @@ import {
 import type { Locale, Translate } from "@/i18n";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 import {
-  createTraceId,
-  logTelemetry,
-  type TelemetryLevel,
-} from "@/shared/logging/telemetry";
+  createOperationId,
+  logDebug,
+  logError,
+  logInfo,
+  logWarn,
+  type LogError,
+} from "@/shared/logging";
 import type {
   RdpDisplayStrategy,
   RdpInputEvent,
@@ -56,6 +59,7 @@ type RdpPerfSnapshot = {
 };
 
 type RdpStatusIndicatorTone = "normal" | "degraded" | "error";
+type RdpLogLevel = "debug" | "info" | "warn" | "error";
 
 type RdpWireEvent =
   | {
@@ -97,7 +101,7 @@ type RdpWorkerMessage =
   | {
       type: "diagnostic";
       sessionId?: string;
-      level?: TelemetryLevel;
+      level?: RdpLogLevel;
       event?: string;
       fields?: Record<string, unknown>;
     };
@@ -119,7 +123,7 @@ type RdpCachedFrameRect = {
 type RdpSessionTab = {
   session: RdpSessionSnapshot;
   profile: RdpProfile;
-  traceId: string;
+  operationId: string;
   statusText: string;
   errorMessage: string;
   perf: RdpPerfSnapshot;
@@ -199,21 +203,29 @@ function canAttachBridge(
 }
 
 function logRdpSubAppEvent(
-  level: TelemetryLevel,
+  level: RdpLogLevel,
   event: string,
   fields?: Record<string, unknown>,
 ) {
-  void logTelemetry(level, event, fields);
+  const operationId =
+    typeof fields?.operationId === "string" ? fields.operationId : undefined;
+  const safeFields = { ...(fields ?? {}) };
+  delete safeFields.operationId;
+  const writer = {
+    debug: logDebug,
+    info: logInfo,
+    warn: logWarn,
+    error: logError,
+  }[level];
+  writer(event, safeFields, operationId);
 }
 
-function getErrorFields(error: unknown) {
-  if (error instanceof Error) {
-    return {
-      message: error.message,
-      name: error.name,
-    };
-  }
-  return { message: String(error) };
+function getLogError(error: unknown, code: string, message: string): LogError {
+  return {
+    code,
+    message,
+    detail: error instanceof Error ? error.message : String(error),
+  };
 }
 
 function getSafeWsUrlFields(url: string | null | undefined) {
@@ -235,7 +247,11 @@ function getSafeWsUrlFields(url: string | null | undefined) {
     return {
       hasWsUrl: true,
       wsUrlInvalid: true,
-      error: getErrorFields(error),
+      error: getLogError(
+        error,
+        "rdp_bridge_url_invalid",
+        "RDP bridge URL is invalid",
+      ),
     };
   }
 }
@@ -452,14 +468,12 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         setIsFullscreen(false);
       }
     } catch (err) {
-      logRdpSubAppEvent("error", "rdp.fullscreen.transition.failed", {
-        error:
-          err instanceof Error
-            ? {
-                message: err.message,
-                name: err.name,
-              }
-            : { message: String(err) },
+      logRdpSubAppEvent("warn", "rdp.fullscreen.transition.failed", {
+        error: getLogError(
+          err,
+          "rdp_fullscreen_transition_failed",
+          "RDP fullscreen transition failed",
+        ),
       });
     }
   }, []);
@@ -569,7 +583,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       if (typeof text === "string" && text !== lastSyncTextRef.current) {
         lastSyncTextRef.current = text;
         void setRdpClipboard(activeTab.session.sessionId, text, {
-          traceId: activeTab.traceId,
+          operationId: activeTab.operationId,
         });
       }
     } catch {
@@ -638,11 +652,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         return;
       }
       if (payload.type === "clipboard") {
-        const traceId =
+        const operationId =
           sessionsRef.current.find((tab) => tab.session.sessionId === sessionId)
-            ?.traceId ?? null;
+            ?.operationId ?? null;
         logRdpSubAppEvent("debug", "rdp.clipboard.sync", {
-          traceId,
+          operationId,
           sessionId,
           direction: payload.direction,
           textLength: payload.text.length,
@@ -701,24 +715,28 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
     if (type === "bridge-state") {
       const { sessionId, state } = message;
-      const traceId =
+      const operationId =
         sessionsRef.current.find((tab) => tab.session.sessionId === sessionId)
-          ?.traceId ?? null;
+          ?.operationId ?? null;
       if (state === "open") {
-        logRdpSubAppEvent("info", "rdp.bridge.open", {
-          traceId,
+        logRdpSubAppEvent("debug", "rdp.bridge.connected", {
+          operationId,
           sessionId,
           ...(message.details ?? {}),
         });
       } else if (state === "error") {
         logRdpSubAppEvent("warn", "rdp.bridge.failed", {
-          traceId,
+          operationId,
           sessionId,
           ...(message.details ?? {}),
+          error: {
+            code: "rdp_bridge_failed",
+            message: "RDP renderer bridge failed",
+          },
         });
       } else {
-        logRdpSubAppEvent("info", "rdp.bridge.close", {
-          traceId,
+        logRdpSubAppEvent("debug", "rdp.bridge.disconnected", {
+          operationId,
           sessionId,
           ...(message.details ?? {}),
         });
@@ -756,20 +774,17 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     }
 
     if (type === "diagnostic") {
-      const traceId = message.sessionId
+      const operationId = message.sessionId
         ? (sessionsRef.current.find(
             (tab) => tab.session.sessionId === message.sessionId,
-          )?.traceId ?? null)
+          )?.operationId ?? null)
         : null;
-      logRdpSubAppEvent(
-        message.level ?? "debug",
-        message.event ?? "rdp.renderer.diagnostic",
-        {
-          traceId,
-          sessionId: message.sessionId ?? null,
-          ...(message.fields ?? {}),
-        },
-      );
+      logRdpSubAppEvent("debug", "rdp.renderer.diagnostic", {
+        operationId,
+        sessionId: message.sessionId ?? null,
+        diagnosticKind: message.event ?? "unspecified",
+        ...(message.fields ?? {}),
+      });
     }
   }, []);
 
@@ -870,7 +885,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       !mainThreadBridgeRef.current
     ) {
       const canvas = canvasRef.current;
-      logRdpSubAppEvent("debug", "rdp.worker.init.start", {
+      logRdpSubAppEvent("debug", "rdp.worker.init.started", {
         hasCanvas: true,
         hasTransferControlToOffscreen:
           typeof canvas.transferControlToOffscreen === "function",
@@ -908,7 +923,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
                 fields,
               }),
           });
-          logRdpSubAppEvent("info", "rdp.renderer.fallback.ready", {
+          logRdpSubAppEvent("debug", "rdp.renderer.fallback.ready", {
             reason,
             rendererMode: "main-thread",
           });
@@ -916,7 +931,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         } catch (error) {
           logRdpSubAppEvent("error", "rdp.renderer.fallback.failed", {
             reason,
-            error: getErrorFields(error),
+            error: getLogError(
+              error,
+              "rdp_renderer_fallback_failed",
+              "RDP renderer fallback failed",
+            ),
           });
           return false;
         }
@@ -942,14 +961,22 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
         worker.onerror = (event) => {
           logRdpSubAppEvent("error", "rdp.worker.runtime.error", {
-            message: event.message,
-            filename: event.filename,
+            error: {
+              code: "rdp_worker_runtime_error",
+              message: "RDP renderer worker failed",
+              detail: event.message,
+            },
             lineno: event.lineno,
             colno: event.colno,
           });
         };
         worker.onmessageerror = () => {
-          logRdpSubAppEvent("warn", "rdp.worker.message.error");
+          logRdpSubAppEvent("warn", "rdp.worker.message.failed", {
+            error: {
+              code: "rdp_worker_message_failed",
+              message: "RDP renderer worker message failed",
+            },
+          });
         };
         worker.postMessage({ type: "init", canvas: offscreen }, [offscreen]);
         workerRef.current = worker;
@@ -957,7 +984,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         logRdpSubAppEvent("error", "rdp.worker.init.failed", {
           hasTransferControlToOffscreen:
             typeof canvas.transferControlToOffscreen === "function",
-          error: getErrorFields(error),
+          error: getLogError(
+            error,
+            "rdp_worker_initialization_failed",
+            "RDP renderer worker initialization failed",
+          ),
         });
         if (!canvasTransferredRef.current) {
           createMainThreadBridge("worker_init_failed");
@@ -1133,7 +1164,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     rr.pending = null;
 
     void resizeRdpSession(activeTab.session.sessionId, width, height, {
-      traceId: activeTab.traceId,
+      operationId: activeTab.operationId,
     })
       .then((next) => {
         updateSessionTab(activeTab.session.sessionId, (tab) => ({
@@ -1217,7 +1248,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     }
     if (!canAttachBridge(activeTab.session)) {
       logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
-        traceId: activeTab.traceId,
+        operationId: activeTab.operationId,
         sessionId: activeTab.session.sessionId,
         reason: "session_not_attachable",
         sessionState: activeTab.session.state,
@@ -1234,7 +1265,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
     if (getRendererMode() === "none") {
       logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
-        traceId: activeTab.traceId,
+        operationId: activeTab.operationId,
         sessionId: activeTab.session.sessionId,
         reason: "renderer_unavailable",
         sessionState: activeTab.session.state,
@@ -1246,7 +1277,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     }
 
     logRdpSubAppEvent("debug", "rdp.bridge.connect.dispatch", {
-      traceId: activeTab.traceId,
+      operationId: activeTab.operationId,
       sessionId: activeTab.session.sessionId,
       sessionState: activeTab.session.state,
       rendererMode: getRendererMode(),
@@ -1267,7 +1298,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
   /** 子应用只消费已保存的 RDP Profile，不再承担 Profile 配置编辑。 */
   const connectFromProfile = useCallback(
-    async (profile: RdpProfile, traceId = createTraceId()) => {
+    async (profile: RdpProfile, operationId = createOperationId()) => {
       setGlobalError("");
       try {
         let initialSize: { width: number; height: number } | undefined;
@@ -1280,15 +1311,15 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
           }
         }
         const created = await createRdpSession(profile.id, initialSize, {
-          traceId,
+          operationId,
         });
         const connected = await connectRdpSession(created.sessionId, {
-          traceId,
+          operationId,
         });
         const newTab: RdpSessionTab = {
           session: connected,
           profile,
-          traceId,
+          operationId,
           statusText: t("rdp.status.waitingBridge"),
           errorMessage: "",
           perf: { ...EMPTY_PERF },
@@ -1297,17 +1328,6 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         setSessions((prev) => [...prev, newTab]);
         setActiveSessionId(connected.sessionId);
       } catch (error) {
-        logRdpSubAppEvent("warn", "rdp.session.launch.failed", {
-          traceId,
-          profileId: profile.id,
-          error:
-            error instanceof Error
-              ? {
-                  message: error.message,
-                  name: error.name,
-                }
-              : { message: String(error) },
-        });
         setGlobalError(error instanceof Error ? error.message : String(error));
       }
     },
@@ -1317,19 +1337,23 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   /** 主窗口双击 Profile 后只传 profileId，子应用负责解析并真正建立连接。 */
   const handleConnectProfileById = useCallback(
     async (profileId: string) => {
-      const traceId = createTraceId();
-      const resolved = (await listRdpProfiles({ traceId })).find(
+      const operationId = createOperationId();
+      const resolved = (await listRdpProfiles({ operationId })).find(
         (item) => item.id === profileId,
       );
       if (!resolved) {
         logRdpSubAppEvent("warn", "rdp.profile.resolve.failed", {
-          traceId,
+          operationId,
           profileId,
+          error: {
+            code: "rdp_profile_not_found",
+            message: "RDP profile was not found",
+          },
         });
         setGlobalError(t("rdp.error.profileNotFound"));
         return;
       }
-      await connectFromProfile(resolved, traceId);
+      await connectFromProfile(resolved, operationId);
     },
     [connectFromProfile, t],
   );
@@ -1347,12 +1371,12 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
       await Promise.allSettled(
         currentSessions.map(async ({ session }) => {
-          const traceId =
+          const operationId =
             sessionsRef.current.find(
               (tab) => tab.session.sessionId === session.sessionId,
-            )?.traceId ?? createTraceId();
+            )?.operationId ?? createOperationId();
           try {
-            await disconnectRdpSession(session.sessionId, { traceId });
+            await disconnectRdpSession(session.sessionId, { operationId });
           } catch {
             // 忽略单个会话断开失败，尽量继续清理剩余会话。
           } finally {
@@ -1460,11 +1484,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     const isLastSession =
       sessionsRef.current.length === 1 &&
       sessionsRef.current[0]?.session.sessionId === sessionId;
-    const traceId =
+    const operationId =
       sessionsRef.current.find((tab) => tab.session.sessionId === sessionId)
-        ?.traceId ?? createTraceId();
+        ?.operationId ?? createOperationId();
     try {
-      await disconnectRdpSession(sessionId, { traceId });
+      await disconnectRdpSession(sessionId, { operationId });
       if (isLastSession) {
         clearLastSessionTab(sessionId);
         await requestWindowClose();
@@ -1603,7 +1627,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       const next = await decideRdpCertificate(
         activeTab.session.sessionId,
         accept,
-        { traceId: activeTab.traceId },
+        { operationId: activeTab.operationId },
       );
       updateSessionTab(activeTab.session.sessionId, (tab) => ({
         ...tab,
@@ -1620,7 +1644,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     const nextMuted = !activeTab.session.audioMuted;
     try {
       await setRdpAudioMuted(activeTab.session.sessionId, nextMuted, {
-        traceId: activeTab.traceId,
+        operationId: activeTab.operationId,
       });
       updateSessionTab(activeTab.session.sessionId, (tab) => ({
         ...tab,
@@ -1631,12 +1655,13 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       }));
     } catch (error) {
       logRdpSubAppEvent("warn", "rdp.audio.mute.failed", {
-        traceId: activeTab.traceId,
+        operationId: activeTab.operationId,
         sessionId: activeTab.session.sessionId,
-        error:
-          error instanceof Error
-            ? { name: error.name, message: error.message }
-            : { message: String(error) },
+        error: getLogError(
+          error,
+          "rdp_audio_mute_failed",
+          "RDP audio mute update failed",
+        ),
       });
     }
   }

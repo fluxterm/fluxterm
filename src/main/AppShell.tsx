@@ -369,14 +369,12 @@ export default function AppShell() {
     selectionMaxChars: aiSelectionMaxChars,
     sessionRecentOutputMaxChars: aiSessionRecentOutputMaxChars,
     requestTimeoutMs: aiRequestTimeoutMs,
-    debugLoggingEnabled: aiDebugLoggingEnabled,
     activeProviderId: aiActiveProviderId,
     providers: aiProviders,
     activeProvider: aiActiveProvider,
     setSelectionMaxChars: setAiSelectionMaxChars,
     setSessionRecentOutputMaxChars: setAiSessionRecentOutputMaxChars,
     setRequestTimeoutMs: setAiRequestTimeoutMs,
-    setDebugLoggingEnabled: setAiDebugLoggingEnabled,
     setActiveProviderId: setAiActiveProviderId,
     updateProviderName,
     updateProviderBaseUrl,
@@ -882,7 +880,6 @@ export default function AppShell() {
         ? null
         : sessionState.activeSessionId,
     locale,
-    debugLoggingEnabled: aiDebugLoggingEnabled,
     aiAvailable,
     aiUnavailableMessage,
     selectionMaxChars: aiSelectionMaxChars,
@@ -3574,7 +3571,6 @@ export default function AppShell() {
             aiSelectionMaxChars={aiSelectionMaxChars}
             aiSessionRecentOutputMaxChars={aiSessionRecentOutputMaxChars}
             aiRequestTimeoutMs={aiRequestTimeoutMs}
-            aiDebugLoggingEnabled={aiDebugLoggingEnabled}
             aiActiveProviderId={aiActiveProviderId}
             aiProviders={aiProviders}
             securityStatus={securityStatus}
@@ -3613,7 +3609,6 @@ export default function AppShell() {
               setAiSessionRecentOutputMaxChars
             }
             onAiRequestTimeoutMsChange={setAiRequestTimeoutMs}
-            onAiDebugLoggingEnabledChange={setAiDebugLoggingEnabled}
             onAiActiveProviderIdChange={setAiActiveProviderId}
             onAiPresetProviderCreate={addPresetProviderWithConfig}
             onAiCompatibleProviderCreate={addCompatibleProviderWithConfig}

@@ -12,7 +12,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { debug, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import {
   defaultWidgetLayout,
   increaseSideSlots,
@@ -117,12 +117,6 @@ export default function useLayoutState({
       }
       if (!raw) {
         layoutLoadedRef.current = true;
-        void debug(
-          JSON.stringify({
-            event: "layout.load.skip",
-            reason: "empty-or-not-found",
-          }),
-        );
         return;
       }
       const parsed = JSON.parse(raw) as unknown;
@@ -150,23 +144,21 @@ export default function useLayoutState({
       setSlotGroups(normalized.slots);
       setFloatingOrigins(normalized.floating);
       setwidgetSizes(normalized.sizes);
-      void debug(
-        JSON.stringify({
-          event: "layout.loaded",
-          collapsedSections: Object.values(normalized.collapsed).filter(Boolean)
-            .length,
-          slotCount: Object.keys(normalized.slots).length,
-          floatingCount: Object.keys(normalized.floating).length,
-          sizeCount: Object.keys(normalized.sizes).length,
-        }),
-      );
+      logDebug("layout.loaded", {
+        collapsedSections: Object.values(normalized.collapsed).filter(Boolean)
+          .length,
+        slotCount: Object.keys(normalized.slots).length,
+        floatingCount: Object.keys(normalized.floating).length,
+        sizeCount: Object.keys(normalized.sizes).length,
+      });
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "layout.load.failed",
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("layout.load.failed", {
+        error: {
+          code: "layout_load_failed",
+          message: "Layout configuration could not be loaded",
+          detail: extractErrorMessage(error),
+        },
+      });
     } finally {
       layoutLoadedRef.current = true;
     }
@@ -384,26 +376,20 @@ export default function useLayoutState({
 
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
 
-    void debug(
-      JSON.stringify({
-        event: "layout.save.scheduled",
-        debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
-      }),
-    );
-
     saveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
           await saveLayoutConfig(currentLayout);
           lastSavedConfigRef.current = layoutStr;
-          void debug(JSON.stringify({ event: "layout.persisted" }));
+          logDebug("layout.persisted");
         } catch (error) {
-          void warn(
-            JSON.stringify({
-              event: "layout.save.failed",
-              error: extractErrorMessage(error),
-            }),
-          );
+          logWarn("layout.save.failed", {
+            error: {
+              code: "layout_save_failed",
+              message: "Layout configuration could not be saved",
+              detail: extractErrorMessage(error),
+            },
+          });
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);

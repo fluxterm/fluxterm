@@ -6,7 +6,7 @@
  * 3. 采用“内存态缓存 + 防抖异步落盘”模式。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { debug, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import {
   aiProviderTest,
   aiSettingsGet,
@@ -30,7 +30,6 @@ type UseAiSettingsResult = {
   selectionMaxChars: number;
   sessionRecentOutputMaxChars: number;
   requestTimeoutMs: number;
-  debugLoggingEnabled: boolean;
   activeProviderId: string;
   providers: AiProviderView[];
   activeProvider: AiProviderView | null;
@@ -38,7 +37,6 @@ type UseAiSettingsResult = {
   setSelectionMaxChars: React.Dispatch<React.SetStateAction<number>>;
   setSessionRecentOutputMaxChars: React.Dispatch<React.SetStateAction<number>>;
   setRequestTimeoutMs: React.Dispatch<React.SetStateAction<number>>;
-  setDebugLoggingEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setActiveProviderId: React.Dispatch<React.SetStateAction<string>>;
   updateProviderName: (providerId: string, value: string) => void;
   updateProviderBaseUrl: (providerId: string, value: string) => void;
@@ -81,7 +79,6 @@ const DEFAULT_AI_SETTINGS: AiSettingsView = {
   selectionRecentOutputMaxSnippets: 2,
   requestCacheTtlMs: 15000,
   requestTimeoutMs: 20000,
-  debugLoggingEnabled: true,
   activeProviderId: "",
   providers: [],
 };
@@ -121,7 +118,6 @@ function buildSaveInput(
     selectionMaxChars: number;
     sessionRecentOutputMaxChars: number;
     requestTimeoutMs: number;
-    debugLoggingEnabled: boolean;
     activeProviderId: string;
     providers: AiProviderView[];
   },
@@ -139,7 +135,6 @@ function buildSaveInput(
       lastLoaded.selectionRecentOutputMaxSnippets,
     requestCacheTtlMs: lastLoaded.requestCacheTtlMs,
     requestTimeoutMs: normalizeRequestTimeoutMs(source.requestTimeoutMs),
-    debugLoggingEnabled: source.debugLoggingEnabled,
     activeProviderId: source.activeProviderId,
     providers: source.providers.map<AiProviderInput>((provider) => ({
       id: provider.id,
@@ -190,9 +185,6 @@ export default function useAiSettings(): UseAiSettingsResult {
   const [requestTimeoutMs, setRequestTimeoutMs] = useState(
     DEFAULT_AI_SETTINGS.requestTimeoutMs,
   );
-  const [debugLoggingEnabled, setDebugLoggingEnabled] = useState(
-    DEFAULT_AI_SETTINGS.debugLoggingEnabled,
-  );
   const [activeProviderId, setActiveProviderId] = useState(
     DEFAULT_AI_SETTINGS.activeProviderId,
   );
@@ -231,7 +223,6 @@ export default function useAiSettings(): UseAiSettingsResult {
         setSelectionMaxChars(settings.selectionMaxChars);
         setSessionRecentOutputMaxChars(settings.sessionRecentOutputMaxChars);
         setRequestTimeoutMs(settings.requestTimeoutMs);
-        setDebugLoggingEnabled(settings.debugLoggingEnabled);
         setActiveProviderId(settings.activeProviderId);
         setProviders(settings.providers);
         lastSavedConfigRef.current = JSON.stringify(
@@ -240,32 +231,28 @@ export default function useAiSettings(): UseAiSettingsResult {
               selectionMaxChars: settings.selectionMaxChars,
               sessionRecentOutputMaxChars: settings.sessionRecentOutputMaxChars,
               requestTimeoutMs: settings.requestTimeoutMs,
-              debugLoggingEnabled: settings.debugLoggingEnabled,
               activeProviderId: settings.activeProviderId,
               providers: settings.providers,
             },
             settings,
           ),
         );
-        void debug(
-          JSON.stringify({
-            event: "ai.settings.loaded",
-            providerCount: settings.providers.length,
-            activeProviderPresent: Boolean(settings.activeProviderId),
-            debugLoggingEnabled: settings.debugLoggingEnabled,
-            selectionMaxChars: settings.selectionMaxChars,
-            sessionRecentOutputMaxChars: settings.sessionRecentOutputMaxChars,
-          }),
-        );
+        logDebug("ai.settings.loaded", {
+          providerCount: settings.providers.length,
+          activeProviderPresent: Boolean(settings.activeProviderId),
+          selectionMaxChars: settings.selectionMaxChars,
+          sessionRecentOutputMaxChars: settings.sessionRecentOutputMaxChars,
+        });
       })
       .catch((error) => {
         if (!active) return;
-        void warn(
-          JSON.stringify({
-            event: "ai.settings.load.failed",
-            error: extractErrorMessage(error),
-          }),
-        ).catch(() => {});
+        logWarn("ai.settings.load.failed", {
+          error: {
+            code: "ai_settings_load_failed",
+            message: "AI settings could not be loaded",
+            detail: extractErrorMessage(error),
+          },
+        });
       })
       .finally(() => {
         if (!active) return;
@@ -285,7 +272,6 @@ export default function useAiSettings(): UseAiSettingsResult {
         selectionMaxChars,
         sessionRecentOutputMaxChars,
         requestTimeoutMs,
-        debugLoggingEnabled,
         activeProviderId,
         providers,
       },
@@ -300,13 +286,6 @@ export default function useAiSettings(): UseAiSettingsResult {
     setSaveState("saving");
     setSaveError(null);
 
-    void debug(
-      JSON.stringify({
-        event: "ai.settings.save.scheduled",
-        debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
-      }),
-    );
-
     saveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
@@ -314,16 +293,17 @@ export default function useAiSettings(): UseAiSettingsResult {
           lastLoadedViewRef.current = saved;
           lastSavedConfigRef.current = configStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "ai.settings.persisted" }));
+          logDebug("ai.settings.persisted");
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
-          void warn(
-            JSON.stringify({
-              event: "ai.settings.save.failed",
-              error: extractErrorMessage(error),
-            }),
-          );
+          logWarn("ai.settings.save.failed", {
+            error: {
+              code: "ai_settings_save_failed",
+              message: "AI settings could not be saved",
+              detail: extractErrorMessage(error),
+            },
+          });
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
@@ -337,7 +317,6 @@ export default function useAiSettings(): UseAiSettingsResult {
     selectionMaxChars,
     sessionRecentOutputMaxChars,
     requestTimeoutMs,
-    debugLoggingEnabled,
     activeProviderId,
     providers,
     saveRetryToken,
@@ -347,12 +326,9 @@ export default function useAiSettings(): UseAiSettingsResult {
     if (!loadedRef.current) return;
     if (lastLoggedActiveProviderIdRef.current === activeProviderId) return;
     lastLoggedActiveProviderIdRef.current = activeProviderId;
-    debug(
-      JSON.stringify({
-        event: "ai.settings.active.provider.changed",
-        id: activeProviderId,
-      }),
-    ).catch(() => {});
+    logDebug("ai.settings.active.provider.changed", {
+      providerId: activeProviderId,
+    });
   }, [activeProviderId]);
 
   function updateProvider(
@@ -377,7 +353,6 @@ export default function useAiSettings(): UseAiSettingsResult {
           selectionMaxChars,
           sessionRecentOutputMaxChars,
           requestTimeoutMs,
-          debugLoggingEnabled,
           activeProviderId,
           providers,
         },
@@ -445,7 +420,6 @@ export default function useAiSettings(): UseAiSettingsResult {
           selectionMaxChars,
           sessionRecentOutputMaxChars,
           requestTimeoutMs,
-          debugLoggingEnabled,
           activeProviderId,
           providers: nextProviders,
         },
@@ -499,7 +473,6 @@ export default function useAiSettings(): UseAiSettingsResult {
           selectionMaxChars,
           sessionRecentOutputMaxChars,
           requestTimeoutMs,
-          debugLoggingEnabled,
           activeProviderId,
           providers: nextProviders,
         },
@@ -562,7 +535,6 @@ export default function useAiSettings(): UseAiSettingsResult {
         selectionMaxChars,
         sessionRecentOutputMaxChars,
         requestTimeoutMs,
-        debugLoggingEnabled,
         activeProviderId,
         providers,
       },
@@ -586,7 +558,6 @@ export default function useAiSettings(): UseAiSettingsResult {
       sessionRecentOutputMaxChars,
     ),
     requestTimeoutMs: normalizeRequestTimeoutMs(requestTimeoutMs),
-    debugLoggingEnabled,
     activeProviderId,
     providers,
     activeProvider,
@@ -594,7 +565,6 @@ export default function useAiSettings(): UseAiSettingsResult {
     setSelectionMaxChars,
     setSessionRecentOutputMaxChars,
     setRequestTimeoutMs,
-    setDebugLoggingEnabled,
     setActiveProviderId,
     updateProviderName: (providerId, value) => {
       updateProvider(providerId, (provider) => ({ ...provider, name: value }));

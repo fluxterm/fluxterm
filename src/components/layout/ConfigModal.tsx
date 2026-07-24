@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { error as logError } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import { open as openDialogFile } from "@tauri-apps/plugin-dialog";
 import {
   copyFile,
@@ -118,7 +118,6 @@ type ConfigModalProps = {
   aiSelectionMaxChars?: number;
   aiSessionRecentOutputMaxChars?: number;
   aiRequestTimeoutMs?: number;
-  aiDebugLoggingEnabled?: boolean;
   aiActiveProviderId?: string;
   aiProviders?: AiProviderView[];
   securityStatus?: SecurityStatus;
@@ -155,7 +154,6 @@ type ConfigModalProps = {
   onAiSelectionMaxCharsChange?: (value: number) => void;
   onAiSessionRecentOutputMaxCharsChange?: (value: number) => void;
   onAiRequestTimeoutMsChange?: (value: number) => void;
-  onAiDebugLoggingEnabledChange?: (enabled: boolean) => void;
   onAiActiveProviderIdChange?: (value: string) => void;
   onAiPresetProviderCreate?: (input: {
     vendor?: AiProviderVendor;
@@ -285,7 +283,6 @@ export default function ConfigModal({
   aiSelectionMaxChars = 1500,
   aiSessionRecentOutputMaxChars = 1200,
   aiRequestTimeoutMs = 20000,
-  aiDebugLoggingEnabled = true,
   aiActiveProviderId = "",
   aiProviders = [],
   securityStatus = {
@@ -324,7 +321,6 @@ export default function ConfigModal({
   onAiSelectionMaxCharsChange,
   onAiSessionRecentOutputMaxCharsChange,
   onAiRequestTimeoutMsChange,
-  onAiDebugLoggingEnabledChange,
   onAiActiveProviderIdChange,
   onAiPresetProviderCreate,
   onAiCompatibleProviderCreate,
@@ -467,7 +463,6 @@ export default function ConfigModal({
     securityNextPasswordConfirmDraft,
     setSecurityNextPasswordConfirmDraft,
   ] = useKeyedDraftState(securityDraftSourceKey, "");
-  const isDeveloperMode = import.meta.env.DEV;
   const normalizedBackgroundMediaType =
     normalizeBackgroundMediaType(backgroundMediaType);
   const normalizedBackgroundRenderMode =
@@ -1823,22 +1818,6 @@ export default function ConfigModal({
               }}
             />
           </div>
-          {isDeveloperMode ? (
-            <label className="config-toggle-card">
-              <div className="config-toggle-copy">
-                <span className="config-toggle-title">
-                  {t("config.ai.debugLoggingEnabled")}
-                </span>
-              </div>
-              <input
-                type="checkbox"
-                checked={aiDebugLoggingEnabled}
-                onChange={(event) =>
-                  onAiDebugLoggingEnabledChange?.(event.target.checked)
-                }
-              />
-            </label>
-          ) : null}
         </div>
       );
     }
@@ -2507,13 +2486,13 @@ export default function ConfigModal({
                     level: "error",
                     message: t("config.directory.configOpenFailed"),
                   });
-                  void logError(
-                    JSON.stringify({
-                      event: "config.directory.open.failed",
-                      path: configDir,
-                      message: extractErrorMessage(error),
-                    }),
-                  );
+                  logWarn("config.directory.open.failed", {
+                    error: {
+                      code: "config_directory_open_failed",
+                      message: "Configuration directory could not be opened",
+                      detail: extractErrorMessage(error),
+                    },
+                  });
                 }
               })();
             }}
@@ -2544,13 +2523,13 @@ export default function ConfigModal({
                     level: "error",
                     message: t("config.directory.dataOpenFailed"),
                   });
-                  void logError(
-                    JSON.stringify({
-                      event: "data.directory.open.failed",
-                      path: dataDir,
-                      message: extractErrorMessage(error),
-                    }),
-                  );
+                  logWarn("data.directory.open.failed", {
+                    error: {
+                      code: "data_directory_open_failed",
+                      message: "Application data directory could not be opened",
+                      detail: extractErrorMessage(error),
+                    },
+                  });
                 }
               })();
             }}

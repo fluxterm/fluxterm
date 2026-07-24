@@ -14,7 +14,7 @@ use ironrdp_cliprdr::pdu::{
 use serde_json::json;
 use tokio::sync::mpsc;
 
-use crate::telemetry::{TelemetryLevel, log_telemetry};
+use fluxterm_logging::{LogLevel, log_event};
 
 /// FluxTerm 自定义的 RDP 剪贴板后端实现。
 ///
@@ -67,7 +67,12 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_ready(&mut self) {
         // 通道建立后，通知主循环进行初始同步
-        log_telemetry(TelemetryLevel::Info, "rdp.cliprdr.backend.ready", json!({}));
+        log_event!(
+            LogLevel::Debug,
+            "rdp.cliprdr.backend.ready",
+            None,
+            json!({})
+        );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::NeedInitialSync {
             reason: "backend_ready",
         });
@@ -75,9 +80,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_request_format_list(&mut self) {
         // 当服务器主动要求格式列表时，触发同步
-        log_telemetry(
-            TelemetryLevel::Info,
+        log_event!(
+            LogLevel::Debug,
             "rdp.cliprdr.backend.request.format.list",
+            None,
             json!({}),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::NeedInitialSync {
@@ -89,9 +95,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_remote_copy(&mut self, formats: &[ClipboardFormat]) {
         // 当远端执行复制操作时，转发格式列表以触发后续的粘贴请求
-        log_telemetry(
-            TelemetryLevel::Debug,
+        log_event!(
+            LogLevel::Debug,
             "rdp.cliprdr.backend.remote.copy",
+            None,
             json!({ "formatCount": formats.len() }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::FormatList {
@@ -102,9 +109,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_format_data_request(&mut self, request: FormatDataRequest) {
         // 当远端执行粘贴操作时，请求本地提供数据
-        log_telemetry(
-            TelemetryLevel::Info,
+        log_event!(
+            LogLevel::Debug,
             "rdp.cliprdr.backend.data.request",
+            None,
             json!({ "format": format!("{:?}", request.format) }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::DataRequest {
@@ -115,9 +123,10 @@ impl CliprdrBackend for FluxCliprdrBackend {
 
     fn on_format_data_response(&mut self, response: FormatDataResponse<'_>) {
         // 当本地请求的远端数据到达时，转发给前端
-        log_telemetry(
-            TelemetryLevel::Info,
+        log_event!(
+            LogLevel::Debug,
             "rdp.cliprdr.backend.data.response",
+            None,
             json!({ "dataLen": response.data().len() }),
         );
         let _ = self.proxy_tx.send(CliprdrProxyEvent::DataResponse {

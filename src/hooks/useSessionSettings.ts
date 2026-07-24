@@ -12,7 +12,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
-import { debug, warn } from "@/shared/logging/telemetry";
+import { logDebug, logWarn } from "@/shared/logging";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import {
   getTerminalConfigDir,
@@ -226,12 +226,6 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     try {
       const path = await getSessionSettingsPath();
       if (!(await exists(path))) {
-        void debug(
-          JSON.stringify({
-            event: "session.settings.load.skip",
-            reason: "file-not-exists",
-          }),
-        );
         return;
       }
       const raw = await readTextFile(path);
@@ -300,21 +294,19 @@ export default function useSessionSettings(): UseSessionSettingsResult {
           ),
         );
       }
-      void debug(
-        JSON.stringify({
-          event: "session.settings.loaded",
-          keyCount: Object.keys(parsed ?? {}).length,
-          resourceMonitorEnabled: parsed?.resourceMonitorEnabled === true,
-          terminalPathSyncEnabled: parsed?.terminalPathSyncEnabled === true,
-        }),
-      );
+      logDebug("session.settings.loaded", {
+        keyCount: Object.keys(parsed ?? {}).length,
+        resourceMonitorEnabled: parsed?.resourceMonitorEnabled === true,
+        terminalPathSyncEnabled: parsed?.terminalPathSyncEnabled === true,
+      });
     } catch (error) {
-      void warn(
-        JSON.stringify({
-          event: "session.settings.load.failed",
-          error: extractErrorMessage(error),
-        }),
-      );
+      logWarn("session.settings.load.failed", {
+        error: {
+          code: "session_settings_load_failed",
+          message: "Session settings could not be loaded",
+          detail: extractErrorMessage(error),
+        },
+      });
     } finally {
       loadedRef.current = true;
       setSessionSettingsLoaded(true);
@@ -382,29 +374,23 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     setSaveState("saving");
     setSaveError(null);
 
-    void debug(
-      JSON.stringify({
-        event: "session.settings.save.scheduled",
-        debounce: PERSISTENCE_SAVE_DEBOUNCE_MS,
-      }),
-    );
-
     saveTimerRef.current = window.setTimeout(() => {
       void (async () => {
         try {
           await saveSessionSettings(currentConfig);
           lastSavedConfigRef.current = configStr;
           setSaveState("saved");
-          void debug(JSON.stringify({ event: "session.settings.persisted" }));
+          logDebug("session.settings.persisted");
         } catch (error) {
           setSaveState("error");
           setSaveError(extractErrorMessage(error));
-          void warn(
-            JSON.stringify({
-              event: "session.settings.save.failed",
-              error: extractErrorMessage(error),
-            }),
-          );
+          logWarn("session.settings.save.failed", {
+            error: {
+              code: "session_settings_save_failed",
+              message: "Session settings could not be saved",
+              detail: extractErrorMessage(error),
+            },
+          });
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);

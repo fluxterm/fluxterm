@@ -1,12 +1,12 @@
 [package]
-name = "openai"
+name = "fluxterm-logging"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+publish = false
+description = "FluxTerm shared structured logging core"
 
 [dependencies]
 log = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-reqwest = { workspace = true }
-fluxterm-logging = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }

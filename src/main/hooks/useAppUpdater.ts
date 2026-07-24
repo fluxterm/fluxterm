@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { error as logError, info as logInfo } from "@/shared/logging/telemetry";
+import { logInfo, logWarn } from "@/shared/logging";
 import {
   checkForAppUpdate,
   downloadAndInstallUpdate,
@@ -122,12 +122,7 @@ export default function useAppUpdater(
       setStatus("idle");
       setIndicator("none");
       setDownloadProgressPercent(null);
-      await logInfo(
-        JSON.stringify({
-          event: "app.update.install",
-          result: "success",
-        }),
-      ).catch(() => {});
+      logInfo("app.update.install.succeeded");
       try {
         await relaunch();
       } catch (error) {
@@ -136,12 +131,13 @@ export default function useAppUpdater(
           level: "error",
           message: restartFailedMessage ?? message,
         });
-        await logError(
-          JSON.stringify({
-            event: "app.update.relaunch.failed",
-            message,
-          }),
-        ).catch(() => {});
+        logWarn("app.update.relaunch.failed", {
+          error: {
+            code: "app_update_relaunch_failed",
+            message: "Application relaunch after update failed",
+            detail: message,
+          },
+        });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -152,12 +148,13 @@ export default function useAppUpdater(
         level: "error",
         message,
       });
-      await logError(
-        JSON.stringify({
-          event: "app.update.install.failed",
-          message,
-        }),
-      );
+      logWarn("app.update.install.failed", {
+        error: {
+          code: "app_update_install_failed",
+          message: "Application update installation failed",
+          detail: message,
+        },
+      });
     } finally {
       installRunningRef.current = false;
     }
@@ -189,24 +186,15 @@ export default function useAppUpdater(
           });
         }
         scheduleResetFromSuccessState();
-        await logInfo(
-          JSON.stringify({
-            event: "app.update.check",
-            result: "up-to-date",
-          }),
-        );
+        logInfo("app.update.check.current");
         return;
       }
       setPendingUpdate(result.update);
       setIndicator("success");
       setStatus("update-available");
-      await logInfo(
-        JSON.stringify({
-          event: "app.update.check",
-          result: "update-available",
-          version: result.version,
-        }),
-      );
+      logInfo("app.update.check.available", {
+        version: result.version,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setPendingUpdate(null);
@@ -218,12 +206,13 @@ export default function useAppUpdater(
           message: updateCheckFailedMessage,
         });
       }
-      await logError(
-        JSON.stringify({
-          event: "app.update.check.failed",
-          message,
-        }),
-      );
+      logWarn("app.update.check.failed", {
+        error: {
+          code: "app_update_check_failed",
+          message: "Application update check failed",
+          detail: message,
+        },
+      });
     }
   }, [
     clearSuccessStateTimer,

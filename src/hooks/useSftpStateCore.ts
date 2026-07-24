@@ -5,7 +5,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { CreateAppEventInput } from "@/features/events/core/appEvents";
-import { info } from "@/shared/logging/telemetry";
 import type { Translate, TranslationKey } from "@/i18n";
 import type {
   HostProfile,
@@ -174,7 +173,7 @@ export default function useSftpState({
     );
   }
 
-  /** 同步最近一次传输进度，供传输面板展示与下载完成日志复用。 */
+  /** 同步最近一次传输进度，供传输面板展示。 */
   function syncProgressEntry(payload: SftpProgress) {
     progressBySessionRef.current = {
       ...progressBySessionRef.current,
@@ -222,35 +221,6 @@ export default function useSftpState({
           message: extractErrorMessage(error),
         },
       });
-      info(
-        JSON.stringify({
-          event: "sftp.unsupported",
-          sessionId,
-          profileId: activeSessionProfile?.id ?? null,
-          host: activeSessionProfile?.host ?? null,
-          port: activeSessionProfile?.port ?? null,
-          error:
-            typeof error === "object" && error !== null
-              ? {
-                  code:
-                    "code" in error && typeof error.code === "string"
-                      ? error.code
-                      : null,
-                  message: extractErrorMessage(error),
-                  detail:
-                    "details" in error && typeof error.details === "string"
-                      ? error.details
-                      : "detail" in error && typeof error.detail === "string"
-                        ? error.detail
-                        : null,
-                }
-              : {
-                  code: null,
-                  message: extractErrorMessage(error),
-                  detail: null,
-                },
-        }),
-      ).catch(() => {});
     }
   }
 

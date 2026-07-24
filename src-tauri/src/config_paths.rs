@@ -2,10 +2,9 @@
 use std::path::PathBuf;
 
 use engine::EngineError;
+use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
 use tauri::{AppHandle, Manager};
-
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 const CONFIG_DIR_ENV_KEY: &str = "FLUXTERM_CONFIG_DIR";
 const DEFAULT_CONFIG_DIR_NAME: &str = ".vust/fluxterm";
@@ -59,19 +58,18 @@ pub fn resolve_config_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> 
                 // 相对路径统一锚定到用户主目录，避免受当前工作目录影响。
                 home.join(path)
             };
-            log_telemetry(
-                TelemetryLevel::Debug,
-                "config.path.resolve.success",
+            log_event!(
+                LogLevel::Debug,
+                "config.path.resolve.succeeded",
                 None,
                 json!({
                     "sourceType": "env",
-                    "path": resolved.to_string_lossy(),
                 }),
             );
             return Ok(resolved);
         }
-        log_telemetry(
-            TelemetryLevel::Warn,
+        log_event!(
+            LogLevel::Warn,
             "config.path.resolve.failed",
             None,
             json!({

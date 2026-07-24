@@ -7,9 +7,10 @@ use russh::client::{self, AuthResult};
 use russh::keys::{self, PrivateKeyWithHashAlg};
 use serde_json::json;
 
+use fluxterm_logging::{LogLevel, log_event};
+
 use crate::error::EngineError;
 use crate::session::ClientHandler;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{AuthType, HostProfile};
 
 const SSH_AUTH_MISSING_PASSWORD: &str = "error.ssh.auth.missingPassword";
@@ -33,27 +34,11 @@ pub enum AuthPurpose {
 }
 
 impl AuthPurpose {
-    fn start_event(self) -> &'static str {
+    fn connection_purpose(self) -> &'static str {
         match self {
-            AuthPurpose::Session => "ssh.session.auth.start",
-            AuthPurpose::Jump => "ssh.jump.auth.start",
-            AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.start",
-        }
-    }
-
-    fn success_event(self) -> &'static str {
-        match self {
-            AuthPurpose::Session => "ssh.session.auth.success",
-            AuthPurpose::Jump => "ssh.jump.auth.success",
-            AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.success",
-        }
-    }
-
-    fn failed_event(self) -> &'static str {
-        match self {
-            AuthPurpose::Session => "ssh.session.auth.failed",
-            AuthPurpose::Jump => "ssh.jump.auth.failed",
-            AuthPurpose::ResourceMonitor => "ssh.resource_monitor.auth.failed",
+            AuthPurpose::Session => "session",
+            AuthPurpose::Jump => "jumpHost",
+            AuthPurpose::ResourceMonitor => "resourceMonitor",
         }
     }
 }
@@ -63,15 +48,18 @@ pub async fn authenticate(
     session: &mut client::Handle<ClientHandler>,
     profile: &HostProfile,
     purpose: AuthPurpose,
+    operation_id: Option<&str>,
 ) -> Result<(), EngineError> {
-    log_telemetry(
-        TelemetryLevel::Info,
-        purpose.start_event(),
-        None,
+    log_event!(
+        LogLevel::Debug,
+        "ssh.authentication.started",
+        operation_id,
         json!({
             "profileId": profile.id,
+            "host": profile.host,
             "user": profile.username,
             "authType": format!("{:?}", profile.auth_type),
+            "connectionPurpose": purpose.connection_purpose(),
         }),
     );
     let authenticated = match profile.auth_type {
@@ -165,14 +153,16 @@ pub async fn authenticate(
     };
 
     if !authenticated.success() {
-        log_telemetry(
-            TelemetryLevel::Warn,
-            purpose.failed_event(),
-            None,
+        log_event!(
+            LogLevel::Debug,
+            "ssh.authentication.failed",
+            operation_id,
             json!({
                 "profileId": profile.id,
+                "host": profile.host,
                 "user": profile.username,
                 "authType": format!("{:?}", profile.auth_type),
+                "connectionPurpose": purpose.connection_purpose(),
                 "error": {
                     "code": "ssh_auth_failed",
                     "message": "SSH authentication did not complete",
@@ -188,14 +178,16 @@ pub async fn authenticate(
         ));
     }
 
-    log_telemetry(
-        TelemetryLevel::Info,
-        purpose.success_event(),
-        None,
+    log_event!(
+        LogLevel::Debug,
+        "ssh.authentication.succeeded",
+        operation_id,
         json!({
             "profileId": profile.id,
+            "host": profile.host,
             "user": profile.username,
             "authType": format!("{:?}", profile.auth_type),
+            "connectionPurpose": purpose.connection_purpose(),
         }),
     );
     Ok(())

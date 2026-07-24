@@ -17,10 +17,11 @@
     "prune": "ts-prune",
     "format": "prettier --write src/",
     "format:all": "pnpm format && cargo fmt",
-    "telemetry:check": "node scripts/check-telemetry.mjs",
+    "logging:check": "node scripts/check-logging.mjs",
+    "logging:test": "node --experimental-strip-types --test src/shared/logging/*.test.ts",
     "runtime-message:check": "node scripts/check-runtime-messages.mjs",
-    "check": "pnpm type-check && pnpm lint && pnpm telemetry:check && pnpm runtime-message:check",
-    "check:all": "pnpm type-check && pnpm lint && pnpm telemetry:check && pnpm runtime-message:check && cargo clippy --all-targets --all-features -- -D warnings",
+    "check": "pnpm type-check && pnpm lint && pnpm logging:check && pnpm logging:test && pnpm runtime-message:check",
+    "check:all": "pnpm check && cargo clippy --all-targets --all-features -- -D warnings",
     "code:stats": "node --experimental-strip-types scripts/count-code-lines.ts"
   },
   "dependencies": {

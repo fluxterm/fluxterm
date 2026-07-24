@@ -1,14 +1,14 @@
 //! OpenAI HTTP 客户端。
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use fluxterm_logging::{LogLevel, create_operation_id, log_event};
 use reqwest::StatusCode;
 use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::error::OpenAiError;
 use crate::prompts::build_session_chat_messages;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 use crate::types::{
     ChatMessage, OpenAiClientConfig, OpenAiSessionChatInput, OpenAiSessionChatResponse,
     OpenAiSessionChatStreamInput,
@@ -35,7 +35,7 @@ pub async fn chat_session(
     input: OpenAiSessionChatInput,
 ) -> Result<OpenAiSessionChatResponse, OpenAiError> {
     let messages = build_session_chat_messages(&input);
-    complete_chat(config, messages, "session_chat").await
+    complete_chat(config, messages).await
 }
 
 /// 以流式方式执行会话上下文问答。
@@ -51,14 +51,7 @@ pub async fn chat_session_stream(
         ui_language: input.ui_language,
         messages: input.messages,
     });
-    stream_chat_completion(
-        config,
-        messages,
-        "session_chat_stream",
-        on_chunk,
-        is_cancelled,
-    )
-    .await
+    stream_chat_completion(config, messages, on_chunk, is_cancelled).await
 }
 
 /// 测试当前 OpenAI-compatible 接入是否可用。
@@ -73,9 +66,7 @@ pub async fn test_connection(config: &OpenAiClientConfig) -> Result<(), OpenAiEr
             content: "connection test".to_string(),
         },
     ];
-    complete_chat(config, messages, "connection_test")
-        .await
-        .map(|_| ())
+    complete_chat(config, messages).await.map(|_| ())
 }
 
 async fn request_chat_completion(
@@ -128,46 +119,107 @@ async fn request_chat_completion(
 async fn complete_chat(
     config: &OpenAiClientConfig,
     messages: Vec<ChatMessage>,
-    request_type: &str,
 ) -> Result<OpenAiSessionChatResponse, OpenAiError> {
-    log_request(config, request_type, &messages);
-    match request_chat_completion(config, messages, false).await {
+    let operation_id = create_operation_id();
+    let started = Instant::now();
+    let result = async {
+        let response = request_chat_completion(config, messages, false).await?;
+        let message = response
+            .choices
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                OpenAiError::ResponseInvalid("OpenAI returned no candidate message".to_string())
+            })?
+            .message;
+        Ok(OpenAiSessionChatResponse { message })
+    }
+    .await;
+    match result {
         Ok(response) => {
-            let message = response
-                .choices
-                .into_iter()
-                .next()
-                .ok_or_else(|| {
-                    OpenAiError::ResponseInvalid("OpenAI returned no candidate message".to_string())
-                })?
-                .message;
-            log_response(config, request_type, &message);
-            Ok(OpenAiSessionChatResponse { message })
+            log_event!(
+                LogLevel::Info,
+                "openai.request.succeeded",
+                Some(&operation_id),
+                json!({
+                    "provider": "openaiCompatible",
+                    "model": config.model,
+                    "status": "succeeded",
+                    "durationMs": started.elapsed().as_millis(),
+                }),
+            );
+            Ok(response)
         }
         Err(error) => {
-            log_error(config, request_type, &error);
+            log_openai_failure(config, &operation_id, started.elapsed(), &error);
             Err(error)
         }
     }
 }
 
+#[derive(Clone, Copy)]
+enum StreamCompletion {
+    Succeeded,
+    Cancelled,
+}
+
 async fn stream_chat_completion(
     config: &OpenAiClientConfig,
     messages: Vec<ChatMessage>,
-    request_type: &str,
     mut on_chunk: impl FnMut(&str) -> Result<(), OpenAiError>,
     is_cancelled: impl Fn() -> bool,
 ) -> Result<(), OpenAiError> {
+    let operation_id = create_operation_id();
+    let started = Instant::now();
+    let result = stream_chat_completion_inner(config, messages, &mut on_chunk, &is_cancelled).await;
+    match result {
+        Ok(StreamCompletion::Succeeded) => {
+            log_event!(
+                LogLevel::Info,
+                "openai.request.succeeded",
+                Some(&operation_id),
+                json!({
+                    "provider": "openaiCompatible",
+                    "model": config.model,
+                    "status": "succeeded",
+                    "durationMs": started.elapsed().as_millis(),
+                }),
+            );
+            Ok(())
+        }
+        Ok(StreamCompletion::Cancelled) => {
+            log_event!(
+                LogLevel::Info,
+                "openai.request.cancelled",
+                Some(&operation_id),
+                json!({
+                    "provider": "openaiCompatible",
+                    "model": config.model,
+                    "status": "cancelled",
+                    "durationMs": started.elapsed().as_millis(),
+                }),
+            );
+            Ok(())
+        }
+        Err(error) => {
+            log_openai_failure(config, &operation_id, started.elapsed(), &error);
+            Err(error)
+        }
+    }
+}
+
+async fn stream_chat_completion_inner(
+    config: &OpenAiClientConfig,
+    messages: Vec<ChatMessage>,
+    on_chunk: &mut impl FnMut(&str) -> Result<(), OpenAiError>,
+    is_cancelled: &impl Fn() -> bool,
+) -> Result<StreamCompletion, OpenAiError> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(config.timeout_ms))
         .build()
         .map_err(|err| {
             OpenAiError::Request(format!("Failed to create the OpenAI client: {err}"))
         })?;
-
-    if config.debug_logging_enabled {
-        log_system_prompt_summary(request_type, &messages);
-    }
 
     let base = config.base_url.trim_end_matches('/');
     let endpoint = build_chat_completions_endpoint(base);
@@ -176,19 +228,6 @@ async fn stream_chat_completion(
         "messages": messages,
         "stream": true
     });
-
-    if config.debug_logging_enabled {
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "openai.request.start",
-            None,
-            json!({
-                "requestType": request_type,
-                "model": config.model,
-                "messageStats": build_message_stats(&messages),
-            }),
-        );
-    }
 
     let request_builder = client.post(endpoint).json(&request);
     let mut response = attach_bearer_auth(request_builder, &config.api_key)
@@ -207,21 +246,9 @@ async fn stream_chat_completion(
     }
 
     let mut buffer = String::new();
-    let mut final_content = String::new();
     while let Some(chunk) = response.chunk().await.map_err(map_transport_error)? {
         if is_cancelled() {
-            if config.debug_logging_enabled {
-                log_telemetry(
-                    TelemetryLevel::Debug,
-                    "openai.response.cancelled",
-                    None,
-                    json!({
-                        "requestType": request_type,
-                        "cancelled": true,
-                    }),
-                );
-            }
-            return Ok(());
+            return Ok(StreamCompletion::Cancelled);
         }
         let text = String::from_utf8_lossy(&chunk).replace("\r\n", "\n");
         buffer.push_str(&text);
@@ -229,7 +256,6 @@ async fn stream_chat_completion(
             let event = buffer[..delimiter].to_string();
             buffer.drain(..delimiter + 2);
             if let Some(piece) = parse_stream_event(&event)? {
-                final_content.push_str(&piece);
                 on_chunk(&piece)?;
             }
         }
@@ -238,143 +264,44 @@ async fn stream_chat_completion(
     if !buffer.trim().is_empty()
         && let Some(piece) = parse_stream_event(buffer.trim())?
     {
-        final_content.push_str(&piece);
         on_chunk(&piece)?;
     }
 
-    log_response(
-        config,
-        request_type,
-        &ChatMessage {
-            role: "assistant".to_string(),
-            content: final_content,
-        },
-    );
-    Ok(())
+    Ok(StreamCompletion::Succeeded)
 }
 
-fn log_request(config: &OpenAiClientConfig, request_type: &str, messages: &[ChatMessage]) {
-    if !config.debug_logging_enabled {
-        return;
-    }
-    log_system_prompt_summary(request_type, messages);
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "openai.request.start",
-        None,
-        json!({
-            "requestType": request_type,
-            "model": config.model,
-            "messageStats": build_message_stats(messages),
-        }),
-    );
-}
-
-fn log_system_prompt_summary(request_type: &str, messages: &[ChatMessage]) {
-    let Some(stats) = build_system_prompt_stats(messages) else {
-        return;
-    };
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "openai.request.summary",
-        None,
-        json!({
-            "requestType": request_type,
-            "systemPromptChars": stats.system_prompt_chars,
-            "systemPromptHeadLines": stats.system_prompt_head_lines,
-            "recentOutputChars": stats.recent_output_chars,
-        }),
-    );
-}
-
-fn build_system_prompt_stats(messages: &[ChatMessage]) -> Option<SystemPromptStats> {
-    let system_prompt = messages
-        .iter()
-        .find(|message| message.role == "system")
-        .map(|message| message.content.as_str())?;
-    let normalized = system_prompt.replace("\r\n", "\n").replace('\r', "\n");
-    let (head, recent_output) = normalized
-        .split_once("\nRecent output:\n")
-        .unwrap_or((normalized.as_str(), ""));
-    Some(SystemPromptStats {
-        system_prompt_chars: normalized.chars().count(),
-        system_prompt_head_lines: head.lines().count(),
-        recent_output_chars: recent_output.chars().count(),
-    })
-}
-
-#[derive(Debug, PartialEq, Eq)]
-struct SystemPromptStats {
-    system_prompt_chars: usize,
-    system_prompt_head_lines: usize,
-    recent_output_chars: usize,
-}
-
-fn build_message_stats(messages: &[ChatMessage]) -> Value {
-    let roles = messages
-        .iter()
-        .map(|message| message.role.as_str())
-        .collect::<Vec<_>>();
-    let content_chars = messages
-        .iter()
-        .map(|message| message.content.chars().count())
-        .sum::<usize>();
-    let system_prompt_chars = messages
-        .iter()
-        .filter(|message| message.role == "system")
-        .map(|message| message.content.chars().count())
-        .sum::<usize>();
-    let user_content_chars = messages
-        .iter()
-        .filter(|message| message.role == "user")
-        .map(|message| message.content.chars().count())
-        .sum::<usize>();
-    let recent_output_chars = build_system_prompt_stats(messages)
-        .map(|stats| stats.recent_output_chars)
-        .unwrap_or_default();
-    json!({
-        "messageCount": messages.len(),
-        "roles": roles,
-        "contentChars": content_chars,
-        "systemPromptChars": system_prompt_chars,
-        "recentOutputChars": recent_output_chars,
-        "selectionChars": user_content_chars,
-    })
-}
-
-fn log_response(config: &OpenAiClientConfig, request_type: &str, message: &ChatMessage) {
-    if !config.debug_logging_enabled {
-        return;
-    }
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "openai.response.success",
-        None,
-        json!({
-            "requestType": request_type,
-            "responseRole": message.role,
-            "responseChars": message.content.chars().count(),
-        }),
-    );
-}
-
-fn log_error(config: &OpenAiClientConfig, request_type: &str, error: &OpenAiError) {
-    if !config.debug_logging_enabled {
-        return;
-    }
-    log_telemetry(
-        TelemetryLevel::Debug,
+fn log_openai_failure(
+    config: &OpenAiClientConfig,
+    operation_id: &str,
+    duration: Duration,
+    error: &OpenAiError,
+) {
+    log_event!(
+        LogLevel::Warn,
         "openai.request.failed",
-        None,
+        Some(operation_id),
         json!({
-            "requestType": request_type,
+            "provider": "openaiCompatible",
+            "model": config.model,
+            "status": "failed",
+            "durationMs": duration.as_millis(),
             "error": {
-                "code": "openai_request_failed",
-                "message": error.to_string(),
-                "detail": Option::<String>::None,
+                "code": openai_error_code(error),
+                "message": "OpenAI request failed",
             }
         }),
     );
+}
+
+fn openai_error_code(error: &OpenAiError) -> &'static str {
+    match error {
+        OpenAiError::Config(_) => "openai_config_invalid",
+        OpenAiError::Request(_) => "openai_request_failed",
+        OpenAiError::RateLimited(_) => "openai_rate_limited",
+        OpenAiError::Timeout(_) => "openai_timeout",
+        OpenAiError::Http(_, _) => "openai_http_error",
+        OpenAiError::ResponseInvalid(_) => "openai_response_invalid",
+    }
 }
 
 fn attach_bearer_auth(request: reqwest::RequestBuilder, api_key: &str) -> reqwest::RequestBuilder {
@@ -595,29 +522,5 @@ data: {"choices":[{"delta":{"content":"world"}}]}"#;
             .expect("content should exist");
 
         assert_eq!(content, "hello world");
-    }
-
-    #[test]
-    fn builds_system_prompt_stats_without_content_preview() {
-        let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: "line1\nline2\nRecent output:\na\nb\nc".to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: "hello".to_string(),
-            },
-        ];
-
-        let stats = build_system_prompt_stats(&messages).expect("stats should exist");
-        assert_eq!(
-            stats,
-            SystemPromptStats {
-                system_prompt_chars: 32,
-                system_prompt_head_lines: 2,
-                recent_output_chars: 5,
-            }
-        );
     }
 }

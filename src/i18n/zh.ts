@@ -188,9 +188,6 @@ export const zhCnTranslations = {
   "config.ai.manageEmpty": "暂无接入，请先添加",
   "config.ai.compatEmpty": "暂无兼容接入，请先添加",
   "config.ai.removeActiveOpenAiConfig": "删除当前接入",
-  "config.ai.debugLoggingEnabled": "启用 AI 调试日志",
-  "config.ai.debugLoggingEnabledHint":
-    "记录最终发送给模型的消息和返回内容，适合调试时开启。",
   "config.openai.name": "名称",
   "config.openai.namePlaceholder": "OpenAI",
   "config.openai.manageHint": "查看、切换和清理当前已保存的 OpenAI 接入。",

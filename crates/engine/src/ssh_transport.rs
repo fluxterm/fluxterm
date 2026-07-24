@@ -101,6 +101,7 @@ pub async fn connect_ssh_client(
     expected_host_key: Option<ExpectedHostKey>,
     jump_spec: &JumpHostSpec,
     handler: ClientHandler,
+    operation_id: Option<&str>,
 ) -> Result<SshClientConnection, EngineError> {
     if jump_spec.hosts.len() > SSH_JUMP_MAX_DEPTH {
         return Err(EngineError::with_detail(
@@ -129,7 +130,7 @@ pub async fn connect_ssh_client(
             .await?;
             connect_stream_with_handler(stream, handler).await?
         };
-        authenticate(&mut handle, &jump.profile, AuthPurpose::Jump).await?;
+        authenticate(&mut handle, &jump.profile, AuthPurpose::Jump, operation_id).await?;
         jump_handles.push(handle);
     }
 
@@ -185,7 +186,7 @@ where
             .await?;
             connect_stream_with_handler(stream, jump_handler).await?
         };
-        authenticate(&mut handle, &jump.profile, AuthPurpose::Jump).await?;
+        authenticate(&mut handle, &jump.profile, AuthPurpose::Jump, None).await?;
         jump_handles.push(handle);
     }
     let stream = if let Some(last_jump) = jump_handles.last() {

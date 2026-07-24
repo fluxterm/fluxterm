@@ -16,7 +16,7 @@ import type {
   BackgroundVideoReplayMode,
 } from "@/constants/backgroundMedia";
 import { extractErrorMessage } from "@/shared/errors/appError";
-import { warn } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import {
   resolveDetachedBackgroundImageStyle,
   waitForDetachedBackgroundMediaReady,
@@ -184,13 +184,14 @@ export default function useMainAppearance({
           if (disposed) return;
           scheduleFloatingWindowReveal();
         }
-        void warn(
-          JSON.stringify({
-            event: "settings.background.image.load.failed",
-            asset: backgroundImageAsset,
-            error: extractErrorMessage(error),
-          }),
-        );
+        logWarn("settings.background.media.load.failed", {
+          mediaType: backgroundMediaType,
+          error: {
+            code: "background_media_load_failed",
+            message: "Background media could not be loaded",
+            detail: extractErrorMessage(error),
+          },
+        });
       }
     })();
 

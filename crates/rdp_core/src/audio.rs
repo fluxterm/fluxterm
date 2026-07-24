@@ -18,7 +18,7 @@ use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::protocol::RuntimeAudioState;
-use crate::telemetry::{TelemetryLevel, log_telemetry};
+use fluxterm_logging::{LogLevel, log_event};
 
 const PCM_CHANNELS: u16 = 2;
 const PCM_SAMPLE_RATE: u32 = 44_100;
@@ -133,13 +133,18 @@ impl FluxRdpsndBackend {
             let message = format!("unsupported negotiated audio format index: {format_no}");
             self.shared
                 .publish_state(RuntimeAudioState::Error, Some(message.clone()));
-            log_telemetry(
-                TelemetryLevel::Error,
+            log_event!(
+                LogLevel::Warn,
                 "rdp.audio.format.invalid",
+                None,
                 json!({
                     "sessionId": &self.shared.session_id,
                     "formatNo": format_no,
-                    "error": { "code": "rdp_audio_format_invalid", "message": message },
+                    "error": {
+                        "code": "rdp_audio_format_invalid",
+                        "message": "RDP audio format is invalid",
+                        "detail": message,
+                    },
                 }),
             );
             return;
@@ -151,9 +156,10 @@ impl FluxRdpsndBackend {
         let shared = Arc::clone(&self.shared);
         let stream_ended = Arc::clone(&self.stream_ended);
         let pcm_buffer = Arc::clone(&self.pcm_buffer);
-        log_telemetry(
-            TelemetryLevel::Info,
+        log_event!(
+            LogLevel::Debug,
             "rdp.audio.format.selected",
+            None,
             json!({
                 "sessionId": &shared.session_id,
                 "formatNo": format_no,
@@ -168,12 +174,17 @@ impl FluxRdpsndBackend {
                 Ok(stream) => stream,
                 Err(error) => {
                     shared.stream_failed.store(true, Ordering::Relaxed);
-                    log_telemetry(
-                        TelemetryLevel::Error,
+                    log_event!(
+                        LogLevel::Warn,
                         "rdp.audio.playback.failed",
+                        None,
                         json!({
                             "sessionId": &shared.session_id,
-                            "error": { "code": "rdp_audio_playback_failed", "message": &error },
+                            "error": {
+                                "code": "rdp_audio_playback_failed",
+                                "message": "RDP audio playback failed",
+                                "detail": &error,
+                            },
                         }),
                     );
                     shared.publish_state(RuntimeAudioState::Error, Some(error));
@@ -184,21 +195,27 @@ impl FluxRdpsndBackend {
                 shared.stream_failed.store(true, Ordering::Relaxed);
                 let message = format!("failed to start audio output stream: {error}");
                 shared.publish_state(RuntimeAudioState::Error, Some(message.clone()));
-                log_telemetry(
-                    TelemetryLevel::Error,
+                log_event!(
+                    LogLevel::Warn,
                     "rdp.audio.playback.failed",
+                    None,
                     json!({
                         "sessionId": &shared.session_id,
-                        "error": { "code": "rdp_audio_playback_start_failed", "message": message },
+                        "error": {
+                            "code": "rdp_audio_playback_start_failed",
+                            "message": "RDP audio playback failed",
+                            "detail": message,
+                        },
                     }),
                 );
                 return;
             }
 
             shared.publish_state(RuntimeAudioState::Playing, None);
-            log_telemetry(
-                TelemetryLevel::Info,
+            log_event!(
+                LogLevel::Debug,
                 "rdp.audio.playback.started",
+                None,
                 json!({ "sessionId": &shared.session_id }),
             );
 
@@ -218,9 +235,10 @@ impl FluxRdpsndBackend {
                 }
             }
             drop(stream);
-            log_telemetry(
-                TelemetryLevel::Info,
+            log_event!(
+                LogLevel::Debug,
                 "rdp.audio.playback.closed",
+                None,
                 json!({ "sessionId": &shared.session_id }),
             );
         }));
@@ -259,10 +277,17 @@ impl RdpsndClientHandler for FluxRdpsndBackend {
             self.stream_ended.store(true, Ordering::Relaxed);
             stream_handle.thread().unpark();
             if stream_handle.join().is_err() {
-                log_telemetry(
-                    TelemetryLevel::Warn,
+                log_event!(
+                    LogLevel::Warn,
                     "rdp.audio.playback.join.failed",
-                    json!({ "sessionId": &self.shared.session_id }),
+                    None,
+                    json!({
+                        "sessionId": &self.shared.session_id,
+                        "error": {
+                            "code": "rdp_audio_playback_join_failed",
+                            "message": "RDP audio playback thread join failed",
+                        },
+                    }),
                 );
             }
         }
@@ -345,12 +370,17 @@ fn build_output_stream(
                 error_shared.stream_failed.store(true, Ordering::Relaxed);
                 let message = format!("audio output stream error: {error}");
                 error_shared.publish_state(RuntimeAudioState::Error, Some(message.clone()));
-                log_telemetry(
-                    TelemetryLevel::Error,
-                    "rdp.audio.playback.stream.error",
+                log_event!(
+                    LogLevel::Warn,
+                    "rdp.audio.playback.failed",
+                    None,
                     json!({
                         "sessionId": &error_shared.session_id,
-                        "error": { "code": "rdp_audio_stream_error", "message": message },
+                        "error": {
+                            "code": "rdp_audio_stream_error",
+                            "message": "RDP audio playback failed",
+                            "detail": message,
+                        },
                     }),
                 );
             },

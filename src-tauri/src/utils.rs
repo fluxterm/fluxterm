@@ -7,9 +7,8 @@ use std::io::Write;
 use std::path::Path;
 
 use engine::EngineError;
+use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
-
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 /// 原子级写入文件。
 ///
@@ -35,13 +34,11 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
                 err.to_string(),
             )
         })?;
-        log_telemetry(
-            TelemetryLevel::Debug,
-            "file.write.dir.create.success",
+        log_event!(
+            LogLevel::Debug,
+            "file.write.directory.created",
             None,
-            json!({
-                "path": parent.display().to_string(),
-            }),
+            json!({}),
         );
     }
 
@@ -72,7 +69,6 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     })?;
 
     // 只有在 sync 成功后才执行覆盖，保证原子性。
-    let path_display = path.display().to_string();
     fs::rename(&temp_path, path).map_err(|err| {
         let _ = fs::remove_file(&temp_path);
         EngineError::with_detail(
@@ -82,12 +78,11 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
         )
     })?;
 
-    log_telemetry(
-        TelemetryLevel::Debug,
-        "file.write.atomic.success",
+    log_event!(
+        LogLevel::Debug,
+        "file.write.atomic.succeeded",
         None,
         json!({
-            "path": path_display,
             "size": content.len(),
         }),
     );

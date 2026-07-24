@@ -31,7 +31,6 @@
 use engine::{AuthType, EngineError, HostProfile};
 use russh_config::AddKeysToAgent;
 use serde::Serialize;
-use serde_json::json;
 use std::collections::HashSet;
 use std::fs;
 use tauri::{AppHandle, Manager};
@@ -41,7 +40,6 @@ use crate::commands::profile::{validate_and_dedupe_groups, validate_profile_name
 use crate::ssh_profile_store::{
     SshProfileStore, read_ssh_groups, read_ssh_profiles, write_ssh_groups, write_ssh_profiles,
 };
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 const IMPORT_GROUP_NAME: &str = "OpenSSH";
 /// 导入会话名称沿用前端 ProfileModal 的 14 字符显示约束，避免导入结果与手工编辑规则不一致。
@@ -443,20 +441,7 @@ fn split_config_line(line: &str) -> Option<(&str, &str)> {
 /// 将导入来源的 Host 名裁剪到当前会话名称上限。
 /// 裁剪仅发生在导入路径中，手工编辑会话仍由前后端共同执行长度校验。
 fn truncate_profile_name(value: &str) -> String {
-    let truncated: String = value.chars().take(IMPORT_PROFILE_NAME_MAX_CHARS).collect();
-    if truncated != value {
-        log_telemetry(
-            TelemetryLevel::Warn,
-            "ssh.config.import.truncate.success",
-            None,
-            json!({
-                "original": value,
-                "truncated": truncated,
-                "maxChars": IMPORT_PROFILE_NAME_MAX_CHARS,
-            }),
-        );
-    }
-    truncated
+    value.chars().take(IMPORT_PROFILE_NAME_MAX_CHARS).collect()
 }
 
 fn now_epoch() -> u64 {

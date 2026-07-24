@@ -1,11 +1,14 @@
 //! SSH 会话相关命令。
 use std::collections::HashSet;
+use std::time::Instant;
 
 use engine::{
     EngineError, ExpectedHostKey, HostProfile, JumpHostProfile, JumpHostSpec, Session,
     TerminalSize, probe_host_key,
 };
+use fluxterm_logging::{LogLevel, create_operation_id, log_event};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::ai::{AiRuntimeState, register_remote_session};
@@ -49,13 +52,45 @@ pub async fn ssh_connect(
     ai_state: State<'_, AiRuntimeState>,
     profile: HostProfile,
     size: TerminalSize,
+    operation_id: Option<String>,
 ) -> Result<Session, EngineError> {
-    let plan = resolve_ssh_connect_plan(&app, &security, &profile).await?;
+    let operation_id = operation_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(create_operation_id);
+    let started_at = Instant::now();
+    let plan = match resolve_ssh_connect_plan(&app, &security, &profile).await {
+        Ok(plan) => plan,
+        Err(error) => {
+            log_event!(
+                LogLevel::Warn,
+                "ssh.session.plan.failed",
+                Some(operation_id.as_str()),
+                json!({
+                    "profileId": &profile.id,
+                    "host": &profile.host,
+                    "user": &profile.username,
+                    "port": profile.port,
+                    "authType": format!("{:?}", profile.auth_type),
+                    "connectionPurpose": "session",
+                    "durationMs": u64::try_from(started_at.elapsed().as_millis())
+                        .unwrap_or(u64::MAX),
+                    "stage": "connectionPlan",
+                    "error": {
+                        "code": &error.code,
+                        "message": &error.message,
+                        "detail": &error.detail,
+                    }
+                }),
+            );
+            return Err(error);
+        }
+    };
     let on_event = build_event_bridge(app.clone());
     let session = state.engine.connect(
         plan.profile.clone(),
         plan.expected_host_key,
         plan.jump_spec,
+        operation_id,
         size,
         on_event,
     )?;

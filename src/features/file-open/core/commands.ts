@@ -3,6 +3,7 @@
  * 职责：封装本地文件打开与远端编辑实例的 tauri 命令调用。
  */
 import { callTauri } from "@/shared/tauri/commands";
+import { createOperationId } from "@/shared/logging";
 import type { RemoteEditSnapshot, SftpEntry } from "@/types";
 
 type RemoteEditOpenTarget = {
@@ -30,14 +31,17 @@ export async function openRemoteFileForEditing(
   defaultEditorPath: string,
 ) {
   return callTauri<RemoteEditSnapshot>("remote_edit_open", {
-    sessionId,
-    target: {
-      sessionHost: target.host,
-      sessionUsername: target.username,
-      sessionPort: target.port,
+    request: {
+      sessionId,
+      target: {
+        sessionHost: target.host,
+        sessionUsername: target.username,
+        sessionPort: target.port,
+      },
+      entry,
+      defaultEditorPath: defaultEditorPath.trim() || null,
+      operationId: createOperationId(),
     },
-    entry,
-    defaultEditorPath: defaultEditorPath.trim() || null,
   });
 }
 
@@ -50,6 +54,7 @@ export async function listRemoteEditSessions() {
 export async function confirmRemoteEditUpload(instanceId: string) {
   return callTauri<RemoteEditSnapshot>("remote_edit_confirm_upload", {
     instanceId,
+    operationId: createOperationId(),
   });
 }
 
@@ -57,5 +62,6 @@ export async function confirmRemoteEditUpload(instanceId: string) {
 export async function dismissRemoteEditPending(instanceId: string) {
   return callTauri<RemoteEditSnapshot>("remote_edit_dismiss_pending", {
     instanceId,
+    operationId: createOperationId(),
   });
 }

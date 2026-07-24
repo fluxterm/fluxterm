@@ -7,7 +7,7 @@ import {
   PredefinedMenuItem,
   Submenu,
 } from "@tauri-apps/api/menu";
-import { error as logError } from "@/shared/logging/telemetry";
+import { logWarn } from "@/shared/logging";
 import type { Translate } from "@/i18n";
 import type { SubAppId, SubAppRuntimeStatus } from "@/subapps/types";
 import { isMacOS } from "@/utils/platform";
@@ -333,12 +333,13 @@ export default function useMacAppMenu({
           await previousMenu.close();
         }
       } catch (error) {
-        void logError(
-          JSON.stringify({
-            event: "mac.app.menu.apply.failed",
-            message: extractErrorMessage(error),
-          }),
-        );
+        logWarn("mac.app.menu.apply.failed", {
+          error: {
+            code: "mac_app_menu_apply_failed",
+            message: "macOS application menu could not be applied",
+            detail: extractErrorMessage(error),
+          },
+        });
       }
     };
 

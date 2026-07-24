@@ -6,7 +6,6 @@ use std::hash::{Hash, Hasher};
 use engine::EngineError;
 use openai::OpenAiSessionChatResponse;
 use serde::Serialize;
-use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::ai::{
@@ -18,7 +17,6 @@ use crate::ai_settings::{
     AiSettingsSaveInput, AiSettingsView, read_ai_settings, read_ai_settings_view,
     save_ai_settings_input,
 };
-use crate::telemetry::{TelemetryLevel, log_telemetry};
 
 /// 读取终端 AI 助手配置。
 #[tauri::command]
@@ -59,14 +57,6 @@ pub async fn ai_session_chat(
     let input = context::build_session_chat_input(&state, request, &settings)?;
     let cache_key = build_cache_key("session_chat", &input)?;
     if let Some(content) = get_cached_response(&state, &cache_key)? {
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ai.cache.hit",
-            None,
-            json!({
-                "requestType": "sessionChat",
-            }),
-        );
         return Ok(OpenAiSessionChatResponse {
             message: openai::ChatMessage {
                 role: "assistant".to_string(),
@@ -130,14 +120,6 @@ pub async fn ai_session_chat_stream_start(
         },
     )?;
     if let Some(content) = get_cached_response(&state, &cache_key)? {
-        log_telemetry(
-            TelemetryLevel::Info,
-            "ai.cache.hit",
-            None,
-            json!({
-                "requestType": "sessionChatStream",
-            }),
-        );
         app.emit(
             "ai:chat-chunk",
             AiChatChunkPayload {

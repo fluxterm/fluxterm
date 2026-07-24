@@ -8,7 +8,6 @@
 pub mod client;
 pub mod error;
 pub mod prompts;
-pub mod telemetry;
 pub mod types;
 
 pub use crate::client::{chat_session, chat_session_stream, test_connection};
