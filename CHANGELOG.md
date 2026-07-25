@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-15
+
 ### Added
 
 - **RDP 远端音频**: RDP 会话默认将远端声音播放到本机，支持每个会话独立静音，并改进重复连接时的音频资源清理与重新协商。
@@ -705,6 +707,7 @@
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
 
+[0.8.0]: https://github.com/fluxterm/fluxterm/compare/0.7.1...0.8.0
 [0.7.1]: https://github.com/fluxterm/fluxterm/compare/0.7.0...0.7.1
 [0.7.0]: https://github.com/fluxterm/fluxterm/compare/0.6.1...0.7.0
 [0.6.1]: https://github.com/fluxterm/fluxterm/compare/0.6.0...0.6.1
