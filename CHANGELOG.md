@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-30
+
 ### Changed
 
 - **SFTP 传输遥测分类**: 统一文件、目录和批量上传下载的性能流类型，并记录真实请求耗时与任务级并发高水位。
@@ -715,36 +717,3 @@
 ### Changed
 
 - 该版本为 Alpha 阶段版本，重点在于完成 SSH、终端、SFTP 与桌面交互的基础闭环。
-
-[0.8.0]: https://github.com/fluxterm/fluxterm/compare/0.7.1...0.8.0
-[0.7.1]: https://github.com/fluxterm/fluxterm/compare/0.7.0...0.7.1
-[0.7.0]: https://github.com/fluxterm/fluxterm/compare/0.6.1...0.7.0
-[0.6.1]: https://github.com/fluxterm/fluxterm/compare/0.6.0...0.6.1
-[0.6.0]: https://github.com/fluxterm/fluxterm/compare/0.5.0...0.6.0
-[0.5.0]: https://github.com/fluxterm/fluxterm/compare/0.4.1...0.5.0
-[0.4.1]: https://github.com/fluxterm/fluxterm/compare/0.4.0...0.4.1
-[0.4.0]: https://github.com/fluxterm/fluxterm/compare/0.3.0...0.4.0
-[0.3.0]: https://github.com/fluxterm/fluxterm/compare/0.2.0...0.3.0
-[0.2.0]: https://github.com/fluxterm/fluxterm/compare/0.1.1...0.2.0
-[0.1.1]: https://github.com/fluxterm/fluxterm/compare/0.1.0...0.1.1
-[0.1.0]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.13...0.1.0
-[0.1.0-beta.13]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.12...0.1.0-beta.13
-[0.1.0-beta.12]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.11...0.1.0-beta.12
-[0.1.0-beta.11]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.10...0.1.0-beta.11
-[0.1.0-beta.10]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.9...0.1.0-beta.10
-[0.1.0-beta.9]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.8...0.1.0-beta.9
-[0.1.0-beta.8]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.7...0.1.0-beta.8
-[0.1.0-beta.7]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.6...0.1.0-beta.7
-[0.1.0-beta.6]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.5...0.1.0-beta.6
-[0.1.0-beta.5]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.4...0.1.0-beta.5
-[0.1.0-beta.4]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.3...0.1.0-beta.4
-[0.1.0-beta.3]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.2...0.1.0-beta.3
-[0.1.0-beta.2]: https://github.com/fluxterm/fluxterm/compare/0.1.0-beta.1...0.1.0-beta.2
-[0.1.0-beta.1]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.7...0.1.0-beta.1
-[0.1.0-alpha.7]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.6...0.1.0-alpha.7
-[0.1.0-alpha.6]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.5...0.1.0-alpha.6
-[0.1.0-alpha.5]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.4...0.1.0-alpha.5
-[0.1.0-alpha.4]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.3...0.1.0-alpha.4
-[0.1.0-alpha.3]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.2...0.1.0-alpha.3
-[0.1.0-alpha.2]: https://github.com/fluxterm/fluxterm/compare/0.1.0-alpha.1...0.1.0-alpha.2
-[0.1.0-alpha.1]: https://github.com/fluxterm/fluxterm/releases/tag/0.1.0-alpha.1
