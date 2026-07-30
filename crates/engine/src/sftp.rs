@@ -38,7 +38,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
@@ -49,11 +49,24 @@ use crate::types::{
     SftpTransferKind, SftpTransferStatus,
 };
 use fluxterm_logging::{LogLevel, log_event};
+#[cfg(feature = "performance-telemetry")]
+use fluxterm_performance_telemetry::{
+    HistogramAccumulator, MetricBatch, MetricUnit, MetricWindow, PerformanceDomain, RecordOutcome,
+    StreamCorrelation, StreamDescriptor, StreamKind, StreamOutcome, StreamParameter, StreamTarget,
+    close_stream as close_performance_stream, collection_interval_ms, counter_metric,
+    create_stream_descriptor, definition as metric_definition, gauge_metric, histogram_metric,
+    open_stream as open_performance_stream, record_batch as record_performance_batch, unix_time_ms,
+};
 
-/// SFTP 传输过程中附带进度的错误信息。
-struct TransferProgressError {
-    error: EngineError,
-    transferred: u64,
+/// SFTP 性能流使用的远程连接与业务任务身份。
+#[derive(Clone, Copy)]
+pub(crate) struct SftpConnectionIdentity<'a> {
+    pub(crate) session_id: &'a str,
+    #[cfg_attr(not(feature = "performance-telemetry"), allow(dead_code))]
+    pub(crate) target_host: &'a str,
+    #[cfg_attr(not(feature = "performance-telemetry"), allow(dead_code))]
+    pub(crate) target_port: u16,
+    pub(crate) transfer_id: &'a str,
 }
 
 /// SFTP 传输日志上下文。
@@ -69,9 +82,9 @@ struct TransferLogContext<'a> {
 enum SftpLogEvent {
     UploadSucceeded,
     UploadFailed,
-    UploadBatchSucceeded,
-    UploadBatchFailed,
-    UploadBatchCancelled,
+    UploadPathsSucceeded,
+    UploadPathsFailed,
+    UploadPathsCancelled,
     DownloadSucceeded,
     DownloadFailed,
     DownloadDirectorySucceeded,
@@ -91,14 +104,14 @@ impl SftpLogEvent {
                 log_event!(LogLevel::Info, "sftp.upload.succeeded", None, fields)
             }
             Self::UploadFailed => log_event!(LogLevel::Warn, "sftp.upload.failed", None, fields),
-            Self::UploadBatchSucceeded => {
-                log_event!(LogLevel::Info, "sftp.upload.batch.succeeded", None, fields)
+            Self::UploadPathsSucceeded => {
+                log_event!(LogLevel::Info, "sftp.upload.paths.succeeded", None, fields)
             }
-            Self::UploadBatchFailed => {
-                log_event!(LogLevel::Warn, "sftp.upload.batch.failed", None, fields)
+            Self::UploadPathsFailed => {
+                log_event!(LogLevel::Warn, "sftp.upload.paths.failed", None, fields)
             }
-            Self::UploadBatchCancelled => {
-                log_event!(LogLevel::Info, "sftp.upload.batch.cancelled", None, fields)
+            Self::UploadPathsCancelled => {
+                log_event!(LogLevel::Info, "sftp.upload.paths.cancelled", None, fields)
             }
             Self::DownloadSucceeded => {
                 log_event!(LogLevel::Info, "sftp.download.succeeded", None, fields)
@@ -140,7 +153,6 @@ struct TransferProgressContext<'a> {
     total_items: Option<u64>,
     failed_items: u64,
     status: SftpTransferStatus,
-    on_event: &'a EventCallback,
 }
 
 /// SFTP 原始会话能力限制。
@@ -161,6 +173,43 @@ enum UploadPipelineTask {
         remote_path: String,
         display_name: String,
     },
+}
+
+/// 一次文件面板上传任务的业务类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UploadJobKind {
+    File,
+    Directory,
+    Batch,
+}
+
+impl UploadJobKind {
+    /// 转换为进度事件使用的任务类型。
+    const fn transfer_kind(self) -> SftpTransferKind {
+        match self {
+            Self::File => SftpTransferKind::File,
+            Self::Directory => SftpTransferKind::Directory,
+            Self::Batch => SftpTransferKind::Batch,
+        }
+    }
+
+    /// 返回该任务实际启动的文件 worker 数。
+    const fn worker_count(self) -> usize {
+        match self {
+            Self::File => 1,
+            Self::Directory | Self::Batch => BATCH_WORKER_COUNT,
+        }
+    }
+
+    /// 转换为性能遥测使用的流类型。
+    #[cfg(feature = "performance-telemetry")]
+    const fn stream_kind(self) -> StreamKind {
+        match self {
+            Self::File => StreamKind::SftpUploadFile,
+            Self::Directory => StreamKind::SftpUploadDirectory,
+            Self::Batch => StreamKind::SftpUploadBatch,
+        }
+    }
 }
 
 /// 目录下载流水线任务。
@@ -189,8 +238,28 @@ struct DownloadReadFollowUp {
     len: u32,
 }
 
+/// 文件流水线向任务级进度与遥测聚合器报告的事件。
+enum FilePipelineEvent {
+    /// 已经成功写入目标的文件级累计字节。
+    Progress(u64),
+    /// 一个原始 SFTP 请求已进入在途状态。
+    #[cfg(feature = "performance-telemetry")]
+    RequestStarted,
+    /// 一个原始 SFTP 请求完成。
+    #[cfg(feature = "performance-telemetry")]
+    RequestFinished { duration_ms: f64 },
+    /// 一组未正常返回的请求已被终止。
+    #[cfg(feature = "performance-telemetry")]
+    RequestsDiscarded(usize),
+    /// 乱序待写队列新增分块。
+    #[cfg(feature = "performance-telemetry")]
+    PendingChunksAdded(usize),
+    /// 乱序待写队列移除分块。
+    #[cfg(feature = "performance-telemetry")]
+    PendingChunksRemoved(usize),
+}
+
 /// 批量传输进度聚合状态。
-#[derive(Clone)]
 struct PipelineProgressState {
     transferred: u64,
     total_bytes: Option<u64>,
@@ -198,6 +267,23 @@ struct PipelineProgressState {
     total_items: u64,
     failed_items: u64,
     status: SftpTransferStatus,
+    #[cfg(feature = "performance-telemetry")]
+    telemetry: Option<SftpPerformanceStream>,
+}
+
+impl Clone for PipelineProgressState {
+    fn clone(&self) -> Self {
+        Self {
+            transferred: self.transferred,
+            total_bytes: self.total_bytes,
+            completed_items: self.completed_items,
+            total_items: self.total_items,
+            failed_items: self.failed_items,
+            status: self.status,
+            #[cfg(feature = "performance-telemetry")]
+            telemetry: None,
+        }
+    }
 }
 
 /// 批量传输进度发射上下文。
@@ -221,6 +307,298 @@ const SFTP_INIT_STAGE_TIMEOUT_MS: u64 = 1200;
 const UPLOAD_WRITE_WINDOW: usize = 8;
 /// 单文件下载分块并发读窗口。
 const DOWNLOAD_READ_WINDOW: usize = 8;
+
+/// 单次 SFTP 传输的本地窗口累加器。
+///
+/// 禁用时不创建该对象；启用后只在现有进度更新点累加数字，每个配置窗口提交一次。
+#[cfg(feature = "performance-telemetry")]
+struct SftpPerformanceStream {
+    descriptor: StreamDescriptor,
+    interval: Duration,
+    started_at: Instant,
+    window_started_at: Instant,
+    window_started_unix_ms: u64,
+    window_bytes: u64,
+    window_requests: u64,
+    current_in_flight: u64,
+    current_pending_chunks: u64,
+    max_in_flight: u64,
+    max_pending_chunks: u64,
+    request_durations: HistogramAccumulator,
+    scan_duration_ms: Option<f64>,
+    closed: bool,
+}
+
+#[cfg(feature = "performance-telemetry")]
+impl SftpPerformanceStream {
+    /// 尝试打开匿名 SFTP 性能流。
+    fn open(
+        kind: StreamKind,
+        identity: &SftpConnectionIdentity<'_>,
+        chunk_size: u64,
+        request_window: u64,
+        worker_count: u64,
+    ) -> Option<Self> {
+        let interval_ms = collection_interval_ms(PerformanceDomain::Sftp)?;
+        let descriptor = create_stream_descriptor(
+            kind,
+            unix_time_ms(),
+            BTreeMap::from([
+                (
+                    "chunkSizeBytes".into(),
+                    StreamParameter::Unsigned(chunk_size),
+                ),
+                (
+                    "requestWindow".into(),
+                    StreamParameter::Unsigned(request_window),
+                ),
+                (
+                    "workerCount".into(),
+                    StreamParameter::Unsigned(worker_count),
+                ),
+            ]),
+            StreamTarget {
+                host: identity.target_host.to_string(),
+                port: identity.target_port,
+            },
+            StreamCorrelation {
+                session_id: identity.session_id.to_string(),
+                transfer_id: Some(identity.transfer_id.to_string()),
+            },
+        );
+        if open_performance_stream(descriptor.clone()) != RecordOutcome::Accepted {
+            return None;
+        }
+        Some(Self {
+            descriptor,
+            interval: Duration::from_millis(interval_ms),
+            started_at: Instant::now(),
+            window_started_at: Instant::now(),
+            window_started_unix_ms: unix_time_ms(),
+            window_bytes: 0,
+            window_requests: 0,
+            current_in_flight: 0,
+            current_pending_chunks: 0,
+            max_in_flight: 0,
+            max_pending_chunks: 0,
+            request_durations: HistogramAccumulator::new(
+                metric_definition("fluxterm.sftp.request.duration")
+                    .expect("SFTP request duration metric must exist")
+                    .histogram_bounds,
+            ),
+            scan_duration_ms: None,
+            closed: false,
+        })
+    }
+
+    /// 记录批量任务扫描阶段耗时。
+    fn record_scan_duration(&mut self, duration: Duration) {
+        self.scan_duration_ms = Some(duration.as_secs_f64() * 1000.0);
+    }
+
+    /// 累加已经成功写入目标的传输字节。
+    fn observe_bytes(&mut self, bytes: u64) {
+        self.window_bytes = self.window_bytes.saturating_add(bytes);
+        self.flush_window(false);
+    }
+
+    /// 记录一个原始 SFTP 请求进入在途状态。
+    fn request_started(&mut self) {
+        self.current_in_flight = self.current_in_flight.saturating_add(1);
+        self.max_in_flight = self.max_in_flight.max(self.current_in_flight);
+    }
+
+    /// 记录一个原始 SFTP 请求完成及其真实耗时。
+    fn request_finished(&mut self, duration_ms: f64) {
+        self.current_in_flight = self.current_in_flight.saturating_sub(1);
+        self.window_requests = self.window_requests.saturating_add(1);
+        self.request_durations.record(duration_ms);
+        self.flush_window(false);
+    }
+
+    /// 回收未正常返回的在途请求。
+    fn requests_discarded(&mut self, count: usize) {
+        self.current_in_flight = self.current_in_flight.saturating_sub(count as u64);
+    }
+
+    /// 更新乱序待写分块的任务级当前值与高水位。
+    fn pending_chunks_added(&mut self, count: usize) {
+        self.current_pending_chunks = self.current_pending_chunks.saturating_add(count as u64);
+        self.max_pending_chunks = self.max_pending_chunks.max(self.current_pending_chunks);
+    }
+
+    /// 回收已经写入或丢弃的待写分块。
+    fn pending_chunks_removed(&mut self, count: usize) {
+        self.current_pending_chunks = self.current_pending_chunks.saturating_sub(count as u64);
+    }
+
+    /// 发送当前聚合窗口。
+    fn flush_window(&mut self, force: bool) {
+        let elapsed = self.window_started_at.elapsed();
+        if !force && elapsed < self.interval {
+            return;
+        }
+        if self.window_bytes == 0 && self.window_requests == 0 && !force {
+            return;
+        }
+        let duration_ms = u64::try_from(elapsed.as_millis())
+            .unwrap_or(u64::MAX)
+            .max(1);
+        let throughput = self.window_bytes as f64 * 1000.0 / duration_ms as f64;
+        let bytes = counter_metric(
+            "fluxterm.sftp.transfer.bytes",
+            MetricUnit::Byte,
+            self.window_bytes as f64,
+        );
+        let throughput_point = gauge_metric(
+            "fluxterm.sftp.transfer.throughput",
+            MetricUnit::BytePerSecond,
+            throughput,
+        );
+        let requests = counter_metric(
+            "fluxterm.sftp.request.count",
+            MetricUnit::Request,
+            self.window_requests as f64,
+        );
+        let in_flight = gauge_metric(
+            "fluxterm.sftp.request.in_flight.max",
+            MetricUnit::Request,
+            self.max_in_flight as f64,
+        );
+        let mut metrics = vec![bytes, throughput_point, requests, in_flight];
+        if let Some(histogram) = self.request_durations.take() {
+            metrics.push(histogram_metric(
+                "fluxterm.sftp.request.duration",
+                MetricUnit::Millisecond,
+                histogram,
+            ));
+        }
+        if self.max_pending_chunks > 0 {
+            let pending = gauge_metric(
+                "fluxterm.sftp.download.pending_chunks.max",
+                MetricUnit::Chunk,
+                self.max_pending_chunks as f64,
+            );
+            metrics.push(pending);
+        }
+        let _ = record_performance_batch(MetricBatch {
+            stream_id: self.descriptor.id.clone(),
+            window: MetricWindow {
+                started_at_unix_ms: self.window_started_unix_ms,
+                duration_ms,
+            },
+            metrics,
+        });
+        self.window_started_at = Instant::now();
+        self.window_started_unix_ms = unix_time_ms();
+        self.window_bytes = 0;
+        self.window_requests = 0;
+        self.max_in_flight = self.current_in_flight;
+        self.max_pending_chunks = self.current_pending_chunks;
+    }
+
+    /// 提交最终摘要并关闭流。
+    fn finish(
+        &mut self,
+        outcome: StreamOutcome,
+        total_bytes: u64,
+        completed_items: u64,
+        failed_items: u64,
+    ) {
+        if self.closed {
+            return;
+        }
+        self.flush_window(true);
+        let elapsed_ms = self.started_at.elapsed().as_secs_f64() * 1000.0;
+        let mut duration_histogram = HistogramAccumulator::new(
+            metric_definition("fluxterm.sftp.transfer.duration")
+                .expect("registered SFTP duration metric")
+                .histogram_bounds,
+        );
+        duration_histogram.record(elapsed_ms);
+        let mut metrics = Vec::new();
+        if let Some(value) = duration_histogram.take() {
+            metrics.push(histogram_metric(
+                "fluxterm.sftp.transfer.duration",
+                MetricUnit::Millisecond,
+                value,
+            ));
+        }
+        let size = gauge_metric(
+            "fluxterm.sftp.transfer.size",
+            MetricUnit::Byte,
+            total_bytes as f64,
+        );
+        metrics.push(size);
+        let average = if elapsed_ms > 0.0 {
+            total_bytes as f64 * 1000.0 / elapsed_ms
+        } else {
+            0.0
+        };
+        let average_point = gauge_metric(
+            "fluxterm.sftp.transfer.average_throughput",
+            MetricUnit::BytePerSecond,
+            average,
+        );
+        metrics.push(average_point);
+        if completed_items > 0 {
+            let completed = counter_metric(
+                "fluxterm.sftp.item.completed",
+                MetricUnit::Item,
+                completed_items as f64,
+            );
+            metrics.push(completed);
+        }
+        if failed_items > 0 {
+            let failed = counter_metric(
+                "fluxterm.sftp.item.failed",
+                MetricUnit::Item,
+                failed_items as f64,
+            );
+            metrics.push(failed);
+        }
+        if let Some(scan_duration_ms) = self.scan_duration_ms {
+            let mut scan_histogram = HistogramAccumulator::new(
+                metric_definition("fluxterm.sftp.scan.duration")
+                    .expect("registered SFTP scan duration metric")
+                    .histogram_bounds,
+            );
+            scan_histogram.record(scan_duration_ms);
+            if let Some(value) = scan_histogram.take() {
+                metrics.push(histogram_metric(
+                    "fluxterm.sftp.scan.duration",
+                    MetricUnit::Millisecond,
+                    value,
+                ));
+            }
+        }
+        let _ = record_performance_batch(MetricBatch {
+            stream_id: self.descriptor.id.clone(),
+            window: MetricWindow {
+                started_at_unix_ms: self.descriptor.started_at_unix_ms,
+                duration_ms: elapsed_ms.max(1.0) as u64,
+            },
+            metrics,
+        });
+        let _ = close_performance_stream(&self.descriptor.id, outcome, unix_time_ms());
+        self.closed = true;
+    }
+}
+
+#[cfg(feature = "performance-telemetry")]
+impl Drop for SftpPerformanceStream {
+    fn drop(&mut self) {
+        if !self.closed {
+            self.flush_window(true);
+            let _ = close_performance_stream(
+                &self.descriptor.id,
+                StreamOutcome::Failed,
+                unix_time_ms(),
+            );
+            self.closed = true;
+        }
+    }
+}
 
 /// 远端扫描下载任务的上下文。
 struct DownloadScanContext<'a> {
@@ -389,15 +767,19 @@ pub async fn sftp_stat(
 }
 
 /// 上传本地文件至远端。
-pub async fn sftp_upload(
+pub(crate) async fn sftp_upload(
     session: &client::Handle<super::session::ClientHandler>,
-    session_id: &str,
+    identity: SftpConnectionIdentity<'_>,
     local_path: &str,
     remote_path: &str,
-    transfer_id: &str,
     cancel_flag: &AtomicBool,
     on_event: &EventCallback,
 ) -> Result<(), EngineError> {
+    let SftpConnectionIdentity {
+        session_id,
+        transfer_id,
+        ..
+    } = identity;
     let started = Instant::now();
     let display_name = file_name_from_path(local_path);
     let item_label = items_label(Some(1));
@@ -427,7 +809,6 @@ pub async fn sftp_upload(
         total_items: Some(1),
         failed_items: 0,
         status: SftpTransferStatus::Running,
-        on_event,
     };
     emit_transfer_progress(on_event, progress_context, 0);
     log_event!(
@@ -454,25 +835,35 @@ pub async fn sftp_upload(
             )
         })?;
     let handle_id = handle.handle.clone();
-    let mut chunk_size = 128 * 1024usize;
-    if let Some(limit) = limits.write_limit {
-        chunk_size = chunk_size.min(limit as usize);
-    }
-    if chunk_size == 0 {
-        chunk_size = 256 * 1024;
-    }
+    let chunk_size = upload_chunk_size(limits.write_limit);
+    #[cfg(feature = "performance-telemetry")]
+    let mut performance = SftpPerformanceStream::open(
+        StreamKind::SftpUploadFile,
+        &identity,
+        chunk_size as u64,
+        UPLOAD_WRITE_WINDOW as u64,
+        1,
+    );
     let mut buf = vec![0u8; chunk_size];
     let mut offset = 0u64;
     let mut transferred = 0u64;
-    let mut in_flight: JoinSet<Result<usize, EngineError>> = JoinSet::new();
+    let mut in_flight: JoinSet<Result<(usize, f64), EngineError>> = JoinSet::new();
     let max_in_flight = UPLOAD_WRITE_WINDOW;
 
     loop {
         if is_transfer_cancelled(cancel_flag) {
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.requests_discarded(in_flight.len());
+            }
             in_flight.abort_all();
             let _ = sftp.close(handle_id.clone()).await;
             let _ = sftp.close_session();
             emit_cancelled_progress(on_event, progress_context, transferred);
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.finish(StreamOutcome::Cancelled, transferred, 0, 0);
+            }
             return Ok(());
         }
         let n = local.read(&mut buf).await.map_err(|err| {
@@ -488,11 +879,24 @@ pub async fn sftp_upload(
         while in_flight.len() >= max_in_flight {
             if let Some(result) = in_flight.join_next().await {
                 match result {
-                    Ok(Ok(len)) => {
+                    Ok(Ok(result)) => {
+                        #[cfg(feature = "performance-telemetry")]
+                        let (len, request_duration_ms) = result;
+                        #[cfg(not(feature = "performance-telemetry"))]
+                        let (len, _) = result;
                         transferred += len as u64;
+                        #[cfg(feature = "performance-telemetry")]
+                        if let Some(performance) = performance.as_mut() {
+                            performance.request_finished(request_duration_ms);
+                            performance.observe_bytes(len as u64);
+                        }
                         emit_transfer_progress(on_event, progress_context, transferred);
                     }
                     Ok(Err(err)) => {
+                        #[cfg(feature = "performance-telemetry")]
+                        if let Some(performance) = performance.as_mut() {
+                            performance.requests_discarded(in_flight.len() + 1);
+                        }
                         log_sftp_failure(
                             SftpLogEvent::UploadFailed,
                             &TransferLogContext {
@@ -506,9 +910,17 @@ pub async fn sftp_upload(
                         in_flight.abort_all();
                         let _ = sftp.close(handle_id.clone()).await;
                         let _ = sftp.close_session();
+                        #[cfg(feature = "performance-telemetry")]
+                        if let Some(performance) = performance.as_mut() {
+                            performance.finish(StreamOutcome::Failed, transferred, 0, 1);
+                        }
                         return Err(err);
                     }
                     Err(err) => {
+                        #[cfg(feature = "performance-telemetry")]
+                        if let Some(performance) = performance.as_mut() {
+                            performance.requests_discarded(in_flight.len() + 1);
+                        }
                         let err = EngineError::with_detail(
                             "sftp_transfer_failed",
                             "Failed to write file data",
@@ -527,6 +939,10 @@ pub async fn sftp_upload(
                         in_flight.abort_all();
                         let _ = sftp.close(handle_id.clone()).await;
                         let _ = sftp.close_session();
+                        #[cfg(feature = "performance-telemetry")]
+                        if let Some(performance) = performance.as_mut() {
+                            performance.finish(StreamOutcome::Failed, transferred, 0, 1);
+                        }
                         return Err(err);
                     }
                 }
@@ -537,10 +953,21 @@ pub async fn sftp_upload(
         let handle = handle_id.clone();
         let write_offset = offset;
         in_flight.spawn(async move {
+            #[cfg(feature = "performance-telemetry")]
+            let request_started = Instant::now();
             session
                 .write(handle, write_offset, data)
                 .await
-                .map(|_| n)
+                .map(|_| {
+                    #[cfg(feature = "performance-telemetry")]
+                    {
+                        (n, request_started.elapsed().as_secs_f64() * 1000.0)
+                    }
+                    #[cfg(not(feature = "performance-telemetry"))]
+                    {
+                        (n, 0.0)
+                    }
+                })
                 .map_err(|err| {
                     EngineError::with_detail(
                         "sftp_transfer_failed",
@@ -549,23 +976,48 @@ pub async fn sftp_upload(
                     )
                 })
         });
+        #[cfg(feature = "performance-telemetry")]
+        if let Some(performance) = performance.as_mut() {
+            performance.request_started();
+        }
         offset += n as u64;
     }
 
     while let Some(result) = in_flight.join_next().await {
         if is_transfer_cancelled(cancel_flag) {
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.requests_discarded(in_flight.len() + 1);
+            }
             in_flight.abort_all();
             let _ = sftp.close(handle_id.clone()).await;
             let _ = sftp.close_session();
             emit_cancelled_progress(on_event, progress_context, transferred);
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.finish(StreamOutcome::Cancelled, transferred, 0, 0);
+            }
             return Ok(());
         }
         match result {
-            Ok(Ok(len)) => {
+            Ok(Ok(result)) => {
+                #[cfg(feature = "performance-telemetry")]
+                let (len, request_duration_ms) = result;
+                #[cfg(not(feature = "performance-telemetry"))]
+                let (len, _) = result;
                 transferred += len as u64;
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.request_finished(request_duration_ms);
+                    performance.observe_bytes(len as u64);
+                }
                 emit_transfer_progress(on_event, progress_context, transferred);
             }
             Ok(Err(err)) => {
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.requests_discarded(in_flight.len() + 1);
+                }
                 log_sftp_failure(
                     SftpLogEvent::UploadFailed,
                     &TransferLogContext {
@@ -579,9 +1031,17 @@ pub async fn sftp_upload(
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 let _ = sftp.close_session();
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.finish(StreamOutcome::Failed, transferred, 0, 1);
+                }
                 return Err(err);
             }
             Err(err) => {
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.requests_discarded(in_flight.len() + 1);
+                }
                 let err = EngineError::with_detail(
                     "sftp_transfer_failed",
                     "Failed to write file data",
@@ -600,6 +1060,10 @@ pub async fn sftp_upload(
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 let _ = sftp.close_session();
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.finish(StreamOutcome::Failed, transferred, 0, 1);
+                }
                 return Err(err);
             }
         }
@@ -631,19 +1095,68 @@ pub async fn sftp_upload(
             total_bytes: total,
         },
     );
+    #[cfg(feature = "performance-telemetry")]
+    if let Some(performance) = performance.as_mut() {
+        performance.finish(StreamOutcome::Succeeded, transferred, 1, 0);
+    }
     Ok(())
 }
 
-/// 递归上传本地文件或目录到远端目录。
-pub async fn sftp_upload_batch(
+/// 校验上传根路径并根据实际输入确定任务类型。
+fn classify_upload_roots(roots: &[PathBuf]) -> Result<UploadJobKind, EngineError> {
+    let mut single_kind = None;
+    for root in roots {
+        let metadata = fs::symlink_metadata(root).map_err(|err| {
+            EngineError::with_detail(
+                "sftp_upload_failed",
+                "Failed to read local upload path metadata",
+                err.to_string(),
+            )
+        })?;
+        if metadata.file_type().is_symlink() {
+            return Err(EngineError::new(
+                "sftp_upload_failed",
+                "Uploading symbolic links is not supported",
+            ));
+        }
+        let kind = if metadata.is_file() {
+            UploadJobKind::File
+        } else if metadata.is_dir() {
+            UploadJobKind::Directory
+        } else {
+            return Err(EngineError::new(
+                "sftp_upload_failed",
+                "Uploading this entry type is not supported",
+            ));
+        };
+        single_kind = Some(kind);
+    }
+    if roots.len() > 1 {
+        Ok(UploadJobKind::Batch)
+    } else {
+        single_kind.ok_or_else(|| {
+            EngineError::new(
+                "sftp_upload_failed",
+                "No local paths were provided for upload",
+            )
+        })
+    }
+}
+
+/// 上传一组本地文件或目录到远端目录。
+pub(crate) async fn sftp_upload_paths(
     session: &client::Handle<super::session::ClientHandler>,
-    session_id: &str,
+    identity: SftpConnectionIdentity<'_>,
     local_paths: &[String],
     remote_dir: &str,
-    transfer_id: &str,
     cancel_flag: &AtomicBool,
     on_event: &EventCallback,
 ) -> Result<(), EngineError> {
+    let SftpConnectionIdentity {
+        session_id,
+        transfer_id,
+        ..
+    } = identity;
     let started = Instant::now();
     let local_roots: Vec<PathBuf> = local_paths
         .iter()
@@ -656,6 +1169,8 @@ pub async fn sftp_upload_batch(
             "No local paths were provided for upload",
         ));
     }
+    let upload_kind = classify_upload_roots(&local_roots)?;
+    let worker_count = upload_kind.worker_count();
 
     let state = Arc::new(Mutex::new(PipelineProgressState {
         transferred: 0,
@@ -664,12 +1179,20 @@ pub async fn sftp_upload_batch(
         total_items: 0,
         failed_items: 0,
         status: SftpTransferStatus::Running,
+        #[cfg(feature = "performance-telemetry")]
+        telemetry: SftpPerformanceStream::open(
+            upload_kind.stream_kind(),
+            &identity,
+            upload_chunk_size(None) as u64,
+            (UPLOAD_WRITE_WINDOW * worker_count) as u64,
+            worker_count as u64,
+        ),
     }));
     let emit_context = PipelineEmitContext {
         session_id: session_id.to_string(),
         transfer_id: transfer_id.to_string(),
         op: SftpProgressOp::Upload,
-        kind: SftpTransferKind::Batch,
+        kind: upload_kind.transfer_kind(),
         path: remote_dir.to_string(),
         display_name: items_label(None),
         target_name: None,
@@ -685,7 +1208,7 @@ pub async fn sftp_upload_batch(
     );
     log_event!(
         LogLevel::Debug,
-        "sftp.upload.batch.started",
+        "sftp.upload.paths.started",
         None,
         json!({
             "sessionId": session_id,
@@ -701,7 +1224,7 @@ pub async fn sftp_upload_batch(
     ])));
 
     let mut workers = FuturesUnordered::new();
-    for _ in 0..BATCH_WORKER_COUNT {
+    for _ in 0..worker_count {
         workers.push(upload_pipeline_worker(
             session,
             Arc::clone(&task_rx),
@@ -712,6 +1235,8 @@ pub async fn sftp_upload_batch(
         ));
     }
 
+    #[cfg(feature = "performance-telemetry")]
+    let scan_started = Instant::now();
     for root in &local_roots {
         if is_transfer_cancelled(cancel_flag) {
             break;
@@ -726,7 +1251,7 @@ pub async fn sftp_upload_batch(
         ) {
             log_event!(
                 LogLevel::Warn,
-                "sftp.upload.batch.stream.failed",
+                "sftp.upload.paths.stream.failed",
                 None,
                 json!({
                     "error": {
@@ -739,6 +1264,17 @@ pub async fn sftp_upload_batch(
             pipeline_discover_failed_item(&state, &emit_context);
         }
     }
+    #[cfg(feature = "performance-telemetry")]
+    {
+        if let Some(telemetry) = state
+            .lock()
+            .expect("pipeline progress mutex poisoned")
+            .telemetry
+            .as_mut()
+        {
+            telemetry.record_scan_duration(scan_started.elapsed());
+        }
+    }
     drop(task_tx);
     let mut worker_failed = false;
     while let Some(result) = workers.next().await {
@@ -748,7 +1284,7 @@ pub async fn sftp_upload_batch(
                 worker_failed = true;
                 log_event!(
                     LogLevel::Warn,
-                    "sftp.upload.batch.worker.failed",
+                    "sftp.upload.paths.worker.failed",
                     None,
                     json!({
                         "error": {
@@ -766,7 +1302,7 @@ pub async fn sftp_upload_batch(
         let snapshot =
             finalize_pipeline_state(&state, &emit_context, SftpTransferStatus::Cancelled);
         log_sftp_success(
-            SftpLogEvent::UploadBatchCancelled,
+            SftpLogEvent::UploadPathsCancelled,
             &TransferLogContext {
                 session_id,
                 elapsed_ms: started.elapsed().as_millis(),
@@ -799,7 +1335,7 @@ pub async fn sftp_upload_batch(
     match final_status {
         SftpTransferStatus::Success | SftpTransferStatus::PartialSuccess => {
             log_sftp_success(
-                SftpLogEvent::UploadBatchSucceeded,
+                SftpLogEvent::UploadPathsSucceeded,
                 &TransferLogContext {
                     session_id,
                     elapsed_ms: started.elapsed().as_millis(),
@@ -810,9 +1346,9 @@ pub async fn sftp_upload_batch(
             Ok(())
         }
         _ => {
-            let err = EngineError::new("sftp_upload_failed", "Batch upload failed");
+            let err = EngineError::new("sftp_upload_failed", "Upload paths task failed");
             log_sftp_failure(
-                SftpLogEvent::UploadBatchFailed,
+                SftpLogEvent::UploadPathsFailed,
                 &TransferLogContext {
                     session_id,
                     elapsed_ms: started.elapsed().as_millis(),
@@ -833,7 +1369,7 @@ async fn upload_local_file_to_remote(
     local_path: &Path,
     remote_path: &str,
     cancel_flag: &AtomicBool,
-    mut on_progress: impl FnMut(u64),
+    mut on_event: impl FnMut(FilePipelineEvent),
 ) -> Result<u64, EngineError> {
     let mut local = tokio::fs::File::open(local_path).await.map_err(|err| {
         EngineError::with_detail(
@@ -857,21 +1393,17 @@ async fn upload_local_file_to_remote(
             )
         })?;
     let handle_id = handle.handle.clone();
-    let mut chunk_size = 128 * 1024usize;
-    if let Some(limit) = write_limit {
-        chunk_size = chunk_size.min(limit as usize);
-    }
-    if chunk_size == 0 {
-        chunk_size = 256 * 1024;
-    }
+    let chunk_size = upload_chunk_size(write_limit);
     let mut buf = vec![0u8; chunk_size];
     let mut offset = 0u64;
     let mut transferred = 0u64;
-    let mut in_flight: JoinSet<Result<usize, EngineError>> = JoinSet::new();
+    let mut in_flight: JoinSet<Result<(usize, f64), EngineError>> = JoinSet::new();
     let max_in_flight = UPLOAD_WRITE_WINDOW;
 
     loop {
         if is_transfer_cancelled(cancel_flag) {
+            #[cfg(feature = "performance-telemetry")]
+            on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len()));
             in_flight.abort_all();
             let _ = sftp.close(handle_id.clone()).await;
             return Err(transfer_cancelled_error());
@@ -888,16 +1420,25 @@ async fn upload_local_file_to_remote(
         }
         while in_flight.len() >= max_in_flight {
             match in_flight.join_next().await {
-                Some(Ok(Ok(len))) => {
+                Some(Ok(Ok(result))) => {
+                    #[cfg(feature = "performance-telemetry")]
+                    on_event(FilePipelineEvent::RequestFinished {
+                        duration_ms: result.1,
+                    });
+                    let len = result.0;
                     transferred += len as u64;
-                    on_progress(transferred);
+                    on_event(FilePipelineEvent::Progress(transferred));
                 }
                 Some(Ok(Err(err))) => {
+                    #[cfg(feature = "performance-telemetry")]
+                    on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
                     in_flight.abort_all();
                     let _ = sftp.close(handle_id.clone()).await;
                     return Err(err);
                 }
                 Some(Err(err)) => {
+                    #[cfg(feature = "performance-telemetry")]
+                    on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
                     in_flight.abort_all();
                     let _ = sftp.close(handle_id.clone()).await;
                     return Err(EngineError::with_detail(
@@ -914,10 +1455,21 @@ async fn upload_local_file_to_remote(
         let handle = handle_id.clone();
         let write_offset = offset;
         in_flight.spawn(async move {
+            #[cfg(feature = "performance-telemetry")]
+            let request_started = Instant::now();
             session
                 .write(handle, write_offset, data)
                 .await
-                .map(|_| n)
+                .map(|_| {
+                    #[cfg(feature = "performance-telemetry")]
+                    {
+                        (n, request_started.elapsed().as_secs_f64() * 1000.0)
+                    }
+                    #[cfg(not(feature = "performance-telemetry"))]
+                    {
+                        (n, 0.0)
+                    }
+                })
                 .map_err(|err| {
                     EngineError::with_detail(
                         "sftp_transfer_failed",
@@ -926,26 +1478,39 @@ async fn upload_local_file_to_remote(
                     )
                 })
         });
+        #[cfg(feature = "performance-telemetry")]
+        on_event(FilePipelineEvent::RequestStarted);
         offset += n as u64;
     }
 
     while let Some(result) = in_flight.join_next().await {
         if is_transfer_cancelled(cancel_flag) {
+            #[cfg(feature = "performance-telemetry")]
+            on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
             in_flight.abort_all();
             let _ = sftp.close(handle_id.clone()).await;
             return Err(transfer_cancelled_error());
         }
         match result {
-            Ok(Ok(len)) => {
+            Ok(Ok(result)) => {
+                #[cfg(feature = "performance-telemetry")]
+                on_event(FilePipelineEvent::RequestFinished {
+                    duration_ms: result.1,
+                });
+                let len = result.0;
                 transferred += len as u64;
-                on_progress(transferred);
+                on_event(FilePipelineEvent::Progress(transferred));
             }
             Ok(Err(err)) => {
+                #[cfg(feature = "performance-telemetry")]
+                on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(err);
             }
             Err(err) => {
+                #[cfg(feature = "performance-telemetry")]
+                on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(EngineError::with_detail(
@@ -1301,7 +1866,7 @@ async fn upload_pipeline_worker(
                     pipeline_fail_item(&state, &emit_context, &display_name);
                     log_event!(
                         LogLevel::Warn,
-                        "sftp.upload.batch.dir.failed",
+                        "sftp.upload.paths.dir.failed",
                         None,
                         json!({
                             "error": {
@@ -1325,7 +1890,7 @@ async fn upload_pipeline_worker(
                     pipeline_fail_item(&state, &emit_context, &display_name);
                     log_event!(
                         LogLevel::Warn,
-                        "sftp.upload.batch.mkdir.parent.failed",
+                        "sftp.upload.paths.mkdir.parent.failed",
                         None,
                         json!({
                             "error": {
@@ -1344,10 +1909,14 @@ async fn upload_pipeline_worker(
                     &local_path,
                     &remote_path,
                     cancel_flag,
-                    |file_transferred| {
-                        let delta = file_transferred.saturating_sub(last_transferred);
-                        last_transferred = file_transferred;
-                        pipeline_add_transferred(&state, &emit_context, &display_name, delta);
+                    |event| {
+                        pipeline_handle_file_event(
+                            &state,
+                            &emit_context,
+                            &display_name,
+                            &mut last_transferred,
+                            event,
+                        );
                     },
                 )
                 .await
@@ -1360,7 +1929,7 @@ async fn upload_pipeline_worker(
                         pipeline_fail_item(&state, &emit_context, &display_name);
                         log_event!(
                             LogLevel::Warn,
-                            "sftp.upload.batch.file.failed",
+                            "sftp.upload.paths.file.failed",
                             None,
                             json!({
                                 "error": {
@@ -1438,10 +2007,14 @@ async fn download_pipeline_worker(
                     &remote_path,
                     &local_path,
                     cancel_flag,
-                    |file_transferred| {
-                        let delta = file_transferred.saturating_sub(last_transferred);
-                        last_transferred = file_transferred;
-                        pipeline_add_transferred(&state, &emit_context, &display_name, delta);
+                    |event| {
+                        pipeline_handle_file_event(
+                            &state,
+                            &emit_context,
+                            &display_name,
+                            &mut last_transferred,
+                            event,
+                        );
                     },
                 )
                 .await
@@ -1451,6 +2024,7 @@ async fn download_pipeline_worker(
                     }
                     Err(err) if err.code == "sftp_transfer_cancelled" => break,
                     Err(err) => {
+                        let _ = tokio::fs::remove_file(&local_path).await;
                         pipeline_fail_item(&state, &emit_context, &display_name);
                         log_event!(
                             LogLevel::Warn,
@@ -1532,27 +2106,28 @@ fn remote_join(base: &str, child: &str) -> String {
 }
 
 /// 下载远端文件至本地。
-pub async fn sftp_download(
+pub(crate) async fn sftp_download(
     session: &client::Handle<super::session::ClientHandler>,
-    session_id: &str,
+    identity: SftpConnectionIdentity<'_>,
     remote_path: &str,
     local_path: &str,
-    transfer_id: &str,
     cancel_flag: &AtomicBool,
     on_event: &EventCallback,
 ) -> Result<(), EngineError> {
+    let SftpConnectionIdentity {
+        session_id,
+        transfer_id,
+        ..
+    } = identity;
     let started = Instant::now();
     let display_name = file_name_from_path(remote_path);
     let item_label = items_label(Some(1));
-    let sftp = open_sftp(session).await?;
-    let mut remote = sftp.open(remote_path.to_string()).await.map_err(|err| {
-        EngineError::with_detail(
-            "sftp_download_failed",
-            "Failed to open the remote file",
-            err.to_string(),
-        )
-    })?;
-    let total = remote.metadata().await.ok().and_then(|m| m.size);
+    let (sftp, limits) = open_raw_sftp(session).await?;
+    let total = sftp
+        .stat(remote_path.to_string())
+        .await
+        .ok()
+        .and_then(|attrs| attrs.attrs.size);
     log_event!(
         LogLevel::Debug,
         "sftp.download.started",
@@ -1583,27 +2158,73 @@ pub async fn sftp_download(
         total_items: Some(1),
         failed_items: 0,
         status: SftpTransferStatus::Running,
-        on_event,
     };
     emit_transfer_progress(on_event, progress_context, 0);
-    let mut local = tokio::fs::File::create(&resolved_local_path)
-        .await
-        .map_err(|err| {
-            EngineError::with_detail(
-                "sftp_download_failed",
-                "Failed to create the local file",
-                err.to_string(),
-            )
-        })?;
-    let result = transfer_with_progress(
-        TransferProgressContext { ..progress_context },
-        &mut remote,
-        &mut local,
+    #[cfg(feature = "performance-telemetry")]
+    let chunk_size = download_chunk_size(limits.read_limit);
+    #[cfg(feature = "performance-telemetry")]
+    let mut performance = SftpPerformanceStream::open(
+        StreamKind::SftpDownloadFile,
+        &identity,
+        chunk_size as u64,
+        DOWNLOAD_READ_WINDOW as u64,
+        1,
+    );
+    let mut transferred = 0u64;
+    let result = download_remote_file_to_local_pipelined(
+        &sftp,
+        limits.read_limit,
+        remote_path,
+        &resolved_local_path,
         cancel_flag,
+        |event| match event {
+            FilePipelineEvent::Progress(file_transferred) => {
+                #[cfg(feature = "performance-telemetry")]
+                {
+                    let delta = file_transferred.saturating_sub(transferred);
+                    if let Some(performance) = performance.as_mut() {
+                        performance.observe_bytes(delta);
+                    }
+                }
+                transferred = file_transferred;
+                emit_transfer_progress(on_event, progress_context, transferred);
+            }
+            #[cfg(feature = "performance-telemetry")]
+            FilePipelineEvent::RequestStarted => {
+                if let Some(performance) = performance.as_mut() {
+                    performance.request_started();
+                }
+            }
+            #[cfg(feature = "performance-telemetry")]
+            FilePipelineEvent::RequestFinished { duration_ms } => {
+                if let Some(performance) = performance.as_mut() {
+                    performance.request_finished(duration_ms);
+                }
+            }
+            #[cfg(feature = "performance-telemetry")]
+            FilePipelineEvent::RequestsDiscarded(count) => {
+                if let Some(performance) = performance.as_mut() {
+                    performance.requests_discarded(count);
+                }
+            }
+            #[cfg(feature = "performance-telemetry")]
+            FilePipelineEvent::PendingChunksAdded(count) => {
+                if let Some(performance) = performance.as_mut() {
+                    performance.pending_chunks_added(count);
+                }
+            }
+            #[cfg(feature = "performance-telemetry")]
+            FilePipelineEvent::PendingChunksRemoved(count) => {
+                if let Some(performance) = performance.as_mut() {
+                    performance.pending_chunks_removed(count);
+                }
+            }
+        },
     )
     .await;
+    let _ = sftp.close_session();
     match result {
-        Ok(transferred) => {
+        Ok(_) => {
             emit_transfer_progress(
                 on_event,
                 TransferProgressContext {
@@ -1622,12 +2243,20 @@ pub async fn sftp_download(
                     total_bytes: total,
                 },
             );
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.finish(StreamOutcome::Succeeded, transferred, 1, 0);
+            }
             Ok(())
         }
         Err(err) => {
-            if err.error.code == "sftp_transfer_cancelled" {
-                let _ = tokio::fs::remove_file(&resolved_local_path).await;
-                emit_cancelled_progress(on_event, progress_context, err.transferred);
+            let _ = tokio::fs::remove_file(&resolved_local_path).await;
+            if err.code == "sftp_transfer_cancelled" {
+                emit_cancelled_progress(on_event, progress_context, transferred);
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(performance) = performance.as_mut() {
+                    performance.finish(StreamOutcome::Cancelled, transferred, 0, 0);
+                }
                 return Ok(());
             }
             emit_transfer_progress(
@@ -1637,19 +2266,23 @@ pub async fn sftp_download(
                     status: SftpTransferStatus::Failed,
                     ..progress_context
                 },
-                err.transferred,
+                transferred,
             );
             log_sftp_failure(
                 SftpLogEvent::DownloadFailed,
                 &TransferLogContext {
                     session_id,
                     elapsed_ms: started.elapsed().as_millis(),
-                    transferred_bytes: err.transferred,
+                    transferred_bytes: transferred,
                     total_bytes: total,
                 },
-                &err.error,
+                &err,
             );
-            Err(err.error)
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(performance) = performance.as_mut() {
+                performance.finish(StreamOutcome::Failed, transferred, 0, 1);
+            }
+            Err(err)
         }
     }
 }
@@ -1663,15 +2296,19 @@ pub async fn sftp_download(
 /// 第一版默认允许部分成功：
 /// - 某个目录或文件失败时继续后续项
 /// - 最终状态由 completed_items 与 failed_items 聚合判定
-pub async fn sftp_download_dir(
+pub(crate) async fn sftp_download_dir(
     session: &client::Handle<super::session::ClientHandler>,
-    session_id: &str,
+    identity: SftpConnectionIdentity<'_>,
     remote_path: &str,
     local_dir: &str,
-    transfer_id: &str,
     cancel_flag: &AtomicBool,
     on_event: &EventCallback,
 ) -> Result<(), EngineError> {
+    let SftpConnectionIdentity {
+        session_id,
+        transfer_id,
+        ..
+    } = identity;
     let started = Instant::now();
     let sftp = open_sftp(session).await?;
     let root_name = file_name_from_path(remote_path);
@@ -1683,6 +2320,14 @@ pub async fn sftp_download_dir(
         total_items: 0,
         failed_items: 0,
         status: SftpTransferStatus::Running,
+        #[cfg(feature = "performance-telemetry")]
+        telemetry: SftpPerformanceStream::open(
+            StreamKind::SftpDownloadDirectory,
+            &identity,
+            256 * 1024,
+            (DOWNLOAD_READ_WINDOW * BATCH_WORKER_COUNT) as u64,
+            BATCH_WORKER_COUNT as u64,
+        ),
     }));
     let emit_context = PipelineEmitContext {
         session_id: session_id.to_string(),
@@ -1747,6 +2392,8 @@ pub async fn sftp_download_dir(
         emit_context: &emit_context,
         cancel_flag,
     };
+    #[cfg(feature = "performance-telemetry")]
+    let scan_started = Instant::now();
     if let Err(err) = stream_remote_download_tasks(&scan_ctx, "").await {
         log_event!(
             LogLevel::Warn,
@@ -1761,6 +2408,17 @@ pub async fn sftp_download_dir(
             }),
         );
         pipeline_discover_failed_item(&state, &emit_context);
+    }
+    #[cfg(feature = "performance-telemetry")]
+    {
+        if let Some(telemetry) = state
+            .lock()
+            .expect("pipeline progress mutex poisoned")
+            .telemetry
+            .as_mut()
+        {
+            telemetry.record_scan_duration(scan_started.elapsed());
+        }
     }
     drop(task_tx);
     let mut worker_failed = false;
@@ -2019,7 +2677,7 @@ async fn download_remote_file_to_local_pipelined(
     remote_path: &str,
     local_path: &Path,
     cancel_flag: &AtomicBool,
-    mut on_progress: impl FnMut(u64),
+    mut on_event: impl FnMut(FilePipelineEvent),
 ) -> Result<u64, EngineError> {
     let handle = sftp
         .open(
@@ -2048,28 +2706,24 @@ async fn download_remote_file_to_local_pipelined(
             err.to_string(),
         )
     })?;
-    let mut chunk_size = 256 * 1024usize;
-    if let Some(limit) = read_limit {
-        chunk_size = chunk_size.min(limit as usize);
-    }
-    if chunk_size == 0 {
-        chunk_size = 64 * 1024;
-    }
+    let chunk_size = download_chunk_size(read_limit);
     let mut next_offset = 0u64;
     let mut expected_write_offset = 0u64;
     let mut transferred = 0u64;
     let mut eof_responses = 0u64;
     let mut eof = false;
-    let mut in_flight: JoinSet<Result<DownloadReadChunk, EngineError>> = JoinSet::new();
+    let mut in_flight: JoinSet<Result<(DownloadReadChunk, f64), EngineError>> = JoinSet::new();
     let mut pending_chunks = BTreeMap::<u64, Vec<u8>>::new();
     let window_size = DOWNLOAD_READ_WINDOW;
-    let spawn_read = |in_flight: &mut JoinSet<Result<DownloadReadChunk, EngineError>>,
+    let spawn_read = |in_flight: &mut JoinSet<Result<(DownloadReadChunk, f64), EngineError>>,
                       read_offset: u64,
                       read_len: u32| {
         let session = Arc::clone(sftp);
         let handle = handle_id.clone();
         in_flight.spawn(async move {
-            match session.read(handle, read_offset, read_len).await {
+            #[cfg(feature = "performance-telemetry")]
+            let request_started = Instant::now();
+            let result = match session.read(handle, read_offset, read_len).await {
                 Ok(data) => Ok(DownloadReadChunk {
                     offset: read_offset,
                     requested_len: read_len,
@@ -2087,12 +2741,29 @@ async fn download_remote_file_to_local_pipelined(
                     "Unable to read file data",
                     err.to_string(),
                 )),
-            }
+            };
+            result.map(|chunk| {
+                #[cfg(feature = "performance-telemetry")]
+                {
+                    (chunk, request_started.elapsed().as_secs_f64() * 1000.0)
+                }
+                #[cfg(not(feature = "performance-telemetry"))]
+                {
+                    (chunk, 0.0)
+                }
+            })
         });
     };
 
     loop {
         if is_transfer_cancelled(cancel_flag) {
+            #[cfg(feature = "performance-telemetry")]
+            {
+                on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len()));
+                on_event(FilePipelineEvent::PendingChunksRemoved(
+                    pending_chunks.len(),
+                ));
+            }
             in_flight.abort_all();
             let _ = sftp.close(handle_id.clone()).await;
             let _ = tokio::fs::remove_file(local_path).await;
@@ -2102,6 +2773,8 @@ async fn download_remote_file_to_local_pipelined(
             let read_offset = next_offset;
             let read_len = chunk_size as u32;
             spawn_read(&mut in_flight, read_offset, read_len);
+            #[cfg(feature = "performance-telemetry")]
+            on_event(FilePipelineEvent::RequestStarted);
             next_offset += chunk_size as u64;
         }
         if in_flight.is_empty() {
@@ -2112,13 +2785,33 @@ async fn download_remote_file_to_local_pipelined(
             break;
         };
         let chunk = match result {
-            Ok(Ok(value)) => value,
+            Ok(Ok(result)) => {
+                #[cfg(feature = "performance-telemetry")]
+                on_event(FilePipelineEvent::RequestFinished {
+                    duration_ms: result.1,
+                });
+                result.0
+            }
             Ok(Err(err)) => {
+                #[cfg(feature = "performance-telemetry")]
+                {
+                    on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
+                    on_event(FilePipelineEvent::PendingChunksRemoved(
+                        pending_chunks.len(),
+                    ));
+                }
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(err);
             }
             Err(err) => {
+                #[cfg(feature = "performance-telemetry")]
+                {
+                    on_event(FilePipelineEvent::RequestsDiscarded(in_flight.len() + 1));
+                    on_event(FilePipelineEvent::PendingChunksRemoved(
+                        pending_chunks.len(),
+                    ));
+                }
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(EngineError::with_detail(
@@ -2128,14 +2821,26 @@ async fn download_remote_file_to_local_pipelined(
                 ));
             }
         };
+        #[cfg(feature = "performance-telemetry")]
+        let pending_before = pending_chunks.len();
         let follow_up =
             queue_download_read_chunk(chunk, &mut pending_chunks, &mut eof, &mut eof_responses);
+        #[cfg(feature = "performance-telemetry")]
+        if pending_chunks.len() > pending_before {
+            on_event(FilePipelineEvent::PendingChunksAdded(
+                pending_chunks.len() - pending_before,
+            ));
+        }
         if let Some(follow_up) = follow_up {
             spawn_read(&mut in_flight, follow_up.offset, follow_up.len);
+            #[cfg(feature = "performance-telemetry")]
+            on_event(FilePipelineEvent::RequestStarted);
         }
-        for chunk in
-            drain_contiguous_download_chunks(&mut pending_chunks, &mut expected_write_offset)
-        {
+        let chunks =
+            drain_contiguous_download_chunks(&mut pending_chunks, &mut expected_write_offset);
+        #[cfg(feature = "performance-telemetry")]
+        on_event(FilePipelineEvent::PendingChunksRemoved(chunks.len()));
+        for chunk in chunks {
             local.write_all(&chunk).await.map_err(|err| {
                 EngineError::with_detail(
                     "sftp_transfer_failed",
@@ -2144,11 +2849,15 @@ async fn download_remote_file_to_local_pipelined(
                 )
             })?;
             transferred += chunk.len() as u64;
-            on_progress(transferred);
+            on_event(FilePipelineEvent::Progress(transferred));
         }
     }
 
     if !pending_chunks.is_empty() {
+        #[cfg(feature = "performance-telemetry")]
+        on_event(FilePipelineEvent::PendingChunksRemoved(
+            pending_chunks.len(),
+        ));
         let _ = sftp.close(handle_id.clone()).await;
         let _ = tokio::fs::remove_file(local_path).await;
         return Err(EngineError::with_detail(
@@ -2180,6 +2889,32 @@ async fn download_remote_file_to_local_pipelined(
         )
     })?;
     Ok(transferred)
+}
+
+/// 根据服务端限制确定窗口化下载分块大小。
+fn download_chunk_size(read_limit: Option<u64>) -> usize {
+    let mut chunk_size = 256 * 1024usize;
+    if let Some(limit) = read_limit {
+        chunk_size = chunk_size.min(limit as usize);
+    }
+    if chunk_size == 0 {
+        64 * 1024
+    } else {
+        chunk_size
+    }
+}
+
+/// 根据服务端限制确定窗口化上传分块大小。
+fn upload_chunk_size(write_limit: Option<u64>) -> usize {
+    let mut chunk_size = 256 * 1024usize;
+    if let Some(limit) = write_limit {
+        chunk_size = chunk_size.min(limit as usize);
+    }
+    if chunk_size == 0 {
+        256 * 1024
+    } else {
+        chunk_size
+    }
 }
 
 /// 将一次远端读结果纳入待写队列，并为短读返回补读区间。
@@ -2352,7 +3087,83 @@ fn pipeline_add_transferred(
     }
     update_pipeline_state(state, context, Some(current_item_name), |inner| {
         inner.transferred += delta;
+        #[cfg(feature = "performance-telemetry")]
+        if let Some(telemetry) = inner.telemetry.as_mut() {
+            telemetry.observe_bytes(delta);
+        }
     });
+}
+
+/// 将文件流水线事件汇总到任务级进度与性能流。
+fn pipeline_handle_file_event(
+    state: &Arc<Mutex<PipelineProgressState>>,
+    context: &PipelineEmitContext,
+    current_item_name: &str,
+    last_transferred: &mut u64,
+    event: FilePipelineEvent,
+) {
+    match event {
+        FilePipelineEvent::Progress(file_transferred) => {
+            let delta = file_transferred.saturating_sub(*last_transferred);
+            *last_transferred = file_transferred;
+            pipeline_add_transferred(state, context, current_item_name, delta);
+        }
+        #[cfg(feature = "performance-telemetry")]
+        FilePipelineEvent::RequestStarted => {
+            if let Some(telemetry) = state
+                .lock()
+                .expect("pipeline progress mutex poisoned")
+                .telemetry
+                .as_mut()
+            {
+                telemetry.request_started();
+            }
+        }
+        #[cfg(feature = "performance-telemetry")]
+        FilePipelineEvent::RequestFinished { duration_ms } => {
+            if let Some(telemetry) = state
+                .lock()
+                .expect("pipeline progress mutex poisoned")
+                .telemetry
+                .as_mut()
+            {
+                telemetry.request_finished(duration_ms);
+            }
+        }
+        #[cfg(feature = "performance-telemetry")]
+        FilePipelineEvent::RequestsDiscarded(count) => {
+            if let Some(telemetry) = state
+                .lock()
+                .expect("pipeline progress mutex poisoned")
+                .telemetry
+                .as_mut()
+            {
+                telemetry.requests_discarded(count);
+            }
+        }
+        #[cfg(feature = "performance-telemetry")]
+        FilePipelineEvent::PendingChunksAdded(count) => {
+            if let Some(telemetry) = state
+                .lock()
+                .expect("pipeline progress mutex poisoned")
+                .telemetry
+                .as_mut()
+            {
+                telemetry.pending_chunks_added(count);
+            }
+        }
+        #[cfg(feature = "performance-telemetry")]
+        FilePipelineEvent::PendingChunksRemoved(count) => {
+            if let Some(telemetry) = state
+                .lock()
+                .expect("pipeline progress mutex poisoned")
+                .telemetry
+                .as_mut()
+            {
+                telemetry.pending_chunks_removed(count);
+            }
+        }
+    }
 }
 
 /// 以最终状态结束流水线任务并发出终态事件。
@@ -2361,11 +3172,27 @@ fn finalize_pipeline_state(
     context: &PipelineEmitContext,
     status: SftpTransferStatus,
 ) -> PipelineProgressState {
-    let snapshot = {
-        let mut guard = state.lock().expect("pipeline progress mutex poisoned");
-        guard.status = status;
-        guard.clone()
-    };
+    let mut guard = state.lock().expect("pipeline progress mutex poisoned");
+    guard.status = status;
+    let snapshot = guard.clone();
+    #[cfg(feature = "performance-telemetry")]
+    let mut telemetry = guard.telemetry.take();
+    drop(guard);
+    #[cfg(feature = "performance-telemetry")]
+    if let Some(telemetry) = telemetry.as_mut() {
+        let outcome = match status {
+            SftpTransferStatus::Success => StreamOutcome::Succeeded,
+            SftpTransferStatus::PartialSuccess => StreamOutcome::Partial,
+            SftpTransferStatus::Cancelled => StreamOutcome::Cancelled,
+            SftpTransferStatus::Failed | SftpTransferStatus::Running => StreamOutcome::Failed,
+        };
+        telemetry.finish(
+            outcome,
+            snapshot.transferred,
+            snapshot.completed_items,
+            snapshot.failed_items,
+        );
+    }
     emit_pipeline_progress(context, &snapshot, None);
     snapshot
 }
@@ -2432,73 +3259,6 @@ fn file_name_from_path(path: &str) -> String {
         .filter(|name| !name.is_empty())
         .unwrap_or(path)
         .to_string()
-}
-
-/// 以固定缓冲区大小复制并回调进度。
-async fn transfer_with_progress(
-    context: TransferProgressContext<'_>,
-    reader: &mut (impl AsyncRead + Unpin),
-    writer: &mut (impl AsyncWrite + Unpin),
-    cancel_flag: &AtomicBool,
-) -> Result<u64, TransferProgressError> {
-    let mut buf = vec![0u8; 256 * 1024];
-    let mut transferred = 0u64;
-    loop {
-        if is_transfer_cancelled(cancel_flag) {
-            return Err(TransferProgressError {
-                error: transfer_cancelled_error(),
-                transferred,
-            });
-        }
-        let n = reader
-            .read(&mut buf)
-            .await
-            .map_err(|err| TransferProgressError {
-                error: EngineError::with_detail(
-                    "sftp_transfer_failed",
-                    "Failed to read file data",
-                    err.to_string(),
-                ),
-                transferred,
-            })?;
-        if n == 0 {
-            break;
-        }
-        writer
-            .write_all(&buf[..n])
-            .await
-            .map_err(|err| TransferProgressError {
-                error: EngineError::with_detail(
-                    "sftp_transfer_failed",
-                    "Failed to write file data",
-                    err.to_string(),
-                ),
-                transferred,
-            })?;
-        transferred += n as u64;
-        emit_transfer_progress(
-            context.on_event,
-            TransferProgressContext {
-                session_id: context.session_id,
-                transfer_id: context.transfer_id,
-                op: context.op,
-                kind: context.kind,
-                path: context.path,
-                display_name: context.display_name,
-                item_label: context.item_label,
-                target_name: context.target_name,
-                current_item_name: context.current_item_name,
-                total: context.total,
-                completed_items: context.completed_items,
-                total_items: context.total_items,
-                failed_items: context.failed_items,
-                status: context.status,
-                on_event: context.on_event,
-            },
-            transferred,
-        );
-    }
-    Ok(transferred)
 }
 
 /// 获取当前 Unix 时间戳（毫秒）。
@@ -2768,11 +3528,121 @@ fn format_permissions(perm: u32) -> String {
 mod tests {
     use super::{
         DownloadReadChunk, DownloadReadFollowUp, PipelineEmitContext, PipelineProgressState,
+        UploadJobKind, classify_upload_roots, download_chunk_size,
         drain_contiguous_download_chunks, emit_pipeline_progress, queue_download_read_chunk,
+        upload_chunk_size,
     };
     use crate::types::{EngineEvent, SftpProgressOp, SftpTransferKind, SftpTransferStatus};
     use std::collections::BTreeMap;
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
+    use uuid::Uuid;
+    #[cfg(feature = "performance-telemetry")]
+    use {
+        super::SftpPerformanceStream,
+        fluxterm_performance_telemetry::{
+            HistogramAccumulator, StreamCorrelation, StreamKind, StreamTarget,
+            create_stream_descriptor, definition as metric_definition,
+        },
+        std::collections::BTreeMap as TelemetryParameters,
+        std::time::{Duration, Instant},
+    };
+
+    fn temporary_test_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("fluxterm-sftp-{name}-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn classifies_upload_roots_by_business_shape() {
+        let root = temporary_test_path("classify");
+        let directory = root.join("directory");
+        let file = root.join("file.txt");
+        std::fs::create_dir_all(&directory).expect("create test directory");
+        std::fs::write(&file, b"fixture").expect("create test file");
+
+        assert_eq!(
+            classify_upload_roots(std::slice::from_ref(&file)).expect("classify file"),
+            UploadJobKind::File
+        );
+        assert_eq!(
+            classify_upload_roots(std::slice::from_ref(&directory)).expect("classify directory"),
+            UploadJobKind::Directory
+        );
+        assert_eq!(
+            classify_upload_roots(&[file.clone(), directory.clone()]).expect("classify batch"),
+            UploadJobKind::Batch
+        );
+        assert!(classify_upload_roots(&[root.join("missing")]).is_err());
+
+        std::fs::remove_dir_all(&root).expect("remove test directory");
+    }
+
+    #[test]
+    fn download_chunk_size_respects_server_limit_and_zero_fallback() {
+        assert_eq!(download_chunk_size(None), 256 * 1024);
+        assert_eq!(download_chunk_size(Some(64 * 1024)), 64 * 1024);
+        assert_eq!(download_chunk_size(Some(0)), 64 * 1024);
+    }
+
+    #[test]
+    fn upload_chunk_size_uses_256_kib_and_respects_server_limit() {
+        assert_eq!(upload_chunk_size(None), 256 * 1024);
+        assert_eq!(upload_chunk_size(Some(128 * 1024)), 128 * 1024);
+        assert_eq!(upload_chunk_size(Some(0)), 256 * 1024);
+    }
+
+    #[cfg(feature = "performance-telemetry")]
+    #[test]
+    fn telemetry_tracks_real_request_and_pending_lifecycle() {
+        let now = Instant::now();
+        let mut telemetry = SftpPerformanceStream {
+            descriptor: create_stream_descriptor(
+                StreamKind::SftpDownloadFile,
+                1,
+                TelemetryParameters::new(),
+                StreamTarget {
+                    host: "server.internal".into(),
+                    port: 22,
+                },
+                StreamCorrelation {
+                    session_id: Uuid::new_v4().to_string(),
+                    transfer_id: Some("transfer-1".into()),
+                },
+            ),
+            interval: Duration::from_secs(3600),
+            started_at: now,
+            window_started_at: now,
+            window_started_unix_ms: 1,
+            window_bytes: 0,
+            window_requests: 0,
+            current_in_flight: 0,
+            current_pending_chunks: 0,
+            max_in_flight: 0,
+            max_pending_chunks: 0,
+            request_durations: HistogramAccumulator::new(
+                metric_definition("fluxterm.sftp.request.duration")
+                    .expect("request duration metric")
+                    .histogram_bounds,
+            ),
+            scan_duration_ms: None,
+            closed: true,
+        };
+
+        telemetry.request_started();
+        telemetry.request_started();
+        telemetry.pending_chunks_added(2);
+        telemetry.request_finished(4.0);
+        telemetry.observe_bytes(128);
+        telemetry.requests_discarded(1);
+        telemetry.pending_chunks_removed(2);
+
+        assert_eq!(telemetry.window_bytes, 128);
+        assert_eq!(telemetry.window_requests, 1);
+        assert_eq!(telemetry.current_in_flight, 0);
+        assert_eq!(telemetry.current_pending_chunks, 0);
+        assert_eq!(telemetry.max_in_flight, 2);
+        assert_eq!(telemetry.max_pending_chunks, 2);
+    }
 
     #[test]
     fn queue_download_read_chunk_accepts_full_chunk() {
@@ -2932,6 +3802,8 @@ mod tests {
             total_items: 0,
             failed_items: 0,
             status: SftpTransferStatus::Running,
+            #[cfg(feature = "performance-telemetry")]
+            telemetry: None,
         };
 
         emit_pipeline_progress(&context, &state, None);

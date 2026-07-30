@@ -4,7 +4,14 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
+[features]
+default = []
+performance-telemetry = ["dep:fluxterm-performance-telemetry"]
+
 [dependencies]
+fluxterm-logging = { workspace = true }
+fluxterm-performance-telemetry = { workspace = true, optional = true }
+
 anyhow = { version = "1.0.102" }
 serde = { workspace = true, features = ["derive"] }
 russh = { workspace = true }
@@ -16,6 +23,5 @@ regex = { version = "1.12.3" }
 futures-util = { version = "0.3.32" }
 base64 = { version = "0.22.1" }
 serde_json = { workspace = true }
-fluxterm-logging = { workspace = true }
 tokio-serial = "5.4.5"
 encoding_rs = "0.8.35"

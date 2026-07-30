@@ -314,8 +314,8 @@ impl Engine {
         self.await_response(resp_rx, "Failed to receive SFTP upload response")
     }
 
-    /// 批量上传本地文件或目录到远端目录。
-    pub fn sftp_upload_batch(
+    /// 上传一组本地文件或目录到远端目录。
+    pub fn sftp_upload_paths(
         &self,
         session_id: &str,
         local_paths: &[String],
@@ -331,7 +331,7 @@ impl Engine {
             .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
         handle
             .tx
-            .send(SessionCommand::SftpUploadBatch {
+            .send(SessionCommand::SftpUploadPaths {
                 local_paths: local_paths.to_vec(),
                 remote_dir: remote_dir.to_string(),
                 respond_to: resp_tx,
@@ -339,10 +339,10 @@ impl Engine {
             .map_err(|_| {
                 EngineError::new(
                     "session_command_failed",
-                    "Failed to send SFTP batch upload command",
+                    "Failed to send SFTP paths upload command",
                 )
             })?;
-        self.await_response(resp_rx, "Failed to receive SFTP batch upload response")
+        self.await_response(resp_rx, "Failed to receive SFTP paths upload response")
     }
 
     /// 下载远端文件到本地。

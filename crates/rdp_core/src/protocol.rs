@@ -62,6 +62,10 @@ pub struct RuntimeConnectRequest {
     pub height: u32,
     /// 远端体验标志。
     pub performance_flags: RuntimePerformanceFlags,
+    /// 匿名性能数据流 ID；未启用遥测时为空。
+    #[cfg(feature = "performance-telemetry")]
+    #[serde(default)]
+    pub performance_stream_id: Option<String>,
 }
 
 /// 运行时 RDP 会话的快照信息。

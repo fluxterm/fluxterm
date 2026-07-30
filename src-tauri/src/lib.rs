@@ -6,6 +6,8 @@ pub mod config_paths;
 pub mod events;
 pub mod local_fs;
 pub mod local_shell;
+#[cfg(feature = "performance-telemetry")]
+pub mod performance_telemetry;
 pub mod profile_secrets;
 pub mod rdp;
 pub mod rdp_profile_store;
@@ -25,6 +27,8 @@ use std::sync::Arc;
 
 use engine::Engine;
 use fluxterm_logging::{LogLevel, log_event};
+#[cfg(feature = "performance-telemetry")]
+use fluxterm_performance_telemetry::install_global_sink;
 use log::LevelFilter;
 use rustls::crypto::aws_lc_rs;
 use serde_json::json;
@@ -69,7 +73,7 @@ use crate::commands::serial::{
 };
 use crate::commands::sftp::{
     sftp_cancel_transfer, sftp_download, sftp_download_dir, sftp_home, sftp_list, sftp_mkdir,
-    sftp_remove, sftp_rename, sftp_resolve_path, sftp_upload, sftp_upload_batch,
+    sftp_remove, sftp_rename, sftp_resolve_path, sftp_upload, sftp_upload_paths,
 };
 use crate::commands::ssh::{
     ssh_connect, ssh_disconnect, ssh_host_key_confirm, ssh_resize, ssh_write, ssh_write_binary,
@@ -79,6 +83,11 @@ use crate::commands::tunnel::{
     ssh_tunnel_close, ssh_tunnel_close_all, ssh_tunnel_list, ssh_tunnel_open,
 };
 use crate::local_shell::LocalShellState;
+#[cfg(feature = "performance-telemetry")]
+use crate::performance_telemetry::{
+    ConfigLoadResult, PerformanceTelemetryService, load_config,
+    performance_telemetry_record_rdp_batch, performance_telemetry_status_get,
+};
 use crate::rdp::RdpState;
 use crate::remote_edit::RemoteEditState;
 use crate::resource_monitor::ResourceMonitorState;
@@ -125,7 +134,38 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::new().build());
+    #[cfg(feature = "performance-telemetry")]
+    let builder = builder.setup(|app| {
+        let service = match load_config(app.handle()) {
+            ConfigLoadResult::Disabled => PerformanceTelemetryService::disabled(),
+            ConfigLoadResult::Invalid(error) => {
+                error.log();
+                PerformanceTelemetryService::disabled()
+            }
+            ConfigLoadResult::Enabled(config) => {
+                match performance_telemetry::load_device_identity(app.handle()) {
+                    Ok(device) => match PerformanceTelemetryService::start(config, device) {
+                        Ok(service) => service,
+                        Err(error) => {
+                            error.log();
+                            PerformanceTelemetryService::disabled()
+                        }
+                    },
+                    Err(error) => {
+                        error.log();
+                        PerformanceTelemetryService::disabled()
+                    }
+                }
+            }
+        };
+        if let Some(sink) = service.sink() {
+            let _ = install_global_sink(sink);
+        }
+        app.manage(service);
+        Ok(())
+    });
+    let builder = builder
         .manage(EngineState {
             engine: Arc::new(Engine::new()),
         })
@@ -196,7 +236,7 @@ pub fn run() {
             sftp_home,
             sftp_resolve_path,
             sftp_upload,
-            sftp_upload_batch,
+            sftp_upload_paths,
             sftp_download,
             sftp_download_dir,
             sftp_cancel_transfer,
@@ -241,6 +281,10 @@ pub fn run() {
             remote_edit_list,
             remote_edit_confirm_upload,
             remote_edit_dismiss_pending,
+            #[cfg(feature = "performance-telemetry")]
+            performance_telemetry_status_get,
+            #[cfg(feature = "performance-telemetry")]
+            performance_telemetry_record_rdp_batch,
         ]);
 
     let app = builder
@@ -263,6 +307,10 @@ pub fn run() {
         if matches!(event, tauri::RunEvent::Exit) {
             let rdp = app.state::<RdpState>();
             let _ = rdp.shutdown_runtime();
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(service) = app.try_state::<Arc<PerformanceTelemetryService>>() {
+                service.shutdown();
+            }
         }
     });
 }

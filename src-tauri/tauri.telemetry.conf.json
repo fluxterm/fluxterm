@@ -1,0 +1,8 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "cc.vust.fluxterm",
+  "build": {
+    "beforeDevCommand": "pnpm web:dev:telemetry",
+    "beforeBuildCommand": "pnpm web:build:telemetry"
+  }
+}

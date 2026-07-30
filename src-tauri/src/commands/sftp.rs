@@ -99,8 +99,8 @@ pub async fn sftp_upload(
 }
 
 #[tauri::command]
-/// 批量上传本地文件或目录到远端目录。
-pub async fn sftp_upload_batch(
+/// 上传一组本地文件或目录到远端目录。
+pub async fn sftp_upload_paths(
     state: State<'_, EngineState>,
     session_id: String,
     local_paths: Vec<String>,
@@ -111,7 +111,7 @@ pub async fn sftp_upload_batch(
         let session_id = session_id.clone();
         let local_paths = local_paths.clone();
         let remote_dir = remote_dir.clone();
-        move || engine.sftp_upload_batch(&session_id, &local_paths, &remote_dir)
+        move || engine.sftp_upload_paths(&session_id, &local_paths, &remote_dir)
     })
     .await
     .map_err(|err| {

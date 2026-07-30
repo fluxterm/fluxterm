@@ -56,6 +56,11 @@ use crate::session_manager::{
     RuntimeCommand, build_rgba_frame_batch_message, build_rgba_frame_message, json_message,
 };
 use fluxterm_logging::{LogLevel, log_event};
+#[cfg(feature = "performance-telemetry")]
+use fluxterm_performance_telemetry::{
+    MetricBatch, MetricPoint, MetricUnit, MetricWindow, PerformanceDomain, collection_interval_ms,
+    counter_metric, gauge_metric, record_batch as record_performance_batch, unix_time_ms,
+};
 
 const FRAGMENT_COLLAPSE_RECT_THRESHOLD: usize = 4;
 const FRAGMENT_COLLAPSE_MAX_OVERDRAW_NUMERATOR: u64 = 2;
@@ -80,8 +85,41 @@ const GRACEFUL_DISCONNECT_TIMEOUT_MS: u64 = 4_000;
 #[derive(Debug, Clone)]
 struct FramePerfWindow {
     started_at: StdInstant,
+    #[cfg(feature = "performance-telemetry")]
+    started_at_unix_ms: u64,
+    interval_ms: u64,
+    #[cfg(feature = "performance-telemetry")]
+    stream_id: Option<String>,
     cycles: u32,
     raw_rects: u32,
+    #[cfg(feature = "performance-telemetry")]
+    merged_rects: u32,
+    #[cfg(feature = "performance-telemetry")]
+    received_bytes: u64,
+    #[cfg(feature = "performance-telemetry")]
+    encoded_bytes: u64,
+    #[cfg(feature = "performance-telemetry")]
+    sent_pixels: u64,
+    #[cfg(feature = "performance-telemetry")]
+    messages: u64,
+    #[cfg(feature = "performance-telemetry")]
+    resize_requests: u64,
+    #[cfg(feature = "performance-telemetry")]
+    timeout_flushes: u64,
+    #[cfg(feature = "performance-telemetry")]
+    max_pending_rects: u64,
+    #[cfg(feature = "performance-telemetry")]
+    max_flush_interval_ms: u64,
+    #[cfg(feature = "performance-telemetry")]
+    decode_cpu_us: u64,
+    #[cfg(feature = "performance-telemetry")]
+    copy_cpu_us: u64,
+    #[cfg(feature = "performance-telemetry")]
+    encode_cpu_us: u64,
+    #[cfg(feature = "performance-telemetry")]
+    bridge_send_cpu_us: u64,
+    #[cfg(feature = "performance-telemetry")]
+    flush_on_drop: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -112,15 +150,94 @@ impl Default for FramePerfWindow {
     fn default() -> Self {
         Self {
             started_at: StdInstant::now(),
+            #[cfg(feature = "performance-telemetry")]
+            started_at_unix_ms: unix_time_ms(),
+            interval_ms: 1000,
+            #[cfg(feature = "performance-telemetry")]
+            stream_id: None,
             cycles: 0,
             raw_rects: 0,
+            #[cfg(feature = "performance-telemetry")]
+            merged_rects: 0,
+            #[cfg(feature = "performance-telemetry")]
+            received_bytes: 0,
+            #[cfg(feature = "performance-telemetry")]
+            encoded_bytes: 0,
+            #[cfg(feature = "performance-telemetry")]
+            sent_pixels: 0,
+            #[cfg(feature = "performance-telemetry")]
+            messages: 0,
+            #[cfg(feature = "performance-telemetry")]
+            resize_requests: 0,
+            #[cfg(feature = "performance-telemetry")]
+            timeout_flushes: 0,
+            #[cfg(feature = "performance-telemetry")]
+            max_pending_rects: 0,
+            #[cfg(feature = "performance-telemetry")]
+            max_flush_interval_ms: 0,
+            #[cfg(feature = "performance-telemetry")]
+            decode_cpu_us: 0,
+            #[cfg(feature = "performance-telemetry")]
+            copy_cpu_us: 0,
+            #[cfg(feature = "performance-telemetry")]
+            encode_cpu_us: 0,
+            #[cfg(feature = "performance-telemetry")]
+            bridge_send_cpu_us: 0,
+            #[cfg(feature = "performance-telemetry")]
+            flush_on_drop: true,
         }
     }
 }
 
 impl FramePerfWindow {
+    #[allow(clippy::field_reassign_with_default)]
+    fn with_load(raw_rects: u32, cycles: u32) -> Self {
+        let mut window = Self::default();
+        window.raw_rects = raw_rects;
+        window.cycles = cycles;
+        window
+    }
+
+    #[cfg(feature = "performance-telemetry")]
+    fn for_stream(stream_id: Option<&str>) -> Self {
+        let mut window = Self::default();
+        if let Some(stream_id) = stream_id
+            && let Some(interval_ms) = collection_interval_ms(PerformanceDomain::Rdp)
+        {
+            window.stream_id = Some(stream_id.to_string());
+            window.interval_ms = interval_ms;
+        }
+        window
+    }
+
+    #[cfg(feature = "performance-telemetry")]
+    fn metrics_enabled(&self) -> bool {
+        self.stream_id.is_some()
+    }
+
     fn reset(&mut self) {
-        *self = Self::default();
+        #[cfg(feature = "performance-telemetry")]
+        let stream_id = self.stream_id.take();
+        let interval_ms = self.interval_ms;
+        #[cfg(feature = "performance-telemetry")]
+        {
+            self.flush_on_drop = false;
+        }
+        *self = Self {
+            #[cfg(feature = "performance-telemetry")]
+            stream_id,
+            interval_ms,
+            ..Self::default()
+        };
+    }
+}
+
+#[cfg(feature = "performance-telemetry")]
+impl Drop for FramePerfWindow {
+    fn drop(&mut self) {
+        if self.flush_on_drop {
+            emit_frame_window(self);
+        }
     }
 }
 
@@ -135,6 +252,8 @@ struct ActiveStageContext<'a> {
     sender: &'a broadcast::Sender<Message>,
     session_id: &'a str,
     operation_id: &'a str,
+    #[cfg(feature = "performance-telemetry")]
+    performance_stream_id: Option<&'a str>,
     cliprdr_tx: mpsc::UnboundedSender<CliprdrProxyEvent>,
 }
 
@@ -418,6 +537,8 @@ async fn connect_and_run(
         sender,
         session_id,
         operation_id,
+        #[cfg(feature = "performance-telemetry")]
+        performance_stream_id: profile.performance_stream_id.as_deref(),
         cliprdr_tx,
     };
 
@@ -464,6 +585,9 @@ where
     let mut active_stage = ActiveStage::new(connection_result);
     let mut input_db = InputDatabase::new();
     let mut logged_first_frame = false;
+    #[cfg(feature = "performance-telemetry")]
+    let mut perf_window = FramePerfWindow::for_stream(ctx.performance_stream_id);
+    #[cfg(not(feature = "performance-telemetry"))]
     let mut perf_window = FramePerfWindow::default();
     let mut pending_graphics_rects = Vec::new();
     let mut pending_flush_deadline: Option<TokioInstant> = None;
@@ -514,6 +638,13 @@ where
                 rotate_frame_window(&mut perf_window);
                 continue;
             }
+            _ = tokio::time::sleep(
+                std::time::Duration::from_millis(perf_window.interval_ms)
+                    .saturating_sub(perf_window.started_at.elapsed())
+            ) => {
+                rotate_frame_window(&mut perf_window);
+                continue;
+            }
             frame = reader.read_pdu() => {
                 let (action, payload) = match frame {
                     Ok(frame) => frame,
@@ -531,9 +662,25 @@ where
                     }
                     Err(error) => return Err(format!("read_pdu failed: {error}")),
                 };
-                active_stage
+                #[cfg(feature = "performance-telemetry")]
+                {
+                    perf_window.received_bytes = perf_window
+                        .received_bytes
+                        .saturating_add(payload.len() as u64);
+                }
+                #[cfg(feature = "performance-telemetry")]
+                let decode_started_at =
+                    perf_window.metrics_enabled().then(StdInstant::now);
+                let outputs = active_stage
                     .process(&mut image, action, &payload)
-                    .map_err(|error| format!("active stage process failed: {error}"))?
+                    .map_err(|error| format!("active stage process failed: {error}"))?;
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(started_at) = decode_started_at {
+                    perf_window.decode_cpu_us = perf_window
+                        .decode_cpu_us
+                        .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+                }
+                outputs
             }
             proxy_event = cliprdr_rx.recv() => {
                 let proxy_event = match proxy_event {
@@ -812,6 +959,11 @@ where
                         }
                     }
                     RuntimeCommand::Resize { width, height } => {
+                        #[cfg(feature = "performance-telemetry")]
+                        {
+                            perf_window.resize_requests =
+                                perf_window.resize_requests.saturating_add(1);
+                        }
                         let (width, height) = MonitorLayoutEntry::adjust_display_size(width.max(320), height.max(200));
                         log_event!(
             LogLevel::Debug,
@@ -1102,6 +1254,14 @@ where
             pending_graphics_rects.append(&mut graphics_rects);
             let flush_interval_ms =
                 select_adaptive_flush_interval_ms(&perf_window, pending_graphics_rects.len());
+            #[cfg(feature = "performance-telemetry")]
+            {
+                perf_window.max_pending_rects = perf_window
+                    .max_pending_rects
+                    .max(pending_graphics_rects.len() as u64);
+                perf_window.max_flush_interval_ms =
+                    perf_window.max_flush_interval_ms.max(flush_interval_ms);
+            }
             schedule_graphics_flush(
                 &mut pending_flush_deadline,
                 &mut pending_flush_started_at,
@@ -1282,10 +1442,7 @@ pub fn benchmark_evaluate_overdraw_policy(
             .collect(),
     );
     if high_pressure {
-        let perf_window = FramePerfWindow {
-            raw_rects: HIGH_PRESSURE_COLLAPSE_RAW_RECTS,
-            ..FramePerfWindow::default()
-        };
+        let perf_window = FramePerfWindow::with_load(HIGH_PRESSURE_COLLAPSE_RAW_RECTS, 0);
         merged = maybe_collapse_flush_rects(merged, &perf_window);
     }
 
@@ -1432,15 +1589,34 @@ fn flush_pending_graphics(
     if pending_graphics_rects.is_empty() {
         return;
     }
+    #[cfg(feature = "performance-telemetry")]
+    {
+        perf_window.timeout_flushes = perf_window.timeout_flushes.saturating_add(1);
+    }
 
     // 第一步：执行空间邻近合并（32px 阈值），将离散的小条带合并为较大的块。
     let spatial_merged = merge_update_rects(std::mem::take(pending_graphics_rects));
 
     // 第二步：在高压场景下进一步执行面积收敛，尝试将所有矩形强行塌陷为单块外接矩形。
     let merged_rects = maybe_collapse_flush_rects(spatial_merged, perf_window);
+    #[cfg(feature = "performance-telemetry")]
+    {
+        perf_window.merged_rects = perf_window
+            .merged_rects
+            .saturating_add(u32::try_from(merged_rects.len()).unwrap_or(u32::MAX));
+        perf_window.sent_pixels = perf_window
+            .sent_pixels
+            .saturating_add(merged_rects.iter().map(rect_area).sum::<u64>());
+    }
+    #[cfg(feature = "performance-telemetry")]
+    let measure = perf_window.metrics_enabled();
 
     if merged_rects.len() == 1 {
         let rect = &merged_rects[0];
+        #[cfg(feature = "performance-telemetry")]
+        let encode_started_at = measure.then(StdInstant::now);
+        #[cfg(feature = "performance-telemetry")]
+        let mut copy_cpu_us = 0_u64;
         let message = build_rgba_frame_message(
             u32::from(rect.left),
             u32::from(rect.top),
@@ -1449,10 +1625,38 @@ fn flush_pending_graphics(
             u32::from(image.width()),
             u32::from(image.height()),
             |dest| {
+                #[cfg(feature = "performance-telemetry")]
+                let copy_started_at = measure.then(StdInstant::now);
                 copy_rect_to_slice(image, rect, dest);
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(started_at) = copy_started_at {
+                    copy_cpu_us =
+                        copy_cpu_us.saturating_add(elapsed_micros_u64(started_at.elapsed()));
+                }
             },
         );
+        #[cfg(feature = "performance-telemetry")]
+        {
+            perf_window.copy_cpu_us = perf_window.copy_cpu_us.saturating_add(copy_cpu_us);
+            if let Some(started_at) = encode_started_at {
+                perf_window.encode_cpu_us = perf_window
+                    .encode_cpu_us
+                    .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+            }
+            perf_window.encoded_bytes = perf_window
+                .encoded_bytes
+                .saturating_add(message_payload_len(&message) as u64);
+            perf_window.messages = perf_window.messages.saturating_add(1);
+        }
+        #[cfg(feature = "performance-telemetry")]
+        let send_started_at = measure.then(StdInstant::now);
         let _ = sender.send(message);
+        #[cfg(feature = "performance-telemetry")]
+        if let Some(started_at) = send_started_at {
+            perf_window.bridge_send_cpu_us = perf_window
+                .bridge_send_cpu_us
+                .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+        }
     } else {
         let rects_info = merged_rects
             .iter()
@@ -1466,15 +1670,56 @@ fn flush_pending_graphics(
             })
             .collect::<Vec<_>>();
 
+        #[cfg(feature = "performance-telemetry")]
+        let encode_started_at = measure.then(StdInstant::now);
+        #[cfg(feature = "performance-telemetry")]
+        let mut copy_cpu_us = 0_u64;
         let message = build_rgba_frame_batch_message(
             u32::from(image.width()),
             u32::from(image.height()),
             &rects_info,
             |i, dest| {
+                #[cfg(feature = "performance-telemetry")]
+                let copy_started_at = measure.then(StdInstant::now);
                 copy_rect_to_slice(image, &merged_rects[i], dest);
+                #[cfg(feature = "performance-telemetry")]
+                if let Some(started_at) = copy_started_at {
+                    copy_cpu_us =
+                        copy_cpu_us.saturating_add(elapsed_micros_u64(started_at.elapsed()));
+                }
             },
         );
+        #[cfg(feature = "performance-telemetry")]
+        {
+            perf_window.copy_cpu_us = perf_window.copy_cpu_us.saturating_add(copy_cpu_us);
+            if let Some(started_at) = encode_started_at {
+                perf_window.encode_cpu_us = perf_window
+                    .encode_cpu_us
+                    .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+            }
+            perf_window.encoded_bytes = perf_window
+                .encoded_bytes
+                .saturating_add(message_payload_len(&message) as u64);
+            perf_window.messages = perf_window.messages.saturating_add(1);
+        }
+        #[cfg(feature = "performance-telemetry")]
+        let send_started_at = measure.then(StdInstant::now);
         let _ = sender.send(message);
+        #[cfg(feature = "performance-telemetry")]
+        if let Some(started_at) = send_started_at {
+            perf_window.bridge_send_cpu_us = perf_window
+                .bridge_send_cpu_us
+                .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+        }
+    }
+}
+
+#[cfg(feature = "performance-telemetry")]
+fn message_payload_len(message: &Message) -> usize {
+    match message {
+        Message::Text(value) => value.len(),
+        Message::Binary(value) | Message::Ping(value) | Message::Pong(value) => value.len(),
+        Message::Close(_) => 0,
     }
 }
 
@@ -1512,11 +1757,122 @@ fn send_cursor_if_changed(
 /// 每秒轮换一次渲染调度窗口，使自适应算法只参考近期负载。
 fn rotate_frame_window(perf_window: &mut FramePerfWindow) {
     let elapsed = perf_window.started_at.elapsed();
-    if elapsed.as_millis() < 1_000 {
+    if elapsed.as_millis() < u128::from(perf_window.interval_ms) {
         return;
     }
 
+    #[cfg(feature = "performance-telemetry")]
+    emit_frame_window(perf_window);
     perf_window.reset();
+}
+
+#[cfg(feature = "performance-telemetry")]
+fn emit_frame_window(perf_window: &FramePerfWindow) {
+    if let Some(stream_id) = perf_window.stream_id.as_deref() {
+        let duration_ms = u64::try_from(perf_window.started_at.elapsed().as_millis())
+            .unwrap_or(u64::MAX)
+            .max(1);
+        let metrics = vec![
+            rdp_counter(
+                "fluxterm.rdp.runtime.update_cycles",
+                perf_window.cycles.into(),
+                MetricUnit::Count,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.raw_rects",
+                perf_window.raw_rects.into(),
+                MetricUnit::Count,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.merged_rects",
+                perf_window.merged_rects.into(),
+                MetricUnit::Count,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.received_bytes",
+                perf_window.received_bytes,
+                MetricUnit::Byte,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.encoded_bytes",
+                perf_window.encoded_bytes,
+                MetricUnit::Byte,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.sent_pixels",
+                perf_window.sent_pixels,
+                MetricUnit::Pixel,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.messages",
+                perf_window.messages,
+                MetricUnit::Count,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.resize_requests",
+                perf_window.resize_requests,
+                MetricUnit::Count,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.timeout_flushes",
+                perf_window.timeout_flushes,
+                MetricUnit::Count,
+            ),
+            rdp_gauge(
+                "fluxterm.rdp.runtime.pending_rects.max",
+                perf_window.max_pending_rects,
+                MetricUnit::Count,
+            ),
+            rdp_gauge(
+                "fluxterm.rdp.runtime.flush_interval.max",
+                perf_window.max_flush_interval_ms,
+                MetricUnit::Millisecond,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.decode_cpu",
+                perf_window.decode_cpu_us,
+                MetricUnit::Microsecond,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.copy_cpu",
+                perf_window.copy_cpu_us,
+                MetricUnit::Microsecond,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.encode_cpu",
+                perf_window.encode_cpu_us,
+                MetricUnit::Microsecond,
+            ),
+            rdp_counter(
+                "fluxterm.rdp.runtime.bridge_send_cpu",
+                perf_window.bridge_send_cpu_us,
+                MetricUnit::Microsecond,
+            ),
+        ];
+        let _ = record_performance_batch(MetricBatch {
+            stream_id: stream_id.to_string(),
+            window: MetricWindow {
+                started_at_unix_ms: perf_window.started_at_unix_ms,
+                duration_ms,
+            },
+            metrics,
+        });
+    }
+}
+
+#[cfg(feature = "performance-telemetry")]
+fn rdp_counter(name: &str, value: u64, unit: MetricUnit) -> MetricPoint {
+    counter_metric(name, unit, value as f64)
+}
+
+#[cfg(feature = "performance-telemetry")]
+fn rdp_gauge(name: &str, value: u64, unit: MetricUnit) -> MetricPoint {
+    gauge_metric(name, unit, value as f64)
+}
+
+#[cfg(feature = "performance-telemetry")]
+fn elapsed_micros_u64(duration: std::time::Duration) -> u64 {
+    u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
 
 /// 计算矩形覆盖的像素面积。
@@ -2097,19 +2453,13 @@ mod tests {
             GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_BASE_MS
         );
 
-        let medium_window = FramePerfWindow {
-            raw_rects: 120,
-            ..FramePerfWindow::default()
-        };
+        let medium_window = FramePerfWindow::with_load(120, 0);
         assert_eq!(
             select_adaptive_flush_interval_ms(&medium_window, 2),
             GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_MEDIUM_MS
         );
 
-        let high_window = FramePerfWindow {
-            cycles: 300,
-            ..FramePerfWindow::default()
-        };
+        let high_window = FramePerfWindow::with_load(0, 300);
         assert_eq!(
             select_adaptive_flush_interval_ms(&high_window, 2),
             GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_HIGH_MS
@@ -2147,10 +2497,7 @@ mod tests {
 
     #[test]
     fn collapses_flush_rects_more_aggressively_under_high_pressure() {
-        let high_window = FramePerfWindow {
-            raw_rects: 240,
-            ..FramePerfWindow::default()
-        };
+        let high_window = FramePerfWindow::with_load(240, 0);
 
         let collapsed = maybe_collapse_flush_rects(
             vec![

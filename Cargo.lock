@@ -2053,6 +2053,7 @@ dependencies = [
  "base64 0.22.1",
  "encoding_rs",
  "fluxterm-logging",
+ "fluxterm-performance-telemetry",
  "futures-util",
  "log",
  "regex",
@@ -2305,6 +2306,7 @@ dependencies = [
  "dotenvy",
  "engine",
  "fluxterm-logging",
+ "fluxterm-performance-telemetry",
  "futures-util",
  "log",
  "openai",
@@ -2341,6 +2343,26 @@ version = "0.8.0"
 dependencies = [
  "log",
  "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "fluxterm-performance-telemetry"
+version = "0.8.0"
+dependencies = [
+ "fluxterm-pulse-protocol",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "fluxterm-pulse-protocol"
+version = "0.1.0"
+source = "git+https://github.com/fluxterm/fluxterm-pulse-protocol.git?tag=0.1.0#24ccf3ba8249b44d849be9edc38e3667f4bf0a79"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "uuid",
 ]
 
@@ -5956,6 +5978,7 @@ dependencies = [
  "cpal",
  "criterion",
  "fluxterm-logging",
+ "fluxterm-performance-telemetry",
  "hostname",
  "ironrdp",
  "ironrdp-cliprdr",
@@ -8010,7 +8033,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

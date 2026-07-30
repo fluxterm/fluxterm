@@ -1,0 +1,13 @@
+[package]
+name = "fluxterm-performance-telemetry"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+publish = false
+description = "FluxTerm performance telemetry data model and sender protocol"
+
+[dependencies]
+fluxterm-pulse-protocol = { workspace = true }
+
+serde_json = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }

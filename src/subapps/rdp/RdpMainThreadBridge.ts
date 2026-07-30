@@ -39,7 +39,19 @@ export type RdpMainThreadBridgeState = {
 export type RdpMainThreadBridgeCallbacks = {
   onBridgeState: (event: RdpMainThreadBridgeState) => void;
   onWireEvent: (sessionId: string, payload: RdpWireEvent) => void;
-  onFramePresented: (sessionId: string, frameVersion: number) => void;
+  onFramePresented: (
+    sessionId: string,
+    frameVersion: number,
+    performance: {
+      presentedFrames: number;
+      receivedFrames: number;
+      droppedFrames: number;
+      queueDepthMax: number;
+      renderDurationMs: number;
+      surfaceWidth: number;
+      surfaceHeight: number;
+    },
+  ) => void;
   onDiagnostic: (
     level: "debug" | "info" | "warn" | "error",
     event: string,
@@ -109,7 +121,13 @@ export class RdpMainThreadBridge {
         session.textureSize.width,
         session.textureSize.height,
       );
-      this.notifyFramePresented(session);
+      this.notifyFramePresented(session, {
+        presentedFrames: 1,
+        receivedFrames: 0,
+        droppedFrames: 0,
+        queueDepthMax: 0,
+        renderDurationMs: 0,
+      });
     } else {
       this.renderer.clear();
     }
@@ -278,6 +296,7 @@ export class RdpMainThreadBridge {
 
     session.frameRequest = window.requestAnimationFrame(() => {
       session.frameRequest = null;
+      const renderStartedAt = performance.now();
       const queue = session.pendingFrames.splice(0);
       for (const buffer of queue) {
         this.drawFrame(session, buffer);
@@ -294,15 +313,34 @@ export class RdpMainThreadBridge {
           session.textureSize.height,
         );
         session.needsPresent = false;
-        this.notifyFramePresented(session);
+        this.notifyFramePresented(session, {
+          presentedFrames: 1,
+          receivedFrames: queue.length,
+          droppedFrames: Math.max(0, queue.length - 1),
+          queueDepthMax: queue.length,
+          renderDurationMs: performance.now() - renderStartedAt,
+        });
       }
     });
   }
 
   /** 通知主组件当前会话已经提交了新的画面版本。 */
-  private notifyFramePresented(session: MainThreadSessionRuntime) {
+  private notifyFramePresented(
+    session: MainThreadSessionRuntime,
+    performance: {
+      presentedFrames: number;
+      receivedFrames: number;
+      droppedFrames: number;
+      queueDepthMax: number;
+      renderDurationMs: number;
+    },
+  ) {
     session.frameVersion += 1;
-    this.callbacks.onFramePresented(session.sessionId, session.frameVersion);
+    this.callbacks.onFramePresented(session.sessionId, session.frameVersion, {
+      ...performance,
+      surfaceWidth: session.textureSize.width,
+      surfaceHeight: session.textureSize.height,
+    });
   }
 
   /** 解析 RDP bridge 二进制帧并上传到 WebGL 纹理。 */

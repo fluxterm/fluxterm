@@ -31,8 +31,9 @@ use uuid::Uuid;
 use crate::auth::{AuthPurpose, authenticate};
 use crate::error::EngineError;
 use crate::sftp::{
-    next_transfer_id, sftp_download, sftp_download_dir, sftp_home, sftp_list, sftp_mkdir,
-    sftp_remove, sftp_rename, sftp_resolve_path, sftp_stat, sftp_upload, sftp_upload_batch,
+    SftpConnectionIdentity, next_transfer_id, sftp_download, sftp_download_dir, sftp_home,
+    sftp_list, sftp_mkdir, sftp_remove, sftp_rename, sftp_resolve_path, sftp_stat, sftp_upload,
+    sftp_upload_paths,
 };
 use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
 use crate::types::{
@@ -101,7 +102,7 @@ pub enum SessionCommand {
         remote_path: String,
         respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
     },
-    SftpUploadBatch {
+    SftpUploadPaths {
         local_paths: Vec<String>,
         remote_dir: String,
         respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
@@ -909,16 +910,22 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         transfer_cancellations.lock().await.insert(transfer_id.clone(), Arc::clone(&cancel_flag));
                         let session_handle = Arc::clone(&session);
                         let session_id = session_id.clone();
+                        let target_host = profile.host.clone();
+                        let target_port = profile.port;
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
                             let guard = session_handle.lock().await;
                             let result = sftp_upload(
                                 &guard,
-                                &session_id,
+                                SftpConnectionIdentity {
+                                    session_id: &session_id,
+                                    target_host: &target_host,
+                                    target_port,
+                                    transfer_id: &transfer_id,
+                                },
                                 &local_path,
                                 &remote_path,
-                                &transfer_id,
                                 &cancel_flag,
                                 &on_event,
                             )
@@ -927,22 +934,28 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                             let _ = respond_to.send(result);
                         });
                     }
-                    SessionCommand::SftpUploadBatch { local_paths, remote_dir, respond_to } => {
+                    SessionCommand::SftpUploadPaths { local_paths, remote_dir, respond_to } => {
                         let transfer_id = next_transfer_id();
                         let cancel_flag = Arc::new(AtomicBool::new(false));
                         transfer_cancellations.lock().await.insert(transfer_id.clone(), Arc::clone(&cancel_flag));
                         let session_handle = Arc::clone(&session);
                         let session_id = session_id.clone();
+                        let target_host = profile.host.clone();
+                        let target_port = profile.port;
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
                             let guard = session_handle.lock().await;
-                            let result = sftp_upload_batch(
+                            let result = sftp_upload_paths(
                                 &guard,
-                                &session_id,
+                                SftpConnectionIdentity {
+                                    session_id: &session_id,
+                                    target_host: &target_host,
+                                    target_port,
+                                    transfer_id: &transfer_id,
+                                },
                                 &local_paths,
                                 &remote_dir,
-                                &transfer_id,
                                 &cancel_flag,
                                 &on_event,
                             )
@@ -957,16 +970,22 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         transfer_cancellations.lock().await.insert(transfer_id.clone(), Arc::clone(&cancel_flag));
                         let session_handle = Arc::clone(&session);
                         let session_id = session_id.clone();
+                        let target_host = profile.host.clone();
+                        let target_port = profile.port;
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
                             let guard = session_handle.lock().await;
                             let result = sftp_download(
                                 &guard,
-                                &session_id,
+                                SftpConnectionIdentity {
+                                    session_id: &session_id,
+                                    target_host: &target_host,
+                                    target_port,
+                                    transfer_id: &transfer_id,
+                                },
                                 &remote_path,
                                 &local_path,
-                                &transfer_id,
                                 &cancel_flag,
                                 &on_event,
                             )
@@ -981,16 +1000,22 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         transfer_cancellations.lock().await.insert(transfer_id.clone(), Arc::clone(&cancel_flag));
                         let session_handle = Arc::clone(&session);
                         let session_id = session_id.clone();
+                        let target_host = profile.host.clone();
+                        let target_port = profile.port;
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
                             let guard = session_handle.lock().await;
                             let result = sftp_download_dir(
                                 &guard,
-                                &session_id,
+                                SftpConnectionIdentity {
+                                    session_id: &session_id,
+                                    target_host: &target_host,
+                                    target_port,
+                                    transfer_id: &transfer_id,
+                                },
                                 &remote_path,
                                 &local_dir,
-                                &transfer_id,
                                 &cancel_flag,
                                 &on_event,
                             )

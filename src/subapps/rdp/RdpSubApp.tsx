@@ -45,7 +45,14 @@ import {
   setRdpClipboard,
 } from "@/features/rdp/core/commands";
 import { RdpMainThreadBridge } from "@/subapps/rdp/RdpMainThreadBridge";
+import {
+  getRdpPerformanceTelemetryStatus,
+  getRdpResolutionClass,
+  RdpPerformanceCollector,
+} from "@/subapps/rdp/performanceTelemetry";
 import "./RdpSubApp.css";
+
+const PERFORMANCE_TELEMETRY_ENABLED = import.meta.env.MODE === "telemetry";
 
 type RdpSubAppProps = {
   id: SubAppId;
@@ -97,6 +104,12 @@ type RdpWorkerMessage =
       sessionId: string;
       frameVersion?: number;
       presentedFrames?: number;
+      receivedFrames?: number;
+      droppedFrames?: number;
+      queueDepthMax?: number;
+      renderDurationMs?: number;
+      surfaceWidth?: number;
+      surfaceHeight?: number;
     }
   | {
       type: "diagnostic";
@@ -383,6 +396,13 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   const statusPanelRef = useRef<HTMLDivElement | null>(null);
   const frameVersionBySessionRef = useRef<Record<string, number>>({});
   const presentedFrameCountBySessionRef = useRef<Record<string, number>>({});
+  const renderedSizeBySessionRef = useRef<
+    Record<string, { width: number; height: number }>
+  >({});
+  const performanceCollectorsRef = useRef<
+    Record<string, RdpPerformanceCollector>
+  >({});
+  const performanceIntervalMsRef = useRef(1000);
   const cachedFrameRectRef = useRef<RdpCachedFrameRect | null>(null);
   const pendingMouseMoveRef = useRef<{
     sessionId: string;
@@ -406,6 +426,21 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
+
+  useEffect(() => {
+    if (!PERFORMANCE_TELEMETRY_ENABLED) return;
+    void getRdpPerformanceTelemetryStatus().then((status) => {
+      if (status.enabled && status.domains.includes("rdp")) {
+        performanceIntervalMsRef.current = status.intervalMs;
+        Object.values(performanceCollectorsRef.current).forEach((collector) =>
+          collector.setIntervalMs(status.intervalMs),
+        );
+      }
+    });
+    return () => {
+      performanceCollectorsRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -767,9 +802,42 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     ) {
       frameVersionBySessionRef.current[message.sessionId] =
         message.frameVersion;
+      const presentedFrames = Math.max(1, message.presentedFrames ?? 1);
       presentedFrameCountBySessionRef.current[message.sessionId] =
         (presentedFrameCountBySessionRef.current[message.sessionId] ?? 0) +
-        Math.max(1, message.presentedFrames ?? 1);
+        presentedFrames;
+      if (
+        typeof message.surfaceWidth === "number" &&
+        message.surfaceWidth > 0 &&
+        typeof message.surfaceHeight === "number" &&
+        message.surfaceHeight > 0
+      ) {
+        renderedSizeBySessionRef.current[message.sessionId] = {
+          width: message.surfaceWidth,
+          height: message.surfaceHeight,
+        };
+      }
+      if (PERFORMANCE_TELEMETRY_ENABLED) {
+        const streamId = sessionsRef.current.find(
+          (tab) => tab.session.sessionId === message.sessionId,
+        )?.session.performanceStreamId;
+        if (streamId) {
+          const collector =
+            performanceCollectorsRef.current[streamId] ??
+            new RdpPerformanceCollector(
+              streamId,
+              performanceIntervalMsRef.current,
+            );
+          performanceCollectorsRef.current[streamId] = collector;
+          collector.recordPresented(
+            presentedFrames,
+            message.queueDepthMax ?? 0,
+            message.receivedFrames ?? presentedFrames,
+            message.droppedFrames ?? 0,
+            message.renderDurationMs ?? 0,
+          );
+        }
+      }
       return;
     }
 
@@ -819,6 +887,31 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     if (workerRef.current) return "worker";
     return "none";
   }, []);
+
+  /** 在关闭后端流之前提交指定会话的前端尾窗口。 */
+  const flushPerformanceCollector = useCallback(
+    async (sessionId: string) => {
+      if (!PERFORMANCE_TELEMETRY_ENABLED) return;
+      const tab = sessionsRef.current.find(
+        (item) => item.session.sessionId === sessionId,
+      );
+      const streamId = tab?.session.performanceStreamId;
+      if (!tab || !streamId) return;
+      const collector = performanceCollectorsRef.current[streamId];
+      if (!collector) return;
+      const renderedSize = renderedSizeBySessionRef.current[sessionId];
+      const width = renderedSize?.width ?? tab.session.width;
+      const height = renderedSize?.height ?? tab.session.height;
+      await collector.flushFinal(width, height, {
+        rendererMode: getRendererMode(),
+        visibility:
+          document.visibilityState === "hidden" ? "hidden" : "visible",
+        resolutionClass: getRdpResolutionClass(width, height),
+      });
+      delete performanceCollectorsRef.current[streamId];
+    },
+    [getRendererMode],
+  );
 
   const refreshCachedFrameRect = useCallback(() => {
     const surface = surfaceRef.current;
@@ -908,11 +1001,18 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
                 sessionId,
                 payload,
               }),
-            onFramePresented: (sessionId, frameVersion) =>
+            onFramePresented: (sessionId, frameVersion, performance) =>
               handleRendererMessage({
                 type: "frame-presented",
                 sessionId,
                 frameVersion,
+                presentedFrames: performance.presentedFrames,
+                receivedFrames: performance.receivedFrames,
+                droppedFrames: performance.droppedFrames,
+                queueDepthMax: performance.queueDepthMax,
+                renderDurationMs: performance.renderDurationMs,
+                surfaceWidth: performance.surfaceWidth,
+                surfaceHeight: performance.surfaceHeight,
               }),
             onDiagnostic: (level, event, fields, sessionId) =>
               handleRendererMessage({
@@ -1036,6 +1136,29 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
      */
     const tick = (now: number) => {
       const sessionId = activeSessionId;
+      if (PERFORMANCE_TELEMETRY_ENABLED) {
+        for (const tab of sessionsRef.current) {
+          const streamId = tab.session.performanceStreamId;
+          if (!streamId) continue;
+          const tabSessionId = tab.session.sessionId;
+          const renderedSize = renderedSizeBySessionRef.current[tabSessionId];
+          const width = renderedSize?.width ?? tab.session.width;
+          const height = renderedSize?.height ?? tab.session.height;
+          const collector =
+            performanceCollectorsRef.current[streamId] ??
+            new RdpPerformanceCollector(
+              streamId,
+              performanceIntervalMsRef.current,
+            );
+          performanceCollectorsRef.current[streamId] = collector;
+          collector.flushIfDue(now, width, height, {
+            rendererMode: getRendererMode(),
+            visibility:
+              document.visibilityState === "hidden" ? "hidden" : "visible",
+            resolutionClass: getRdpResolutionClass(width, height),
+          });
+        }
+      }
       if (
         sessionId &&
         document.visibilityState === "visible" &&
@@ -1090,7 +1213,13 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         runtime.rafId = null;
       }
     };
-  }, [activePerf.bridgeState, activeSessionId, updateSessionTab]);
+  }, [
+    activePerf.bridgeState,
+    activeSessionId,
+    activeTab,
+    getRendererMode,
+    updateSessionTab,
+  ]);
 
   /** 从标签栏移除会话，并在需要时切换到邻近会话。 */
   /** 关闭标签后优先切到相邻标签，避免 activeSessionId 悬空。 */
@@ -1376,6 +1505,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
               (tab) => tab.session.sessionId === session.sessionId,
             )?.operationId ?? createOperationId();
           try {
+            await flushPerformanceCollector(session.sessionId);
             await disconnectRdpSession(session.sessionId, { operationId });
           } catch {
             // 忽略单个会话断开失败，尽量继续清理剩余会话。
@@ -1399,7 +1529,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     } finally {
       cleanupInFlightRef.current = null;
     }
-  }, [postRendererControl]);
+  }, [flushPerformanceCollector, postRendererControl]);
 
   /** 统一执行子应用关闭，确保只触发一次异步清理。 */
   const requestWindowClose = useCallback(async () => {
@@ -1488,6 +1618,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       sessionsRef.current.find((tab) => tab.session.sessionId === sessionId)
         ?.operationId ?? createOperationId();
     try {
+      await flushPerformanceCollector(sessionId);
       await disconnectRdpSession(sessionId, { operationId });
       if (isLastSession) {
         clearLastSessionTab(sessionId);

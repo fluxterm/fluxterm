@@ -28,7 +28,7 @@ import {
   sftpRemove,
   sftpResolvePath,
   sftpRename,
-  sftpUploadBatch,
+  sftpUploadPaths,
 } from "@/features/sftp/core/commands";
 import { registerSftpProgressListener } from "@/features/sftp/core/listeners";
 
@@ -354,7 +354,7 @@ export default function useSftpState({
     });
     setBusyMessage(t("messages.uploading"));
     try {
-      await sftpUploadBatch(activeSession.sessionId, [file], currentPath);
+      await sftpUploadPaths(activeSession.sessionId, [file], currentPath);
       await refreshList();
       setBusyMessage(null);
       const latestProgress =
@@ -423,7 +423,7 @@ export default function useSftpState({
     });
     setBusyMessage(t("messages.uploading"));
     try {
-      await sftpUploadBatch(
+      await sftpUploadPaths(
         activeSession.sessionId,
         normalizedPaths,
         currentPath,

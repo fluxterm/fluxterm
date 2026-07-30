@@ -303,6 +303,38 @@
       ]
     },
     {
+      "name": "performance.telemetry.configuration.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "performance telemetry configuration failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "performance.telemetry.sender.failed",
+      "level": "warn",
+      "owner": "tauri",
+      "message": "performance telemetry sender failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
+      "name": "performance.telemetry.sender.ready",
+      "level": "info",
+      "owner": "tauri",
+      "message": "performance telemetry sender ready",
+      "requiredFields": [],
+      "allowedFields": ["domainCount", "intervalMs"]
+    },
+    {
+      "name": "performance.telemetry.sender.recovered",
+      "level": "info",
+      "owner": "tauri",
+      "message": "performance telemetry sender recovered",
+      "requiredFields": [],
+      "allowedFields": []
+    },
+    {
       "name": "proxy.close.all.failed",
       "level": "warn",
       "owner": "engine",
@@ -1907,74 +1939,74 @@
       "allowedFields": ["error", "sessionId"]
     },
     {
-      "name": "sftp.upload.batch.cancelled",
+      "name": "sftp.upload.paths.cancelled",
       "level": "info",
       "owner": "engine",
-      "message": "SFTP upload batch cancelled",
+      "message": "SFTP upload paths cancelled",
       "requiredFields": [],
       "allowedFields": []
     },
     {
-      "name": "sftp.upload.batch.dir.failed",
+      "name": "sftp.upload.paths.dir.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch dir failed",
+      "message": "SFTP upload paths dir failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },
     {
-      "name": "sftp.upload.batch.failed",
+      "name": "sftp.upload.paths.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch failed",
+      "message": "SFTP upload paths failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },
     {
-      "name": "sftp.upload.batch.file.failed",
+      "name": "sftp.upload.paths.file.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch file failed",
+      "message": "SFTP upload paths file failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },
     {
-      "name": "sftp.upload.batch.mkdir.parent.failed",
+      "name": "sftp.upload.paths.mkdir.parent.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch mkdir parent failed",
+      "message": "SFTP upload paths mkdir parent failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },
     {
-      "name": "sftp.upload.batch.started",
+      "name": "sftp.upload.paths.started",
       "level": "debug",
       "owner": "engine",
-      "message": "SFTP upload batch started",
+      "message": "SFTP upload paths started",
       "requiredFields": [],
       "allowedFields": ["mode", "sessionId"]
     },
     {
-      "name": "sftp.upload.batch.stream.failed",
+      "name": "sftp.upload.paths.stream.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch stream failed",
+      "message": "SFTP upload paths stream failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },
     {
-      "name": "sftp.upload.batch.succeeded",
+      "name": "sftp.upload.paths.succeeded",
       "level": "info",
       "owner": "engine",
-      "message": "SFTP upload batch succeeded",
+      "message": "SFTP upload paths succeeded",
       "requiredFields": [],
       "allowedFields": []
     },
     {
-      "name": "sftp.upload.batch.worker.failed",
+      "name": "sftp.upload.paths.worker.failed",
       "level": "warn",
       "owner": "engine",
-      "message": "SFTP upload batch worker failed",
+      "message": "SFTP upload paths worker failed",
       "requiredFields": ["error"],
       "allowedFields": ["error"]
     },

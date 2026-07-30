@@ -33,4 +33,7 @@
 
 - [终端性能基准记录](./terminal-performance-benchmark.md)
 - [代理性能基准记录](./proxy-performance-benchmark.md)
+- [SFTP/RDP 性能遥测规范](./performance-telemetry-spec.md)
+- [SFTP/RDP 性能遥测实现说明](./performance-telemetry-implementation.md)
+- [性能指标机器目录](./performance-metrics.json)
 - [主题设计 Token 规范](./theme-design-token-refactor-design.md)

@@ -5,8 +5,9 @@ edition.workspace = true
 authors.workspace = true
 
 [dependencies]
+fluxterm-logging = { workspace = true }
+
 log = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
-fluxterm-logging = { workspace = true }

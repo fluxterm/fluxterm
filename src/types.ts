@@ -417,6 +417,8 @@ export type RdpSessionSnapshot = {
   audioState: RdpSessionAudioState;
   lastError?: EngineErrorView | null;
   certificatePrompt?: RdpCertificatePrompt | null;
+  /** 匿名性能数据流 ID；未启用遥测时为空。 */
+  performanceStreamId?: string | null;
 };
 
 /** RDP 输入事件。 */

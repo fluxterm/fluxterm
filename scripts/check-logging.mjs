@@ -26,6 +26,12 @@ const forbiddenFieldPattern =
   /["']?(?:password|passphrase|privateKey|private_key|apiKey|api_key|token|cookie|authorization|path|fileName|filename|terminalOutput|recentTerminalOutput|selectionText|clipboardText|messages|prompt|response)["']?\s*:/gu;
 const performanceEventPattern =
   /^(?:[a-z0-9]+\.)*(?:perf|performance|fps|throughput)(?:\.[a-z0-9]+)*$/u;
+const performanceOperationalLogEvents = new Set([
+  "performance.telemetry.configuration.failed",
+  "performance.telemetry.sender.failed",
+  "performance.telemetry.sender.ready",
+  "performance.telemetry.sender.recovered",
+]);
 const levelNames = new Set(["debug", "info", "warn", "error"]);
 const nestedErrorFields = new Set(["code", "message", "detail", "details"]);
 const catalogPath = join(root, "docs", "logging-events.json");
@@ -354,7 +360,10 @@ function checkSource(source, catalog) {
       fail(name, line, "log level and event must be string literals");
       continue;
     }
-    if (performanceEventPattern.test(call.event)) {
+    if (
+      performanceEventPattern.test(call.event) &&
+      !performanceOperationalLogEvents.has(call.event)
+    ) {
       fail(name, line, "continuous performance data must not be logged");
     }
     const entry = catalog.get(call.event);

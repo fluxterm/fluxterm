@@ -19,6 +19,10 @@ type WorkerSessionRuntime = {
   frameRequest: number | null;
   frameVersion: number;
   pendingPresentedFrames: number;
+  pendingReceivedFrames: number;
+  pendingDroppedFrames: number;
+  pendingRenderDurationMs: number;
+  queueDepthMax: number;
   lastFramePresentedNotifyAt: number;
   needsPresent: boolean;
 };
@@ -55,6 +59,12 @@ type MainMessage =
       sessionId: string;
       frameVersion: number;
       presentedFrames: number;
+      receivedFrames: number;
+      droppedFrames: number;
+      queueDepthMax: number;
+      renderDurationMs: number;
+      surfaceWidth: number;
+      surfaceHeight: number;
     }
   | {
       type: "diagnostic";
@@ -298,6 +308,10 @@ class RdpWorkerContext {
         frameRequest: null,
         frameVersion: 0,
         pendingPresentedFrames: 0,
+        pendingReceivedFrames: 0,
+        pendingDroppedFrames: 0,
+        pendingRenderDurationMs: 0,
+        queueDepthMax: 0,
         lastFramePresentedNotifyAt: 0,
         needsPresent: false,
       };
@@ -310,6 +324,11 @@ class RdpWorkerContext {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.pendingFrames.push(buffer);
+    session.pendingReceivedFrames += 1;
+    session.queueDepthMax = Math.max(
+      session.queueDepthMax,
+      session.pendingFrames.length,
+    );
     session.needsPresent = true;
     this.requestRender(sessionId);
   }
@@ -320,6 +339,7 @@ class RdpWorkerContext {
 
     session.frameRequest = self.requestAnimationFrame(() => {
       session.frameRequest = null;
+      const renderStartedAt = performance.now();
       // 一个动画帧内批量消费积压脏矩形，减少主线程切换和重复 commit。
       const queue = session.pendingFrames.splice(0);
       for (const buffer of queue) {
@@ -337,6 +357,8 @@ class RdpWorkerContext {
           session.textureSize.width,
           session.textureSize.height,
         );
+        session.pendingDroppedFrames += Math.max(0, queue.length - 1);
+        session.pendingRenderDurationMs += performance.now() - renderStartedAt;
         session.needsPresent = false;
         this.notifyFramePresented(session);
       }
@@ -359,13 +381,27 @@ class RdpWorkerContext {
     }
 
     const presentedFrames = session.pendingPresentedFrames;
+    const receivedFrames = session.pendingReceivedFrames;
+    const droppedFrames = session.pendingDroppedFrames;
+    const queueDepthMax = session.queueDepthMax;
+    const renderDurationMs = session.pendingRenderDurationMs;
     session.pendingPresentedFrames = 0;
+    session.pendingReceivedFrames = 0;
+    session.pendingDroppedFrames = 0;
+    session.queueDepthMax = 0;
+    session.pendingRenderDurationMs = 0;
     session.lastFramePresentedNotifyAt = now;
     self.postMessage({
       type: "frame-presented",
       sessionId: session.sessionId,
       frameVersion: session.frameVersion,
       presentedFrames,
+      receivedFrames,
+      droppedFrames,
+      queueDepthMax,
+      renderDurationMs,
+      surfaceWidth: session.textureSize.width,
+      surfaceHeight: session.textureSize.height,
     } satisfies MainMessage);
   }
 

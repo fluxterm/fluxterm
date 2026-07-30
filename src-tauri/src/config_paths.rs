@@ -97,6 +97,39 @@ pub fn resolve_data_root_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     })
 }
 
+/// 解析性能遥测配置文件路径。
+///
+/// 性能遥测属于应用级运行配置，固定使用 Tauri 的 app config 目录，不受
+/// `FLUXTERM_CONFIG_DIR` 影响，也不会写入 app data 目录。
+#[cfg(feature = "performance-telemetry")]
+pub fn resolve_performance_telemetry_config_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join("performance-telemetry.json"))
+        .map_err(|err| {
+            EngineError::with_detail(
+                "performance_telemetry_config_path_failed",
+                "Failed to resolve the performance telemetry configuration path",
+                err.to_string(),
+            )
+        })
+}
+
+/// 解析性能遥测安装级设备身份文件路径。
+#[cfg(feature = "performance-telemetry")]
+pub fn resolve_performance_telemetry_device_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.join("performance-telemetry-device.json"))
+        .map_err(|err| {
+            EngineError::with_detail(
+                "performance_telemetry_device_path_failed",
+                "Failed to resolve the performance telemetry device path",
+                err.to_string(),
+            )
+        })
+}
+
 /// 解析应用级配置目录。
 pub fn resolve_global_config_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     let dir = resolve_config_root_dir(app)?;

@@ -1,9 +1,17 @@
 //! RDP profile、会话与进程内运行时编排。
+#[cfg(feature = "performance-telemetry")]
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use engine::EngineError;
+#[cfg(feature = "performance-telemetry")]
+use fluxterm_performance_telemetry::{
+    PerformanceDomain, RecordOutcome, StreamCorrelation, StreamKind, StreamOutcome,
+    StreamParameter, StreamTarget, close_stream as close_performance_stream,
+    create_stream_descriptor, domain_enabled, open_stream as open_performance_stream, unix_time_ms,
+};
 use rdp_core::{
     RdpRuntime, RuntimeAudioState, RuntimeConnectRequest, RuntimeError, RuntimeInputEvent,
     RuntimePerformanceFlags, RuntimeSessionSnapshot,
@@ -158,6 +166,9 @@ pub struct RdpSessionSnapshot {
     pub audio_state: RdpSessionAudioState,
     pub last_error: Option<EngineError>,
     pub certificate_prompt: Option<RdpCertificatePrompt>,
+    /// 匿名性能数据流 ID，不等同于业务会话 ID。
+    #[cfg(feature = "performance-telemetry")]
+    pub performance_stream_id: Option<String>,
 }
 
 /// RDP 输入事件。
@@ -225,6 +236,8 @@ impl RdpState {
             audio_state: RdpSessionAudioState::Idle,
             last_error: None,
             certificate_prompt: None,
+            #[cfg(feature = "performance-telemetry")]
+            performance_stream_id: None,
         };
         let runtime_snapshot = self
             .runtime
@@ -232,6 +245,17 @@ impl RdpState {
             .await
             .map_err(runtime_error)?;
         let snapshot = merge_runtime_snapshot_preserving_dimensions(snapshot, runtime_snapshot);
+        #[cfg(feature = "performance-telemetry")]
+        let snapshot = {
+            let mut snapshot = snapshot;
+            snapshot.performance_stream_id = open_rdp_performance_stream(
+                profile,
+                &snapshot.session_id,
+                initial_width,
+                initial_height,
+            );
+            snapshot
+        };
         let mut sessions = self.sessions.lock().map_err(lock_error)?;
         sessions.insert(
             snapshot.session_id.clone(),
@@ -265,6 +289,8 @@ impl RdpState {
                     width: current.width,
                     height: current.height,
                     performance_flags: convert_performance_flags(profile.performance_flags.clone()),
+                    #[cfg(feature = "performance-telemetry")]
+                    performance_stream_id: current.performance_stream_id.clone(),
                 },
                 operation_id,
             )
@@ -288,6 +314,11 @@ impl RdpState {
         let snapshot = self.update_session_snapshot(session_id, |snapshot| {
             *snapshot = merge_runtime_snapshot(snapshot.clone(), runtime_snapshot);
         })?;
+        #[cfg(feature = "performance-telemetry")]
+        if let Some(stream_id) = snapshot.performance_stream_id.as_deref() {
+            let _ =
+                close_performance_stream(stream_id, StreamOutcome::Disconnected, unix_time_ms());
+        }
         let mut sessions = self.sessions.lock().map_err(lock_error)?;
         sessions.remove(session_id);
         Ok(snapshot)
@@ -363,6 +394,16 @@ impl RdpState {
     pub fn shutdown_runtime(&self) -> Result<(), EngineError> {
         self.runtime.shutdown().map_err(runtime_error)?;
         let mut sessions = self.sessions.lock().map_err(lock_error)?;
+        #[cfg(feature = "performance-telemetry")]
+        for runtime in sessions.values() {
+            if let Some(stream_id) = runtime.snapshot.performance_stream_id.as_deref() {
+                let _ = close_performance_stream(
+                    stream_id,
+                    StreamOutcome::Disconnected,
+                    unix_time_ms(),
+                );
+            }
+        }
         sessions.clear();
         Ok(())
     }
@@ -409,6 +450,8 @@ fn merge_runtime_snapshot(
         audio_state: parse_audio_state(runtime.audio_state),
         last_error: current.last_error,
         certificate_prompt: current.certificate_prompt,
+        #[cfg(feature = "performance-telemetry")]
+        performance_stream_id: current.performance_stream_id,
     }
 }
 
@@ -429,6 +472,8 @@ fn merge_runtime_snapshot_preserving_dimensions(
         audio_state: parse_audio_state(runtime.audio_state),
         last_error: current.last_error,
         certificate_prompt: current.certificate_prompt,
+        #[cfg(feature = "performance-telemetry")]
+        performance_stream_id: current.performance_stream_id,
     }
 }
 
@@ -482,6 +527,67 @@ fn convert_performance_flags(flags: RdpPerformanceFlags) -> RuntimePerformanceFl
         font_smoothing: flags.font_smoothing,
         desktop_composition: flags.desktop_composition,
     }
+}
+
+/// 为 RDP 会话打开不包含业务身份的性能流。
+#[cfg(feature = "performance-telemetry")]
+fn open_rdp_performance_stream(
+    profile: &RdpProfile,
+    session_id: &str,
+    width: u32,
+    height: u32,
+) -> Option<String> {
+    if !domain_enabled(PerformanceDomain::Rdp) {
+        return None;
+    }
+    let flags = &profile.performance_flags;
+    let descriptor = create_stream_descriptor(
+        StreamKind::RdpSession,
+        unix_time_ms(),
+        BTreeMap::from([
+            ("width".into(), StreamParameter::Unsigned(u64::from(width))),
+            (
+                "height".into(),
+                StreamParameter::Unsigned(u64::from(height)),
+            ),
+            ("wallpaper".into(), StreamParameter::Bool(flags.wallpaper)),
+            (
+                "fullWindowDrag".into(),
+                StreamParameter::Bool(flags.full_window_drag),
+            ),
+            (
+                "menuAnimations".into(),
+                StreamParameter::Bool(flags.menu_animations),
+            ),
+            ("theming".into(), StreamParameter::Bool(flags.theming)),
+            (
+                "cursorShadow".into(),
+                StreamParameter::Bool(flags.cursor_shadow),
+            ),
+            (
+                "cursorSettings".into(),
+                StreamParameter::Bool(flags.cursor_settings),
+            ),
+            (
+                "fontSmoothing".into(),
+                StreamParameter::Bool(flags.font_smoothing),
+            ),
+            (
+                "desktopComposition".into(),
+                StreamParameter::Bool(flags.desktop_composition),
+            ),
+        ]),
+        StreamTarget {
+            host: profile.host.clone(),
+            port: profile.port,
+        },
+        StreamCorrelation {
+            session_id: session_id.to_string(),
+            transfer_id: None,
+        },
+    );
+    let stream_id = descriptor.id.clone();
+    (open_performance_stream(descriptor) == RecordOutcome::Accepted).then_some(stream_id)
 }
 
 fn now_epoch() -> u64 {
