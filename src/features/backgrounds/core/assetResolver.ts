@@ -1,6 +1,5 @@
-import { readFile } from "@tauri-apps/plugin-fs";
 import { getBuiltinWallpaperByAsset } from "@/constants/builtinWallpapers";
-import { getBackgroundImageAssetPath } from "@/shared/config/paths";
+import { readBackgroundAsset } from "@/features/backgrounds/core/commands";
 
 /** 背景媒体解析结果。 */
 export type ResolvedBackgroundAsset = {
@@ -24,8 +23,7 @@ export async function resolveBackgroundAssetUrl(
     };
   }
 
-  const filePath = await getBackgroundImageAssetPath(asset);
-  const bytes = await readFile(filePath);
+  const bytes = await readBackgroundAsset(asset);
   const blobUrl = URL.createObjectURL(new Blob([bytes]));
   return {
     url: blobUrl,

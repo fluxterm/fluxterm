@@ -7,12 +7,6 @@
  * 4. 提供当前活动会话可见的命令视图。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  exists,
-  mkdir,
-  readTextFile,
-  writeTextFile,
-} from "@tauri-apps/plugin-fs";
 import { logDebug, logWarn } from "@/shared/logging";
 import type { Translate, TranslationKey } from "@/i18n";
 import type {
@@ -20,7 +14,10 @@ import type {
   QuickCommandGroup,
   QuickCommandItem,
 } from "@/types";
-import { getGlobalConfigDir, getQuickbarPath } from "@/shared/config/paths";
+import {
+  readConfigDocument,
+  writeConfigDocument,
+} from "@/shared/config/storage";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import {
   DEFAULT_QUICKBAR_GROUP_ID,
@@ -232,13 +229,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
   /** 执行配置文件加载。 */
   const loadConfig = useCallback(async () => {
     try {
-      const path = await getQuickbarPath();
-      const existsFile = await exists(path);
-      if (!existsFile) {
-        loadedRef.current = true;
-        return;
-      }
-      const raw = await readTextFile(path);
+      const raw = await readConfigDocument("quickbar");
       if (!raw) {
         loadedRef.current = true;
         return;
@@ -267,10 +258,7 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
 
   /** 将最新配置落盘。 */
   async function saveConfig(payload: QuickBarConfig) {
-    const dir = await getGlobalConfigDir();
-    await mkdir(dir, { recursive: true });
-    const path = await getQuickbarPath();
-    await writeTextFile(path, JSON.stringify(payload, null, 2));
+    await writeConfigDocument("quickbar", JSON.stringify(payload, null, 2));
   }
 
   // 启动加载与语言跟随。

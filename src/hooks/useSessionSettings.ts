@@ -6,18 +6,12 @@
  * 3. 采用“内存态缓存 + 防抖异步落盘”模式，通过 JSON 脏检查避免重复 I/O。
  */
 import { useEffect, useRef, useState } from "react";
-import {
-  exists,
-  mkdir,
-  readTextFile,
-  writeTextFile,
-} from "@tauri-apps/plugin-fs";
 import { logDebug, logWarn } from "@/shared/logging";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import {
-  getTerminalConfigDir,
-  getSessionSettingsPath,
-} from "@/shared/config/paths";
+  readConfigDocument,
+  writeConfigDocument,
+} from "@/shared/config/storage";
 import { PERSISTENCE_SAVE_DEBOUNCE_MS } from "@/constants/persistence";
 import {
   DEFAULT_TERMINAL_WORD_SEPARATORS,
@@ -224,11 +218,8 @@ export default function useSessionSettings(): UseSessionSettingsResult {
   /** 执行实际的文件读取与状态反填。 */
   async function loadSessionSettings() {
     try {
-      const path = await getSessionSettingsPath();
-      if (!(await exists(path))) {
-        return;
-      }
-      const raw = await readTextFile(path);
+      const raw = await readConfigDocument("session");
+      if (raw === null) return;
       const parsed = JSON.parse(raw) as SessionSettings;
 
       if (typeof parsed?.webLinksEnabled === "boolean") {
@@ -315,10 +306,7 @@ export default function useSessionSettings(): UseSessionSettingsResult {
 
   /** 将内存配置持久化到文件系统。 */
   async function saveSessionSettings(payload: SessionSettings) {
-    const dir = await getTerminalConfigDir();
-    await mkdir(dir, { recursive: true });
-    const path = await getSessionSettingsPath();
-    await writeTextFile(path, JSON.stringify(payload, null, 2));
+    await writeConfigDocument("session", JSON.stringify(payload, null, 2));
   }
 
   // 启动初始化。

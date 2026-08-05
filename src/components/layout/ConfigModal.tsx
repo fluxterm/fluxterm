@@ -1,14 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { logWarn } from "@/shared/logging";
 import { open as openDialogFile } from "@tauri-apps/plugin-dialog";
-import {
-  copyFile,
-  exists,
-  mkdir,
-  readFile,
-  remove,
-} from "@tauri-apps/plugin-fs";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type { Locale, Translate } from "@/i18n";
 import Modal from "@/components/ui/modal/Modal";
 import Button from "@/components/ui/button";
@@ -16,13 +10,17 @@ import Select from "@/components/ui/select";
 import Tooltip from "@/components/ui/menu/Tooltip";
 import { useNotices } from "@/hooks/useNotices";
 import useKeyedDraftState from "@/hooks/useKeyedDraftState";
+import { getAppDataDir } from "@/shared/config/paths";
 import {
-  getAppConfigDir,
-  getAppDataDir,
-  getBackgroundImageAssetPath,
-  getBackgroundImagesDir,
-  toBackgroundImageAsset,
-} from "@/shared/config/paths";
+  deleteBackgroundAsset,
+  importBackgroundAsset,
+} from "@/features/backgrounds/core/commands";
+import {
+  getConfigDirectoryStatus,
+  resetConfigDirectory,
+  selectConfigDirectoryParent,
+  type ConfigDirectoryStatus,
+} from "@/features/config-directory/core/commands";
 import type { AiProviderVendor, AiProviderView } from "@/features/ai/types";
 import type { SecurityStatus } from "@/features/security/types";
 import {
@@ -247,15 +245,6 @@ function fromBackgroundTransparencyPercent(percentage: number) {
   return clampBackgroundImageSurfaceAlpha((100 - normalized) / 100);
 }
 
-async function sha256Hex(bytes: Uint8Array) {
-  const normalized = new Uint8Array(bytes.byteLength);
-  normalized.set(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", normalized);
-  return Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 /**
  * 配置模态框：承载顶部“配置”菜单的统一内容容器。
  * 约束：本组件内新增菜单项如果需要下拉选择，必须优先复用通用 `Select` 组件，
@@ -364,8 +353,10 @@ export default function ConfigModal({
   t,
 }: ConfigModalProps) {
   const { pushToast, openDialog } = useNotices();
-  const [configDir, setConfigDir] = useState("");
+  const [configDirectoryStatus, setConfigDirectoryStatus] =
+    useState<ConfigDirectoryStatus | null>(null);
   const [dataDir, setDataDir] = useState("");
+  const [configDirectoryBusy, setConfigDirectoryBusy] = useState(false);
   const [defaultEditorPathDraft, setDefaultEditorPathDraft] =
     useKeyedDraftState(fileDefaultEditorPath, fileDefaultEditorPath);
   const [aiSelectionMaxCharsDraft, setAiSelectionMaxCharsDraft] =
@@ -489,15 +480,21 @@ export default function ConfigModal({
   const isDefaultEditorPathDirty =
     defaultEditorPathDraft.trim() !== fileDefaultEditorPath.trim();
   const hasUnsavedHighRiskChanges = isDefaultEditorPathDirty;
+  const configDir = normalizeConfigDirectoryPath(
+    configDirectoryStatus?.activeDir ?? "",
+  );
+  const pendingConfigDir = normalizeConfigDirectoryPath(
+    configDirectoryStatus?.pendingDir ?? "",
+  );
 
   useEffect(() => {
     if (!open || activeSection !== "app-directory") return;
-    getAppConfigDir()
-      .then((path) => {
-        setConfigDir(normalizeConfigDirectoryPath(path));
+    getConfigDirectoryStatus()
+      .then((status) => {
+        setConfigDirectoryStatus(status);
       })
       .catch(() => {
-        setConfigDir("");
+        setConfigDirectoryStatus(null);
       });
     getAppDataDir()
       .then((path) => {
@@ -507,6 +504,60 @@ export default function ConfigModal({
         setDataDir("");
       });
   }, [activeSection, open]);
+
+  async function pickConfigDirectoryParent() {
+    try {
+      const selected = await openDialogFile({
+        directory: true,
+        multiple: false,
+        title: t("config.directory.setDirectory"),
+      });
+      if (!selected || Array.isArray(selected)) return;
+      setConfigDirectoryBusy(true);
+      const status = await selectConfigDirectoryParent(selected);
+      setConfigDirectoryStatus(status);
+      pushToast({
+        level: "success",
+        message: t(
+          status.pendingDir
+            ? "config.directory.changeSaved"
+            : "config.directory.alreadyActive",
+        ),
+      });
+    } catch (error) {
+      pushToast({ level: "error", message: getErrorMessage(error) });
+    } finally {
+      setConfigDirectoryBusy(false);
+    }
+  }
+
+  async function restoreDefaultConfigDirectory() {
+    try {
+      setConfigDirectoryBusy(true);
+      const status = await resetConfigDirectory();
+      setConfigDirectoryStatus(status);
+      pushToast({
+        level: "success",
+        message: t(
+          status.pendingDir
+            ? "config.directory.changeSaved"
+            : "config.directory.defaultRetained",
+        ),
+      });
+    } catch (error) {
+      pushToast({ level: "error", message: getErrorMessage(error) });
+    } finally {
+      setConfigDirectoryBusy(false);
+    }
+  }
+
+  async function restartForConfigDirectoryChange() {
+    try {
+      await relaunch();
+    } catch (error) {
+      pushToast({ level: "error", message: getErrorMessage(error) });
+    }
+  }
 
   async function pickBackgroundMedia() {
     try {
@@ -539,19 +590,8 @@ export default function ConfigModal({
         return;
       }
 
-      const sourceBytes = await readFile(selected);
-      const hash = await sha256Hex(sourceBytes);
-      const backgroundsDir = await getBackgroundImagesDir();
-      await mkdir(backgroundsDir, { recursive: true });
-      const fileName = `bg-${hash}.${ext}`;
-      const targetPath = await getBackgroundImageAssetPath(
-        toBackgroundImageAsset(fileName),
-      );
-      if (!(await exists(targetPath))) {
-        await copyFile(selected, targetPath);
-      }
-
-      onBackgroundImageAssetChange?.(toBackgroundImageAsset(fileName));
+      const asset = await importBackgroundAsset(selected);
+      onBackgroundImageAssetChange?.(asset);
       onBackgroundImageEnabledChange?.(true);
       onBackgroundMediaTypeChange?.(
         BACKGROUND_VIDEO_EXTENSIONS.includes(ext) ? "video" : "image",
@@ -1328,11 +1368,7 @@ export default function ConfigModal({
                         assetToDelete &&
                         !isBuiltinWallpaperAsset(assetToDelete)
                       ) {
-                        const targetPath =
-                          await getBackgroundImageAssetPath(assetToDelete);
-                        if (await exists(targetPath)) {
-                          await remove(targetPath);
-                        }
+                        await deleteBackgroundAsset(assetToDelete);
                       }
                       onBackgroundImageAssetChange?.("");
                       onBackgroundImageEnabledChange?.(false);
@@ -2464,41 +2500,97 @@ export default function ConfigModal({
       <div className="config-modal-widget config-modal-widget-scrollable">
         <h3>{t("config.section.appDirectory")}</h3>
         <div className="config-dir-card">
-          <div className="config-toggle-copy">
+          <div className="config-toggle-copy config-dir-heading">
             <span className="config-toggle-title">
               {t("config.directory.configTitle")}
             </span>
+            {configDirectoryStatus ? (
+              <span className="config-dir-source">
+                {t(
+                  configDirectoryStatus.source === "environment"
+                    ? "config.directory.sourceEnvironment"
+                    : configDirectoryStatus.source === "user"
+                      ? "config.directory.sourceUser"
+                      : "config.directory.sourceDefault",
+                )}
+              </span>
+            ) : null}
           </div>
           <div className="config-dir-path">
             {configDir || t("config.directory.configUnavailable")}
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!configDir}
-            onClick={() => {
-              void (async () => {
-                if (!configDir) return;
-                try {
-                  await openPath(configDir);
-                } catch (error) {
-                  pushToast({
-                    level: "error",
-                    message: t("config.directory.configOpenFailed"),
-                  });
-                  logWarn("config.directory.open.failed", {
-                    error: {
-                      code: "config_directory_open_failed",
-                      message: "Configuration directory could not be opened",
-                      detail: extractErrorMessage(error),
-                    },
-                  });
-                }
-              })();
-            }}
+          {configDirectoryStatus?.envOverride ? (
+            <p className="config-dir-notice is-locked" role="status">
+              {t("config.directory.environmentLocked")}
+            </p>
+          ) : null}
+          {pendingConfigDir ? (
+            <div className="config-dir-pending" role="status">
+              <span>{t("config.directory.pendingTitle")}</span>
+              <div className="config-dir-path">{pendingConfigDir}</div>
+            </div>
+          ) : null}
+          <div
+            className="config-dir-actions"
+            data-ui="config-directory-actions"
           >
-            {t("config.directory.openConfig")}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!configDir}
+              onClick={() => {
+                void (async () => {
+                  if (!configDir) return;
+                  try {
+                    await openPath(configDir);
+                  } catch (error) {
+                    pushToast({
+                      level: "error",
+                      message: t("config.directory.configOpenFailed"),
+                    });
+                    logWarn("config.directory.open.failed", {
+                      error: {
+                        code: "config_directory_open_failed",
+                        message: "Configuration directory could not be opened",
+                        detail: extractErrorMessage(error),
+                      },
+                    });
+                  }
+                })();
+              }}
+            >
+              {t("config.directory.openConfig")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={
+                configDirectoryBusy || configDirectoryStatus?.envOverride
+              }
+              onClick={() => void pickConfigDirectoryParent()}
+            >
+              {t("config.directory.setDirectory")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={
+                configDirectoryBusy || configDirectoryStatus?.envOverride
+              }
+              onClick={() => void restoreDefaultConfigDirectory()}
+            >
+              {t("config.directory.restoreDefault")}
+            </Button>
+            {pendingConfigDir ? (
+              <Button
+                size="sm"
+                disabled={configDirectoryBusy}
+                onClick={() => void restartForConfigDirectoryChange()}
+              >
+                {t("config.directory.restartNow")}
+              </Button>
+            ) : null}
+          </div>
         </div>
         <div className="config-dir-card">
           <div className="config-toggle-copy">

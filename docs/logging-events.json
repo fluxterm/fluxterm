@@ -95,6 +95,14 @@
       "allowedFields": ["error"]
     },
     {
+      "name": "bootstrap.locale.save.failed",
+      "level": "warn",
+      "owner": "webview",
+      "message": "bootstrap locale save failed",
+      "requiredFields": ["error"],
+      "allowedFields": ["error"]
+    },
+    {
       "name": "config.directory.open.failed",
       "level": "warn",
       "owner": "webview",

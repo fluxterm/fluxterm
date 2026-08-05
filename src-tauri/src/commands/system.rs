@@ -1,10 +1,14 @@
 //! 系统级通用命令。
+use std::path::PathBuf;
+
 use engine::EngineError;
 use serde::Serialize;
 use sysinfo::System;
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, State, WebviewWindow};
 
-use crate::config_paths::{resolve_config_root_dir, resolve_data_root_dir};
+use crate::config_paths::{
+    ConfigDirectoryState, ConfigDirectoryStatus, resolve_config_root_dir, resolve_data_root_dir,
+};
 
 /// 返回应用配置目录绝对路径。
 #[tauri::command]
@@ -18,6 +22,38 @@ pub fn app_config_dir(app: AppHandle) -> Result<String, EngineError> {
 pub fn app_data_dir(app: AppHandle) -> Result<String, EngineError> {
     let path = resolve_data_root_dir(&app)?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// 返回当前配置目录的启动状态与待生效目录。
+#[tauri::command]
+pub fn config_directory_status(state: State<'_, ConfigDirectoryState>) -> ConfigDirectoryStatus {
+    state.status()
+}
+
+/// 保存用户选择的配置父目录，实际配置根将在下次启动切换为其下的 `fluxterm`。
+#[tauri::command]
+pub fn config_directory_select_parent(
+    parent_dir: String,
+    state: State<'_, ConfigDirectoryState>,
+) -> Result<ConfigDirectoryStatus, EngineError> {
+    state.select_parent(&PathBuf::from(parent_dir))
+}
+
+/// 清除用户选择的目录，下一次启动恢复默认配置根。
+#[tauri::command]
+pub fn config_directory_reset(
+    state: State<'_, ConfigDirectoryState>,
+) -> Result<ConfigDirectoryStatus, EngineError> {
+    state.reset_to_default()
+}
+
+/// 保存正常配置不可用时仍需使用的应用语言。
+#[tauri::command]
+pub fn bootstrap_locale_set(
+    locale: String,
+    state: State<'_, ConfigDirectoryState>,
+) -> Result<ConfigDirectoryStatus, EngineError> {
+    state.set_locale(&locale)
 }
 
 /// 系统信息快照。

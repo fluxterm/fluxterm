@@ -301,6 +301,30 @@ export const enUsTranslations = {
   "config.directory.configUnavailable":
     "Configuration directory is unavailable",
   "config.directory.dataUnavailable": "Data directory is unavailable",
+  "config.directory.setDirectory": "Set Config Directory",
+  "config.directory.restoreDefault": "Restore Default",
+  "config.directory.restartNow": "Restart Now",
+  "config.directory.changeSaved":
+    "The configuration directory was saved and will take effect after restart",
+  "config.directory.alreadyActive":
+    "This configuration directory is already in use",
+  "config.directory.defaultRetained":
+    "The default configuration directory will remain in use; no restart is required",
+  "config.directory.pendingTitle": "Use on next launch",
+  "config.directory.environmentLocked":
+    "The current directory is controlled by FLUXTERM_CONFIG_DIR and cannot be changed in the app.",
+  "config.directory.sourceEnvironment": "Environment",
+  "config.directory.sourceUser": "User selected",
+  "config.directory.sourceDefault": "Default",
+  "config.recovery.title": "Configuration Directory Unavailable",
+  "config.recovery.path": "Current configuration directory",
+  "config.recovery.reason": "Failure reason",
+  "config.recovery.unknownError": "Unknown error",
+  "config.recovery.environmentLocked":
+    "The directory is controlled by FLUXTERM_CONFIG_DIR. Change or remove the environment variable, then restart.",
+  "config.recovery.chooseParent": "Choose New Directory and Restart",
+  "config.recovery.restoreDefault": "Restore Default and Restart",
+  "config.recovery.close": "Close FluxTerm",
   "language.zh-CN": "Chinese (S)",
   "language.en-US": "English",
   "settings.language": "Language",

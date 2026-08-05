@@ -6,12 +6,6 @@
  * 3. 响应窗口调整（Resize）并持久化面板尺寸。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  exists,
-  mkdir,
-  readTextFile,
-  writeTextFile,
-} from "@tauri-apps/plugin-fs";
 import { logDebug, logWarn } from "@/shared/logging";
 import {
   defaultWidgetLayout,
@@ -27,7 +21,10 @@ import type {
   WidgetSlotId,
 } from "@/layout/types";
 import type { WidgetKey } from "@/types";
-import { getGlobalConfigDir, getLayoutPath } from "@/shared/config/paths";
+import {
+  readConfigDocument,
+  writeConfigDocument,
+} from "@/shared/config/storage";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import { PERSISTENCE_SAVE_DEBOUNCE_MS } from "@/constants/persistence";
 
@@ -109,12 +106,7 @@ export default function useLayoutState({
   /** 从磁盘加载布局配置。 */
   async function loadLayoutConfig() {
     try {
-      const path = await getLayoutPath();
-      const existsFile = await exists(path);
-      let raw: string | null = null;
-      if (existsFile) {
-        raw = await readTextFile(path);
-      }
+      const raw = await readConfigDocument("layout");
       if (!raw) {
         layoutLoadedRef.current = true;
         return;
@@ -166,10 +158,7 @@ export default function useLayoutState({
 
   /** 将当前布局状态写入磁盘。 */
   async function saveLayoutConfig(payload: WidgetLayout) {
-    const dir = await getGlobalConfigDir();
-    await mkdir(dir, { recursive: true });
-    const path = await getLayoutPath();
-    await writeTextFile(path, JSON.stringify(payload, null, 2));
+    await writeConfigDocument("layout", JSON.stringify(payload, null, 2));
   }
 
   /** 在侧边栏开启/合并分屏。 */

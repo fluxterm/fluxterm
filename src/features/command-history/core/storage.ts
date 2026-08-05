@@ -4,12 +4,6 @@
  * 1. 负责 command-history.json 的加载与保存。
  * 2. 负责对磁盘中的未知/旧数据做最小规范化。
  */
-import {
-  exists,
-  mkdir,
-  readTextFile,
-  writeTextFile,
-} from "@tauri-apps/plugin-fs";
 import { logWarn } from "@/shared/logging";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import type {
@@ -18,9 +12,9 @@ import type {
   CommandHistoryStore,
 } from "@/types";
 import {
-  getCommandHistoryPath,
-  getTerminalConfigDir,
-} from "@/shared/config/paths";
+  readConfigDocument,
+  writeConfigDocument,
+} from "@/shared/config/storage";
 
 const STORE_VERSION = 1;
 
@@ -84,15 +78,13 @@ export function normalizeCommandHistoryStore(
 /** 读取历史命令配置文件。 */
 export async function loadCommandHistoryStore() {
   try {
-    const path = await getCommandHistoryPath();
-    const existsFile = await exists(path);
-    if (!existsFile) {
+    const raw = await readConfigDocument("commandHistory");
+    if (raw === null) {
       return {
         version: STORE_VERSION,
         buckets: {},
       } satisfies CommandHistoryStore;
     }
-    const raw = await readTextFile(path);
     if (!raw) {
       return {
         version: STORE_VERSION,
@@ -118,10 +110,7 @@ export async function loadCommandHistoryStore() {
 /** 保存历史命令配置文件。写入失败时仅记录日志，不阻塞终端交互。 */
 export async function saveCommandHistoryStore(store: CommandHistoryStore) {
   try {
-    const dir = await getTerminalConfigDir();
-    await mkdir(dir, { recursive: true });
-    const path = await getCommandHistoryPath();
-    await writeTextFile(path, JSON.stringify(store, null, 2));
+    await writeConfigDocument("commandHistory", JSON.stringify(store, null, 2));
   } catch (error) {
     logWarn("history.save.failed", {
       error: {

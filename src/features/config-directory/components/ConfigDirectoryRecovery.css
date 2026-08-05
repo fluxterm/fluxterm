@@ -1,0 +1,136 @@
+/** 配置目录启动恢复界面。 */
+.config-recovery {
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  background: var(--app-bg-gradient);
+  color: var(--text-primary);
+}
+
+.config-recovery-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-inline-start: 14px;
+  border-bottom: 1px solid var(--border-weak);
+  background: var(--surface-header-strong);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  user-select: none;
+}
+
+.config-recovery-close {
+  width: 44px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-xl);
+}
+
+.config-recovery-close:hover,
+.config-recovery-close:focus-visible {
+  outline: none;
+  background: var(--danger);
+  color: #fff;
+}
+
+.config-recovery-card {
+  align-self: center;
+  justify-self: center;
+  width: min(620px, calc(100vw - 48px));
+  padding: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-panel) 94%, transparent);
+  box-shadow: var(--shadow-strong);
+}
+
+.config-recovery-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 700;
+  font-size: var(--font-size-xl);
+}
+
+.config-recovery-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.config-recovery-card h1 {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+}
+
+.config-recovery-card h1:focus {
+  outline: none;
+}
+
+.config-recovery-details {
+  display: grid;
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.config-recovery-details div {
+  display: grid;
+  gap: 4px;
+}
+
+.config-recovery-details dt {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.config-recovery-details dd {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  background: var(--input-bg);
+  overflow-wrap: anywhere;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+}
+
+.config-recovery-env,
+.config-recovery-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.config-recovery-card .config-recovery-env {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.config-recovery-card .config-recovery-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.config-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+@media (max-width: 560px) {
+  .config-recovery-card {
+    width: calc(100vw - 24px);
+    padding: 22px;
+  }
+
+  .config-recovery-actions {
+    flex-direction: column;
+  }
+}

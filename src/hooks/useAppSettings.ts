@@ -8,17 +8,15 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  exists,
-  mkdir,
-  readTextFile,
-  writeTextFile,
-} from "@tauri-apps/plugin-fs";
 import { logDebug, logWarn } from "@/shared/logging";
 import type { Locale } from "@/i18n";
 import type { LocalShellConfig, LocalShellProfile, ThemeId } from "@/types";
 import { normalizeLocalShellConfig } from "@/constants/localShellConfig";
-import { getGlobalConfigDir, getSettingsPath } from "@/shared/config/paths";
+import {
+  readConfigDocument,
+  writeConfigDocument,
+} from "@/shared/config/storage";
+import { setBootstrapLocale } from "@/features/config-directory/core/commands";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import { PERSISTENCE_SAVE_DEBOUNCE_MS } from "@/constants/persistence";
 import {
@@ -209,11 +207,8 @@ export default function useAppSettings({
   /** 从磁盘读取全量设置并反填内存状态。 */
   const loadSettings = useCallback(async () => {
     try {
-      const path = await getSettingsPath();
-      if (!(await exists(path))) {
-        return;
-      }
-      const raw = await readTextFile(path);
+      const raw = await readConfigDocument("appSettings");
+      if (raw === null) return;
       const parsed = JSON.parse(raw) as AppSettings;
       if (parsed?.shellId) {
         pendingShellIdRef.current = parsed.shellId;
@@ -324,10 +319,7 @@ export default function useAppSettings({
 
   /** 将最新设置写入磁盘。 */
   async function saveSettings(payload: AppSettings) {
-    const dir = await getGlobalConfigDir();
-    await mkdir(dir, { recursive: true });
-    const path = await getSettingsPath();
-    await writeTextFile(path, JSON.stringify(payload, null, 2));
+    await writeConfigDocument("appSettings", JSON.stringify(payload, null, 2));
   }
 
   // 同步 HTML 语言标记。
@@ -456,6 +448,20 @@ export default function useAppSettings({
     settingsLoaded,
     saveRetryToken,
   ]);
+
+  // 配置目录失效时仍需使用最近一次应用语言，因此额外同步到固定启动文件。
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    void setBootstrapLocale(locale).catch((error) => {
+      logWarn("bootstrap.locale.save.failed", {
+        error: {
+          code: "bootstrap_locale_save_failed",
+          message: "Bootstrap locale could not be saved",
+          detail: extractErrorMessage(error),
+        },
+      });
+    });
+  }, [locale, settingsLoaded]);
 
   /** 手动触发一次设置重试保存。 */
   function retrySave() {

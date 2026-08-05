@@ -39,6 +39,9 @@ use crate::commands::ai::{
     ai_provider_test, ai_session_chat, ai_session_chat_stream_cancel, ai_session_chat_stream_start,
     ai_settings_get, ai_settings_save,
 };
+use crate::commands::configuration::{
+    background_delete, background_import, background_read, config_read_text, config_write_text,
+};
 use crate::commands::file::file_open;
 use crate::commands::local::{local_home, local_list, local_ssh_keys};
 use crate::commands::local_shell::{
@@ -78,7 +81,10 @@ use crate::commands::sftp::{
 use crate::commands::ssh::{
     ssh_connect, ssh_disconnect, ssh_host_key_confirm, ssh_resize, ssh_write, ssh_write_binary,
 };
-use crate::commands::system::{app_config_dir, app_data_dir, get_system_info, open_devtools};
+use crate::commands::system::{
+    app_config_dir, app_data_dir, bootstrap_locale_set, config_directory_reset,
+    config_directory_select_parent, config_directory_status, get_system_info, open_devtools,
+};
 use crate::commands::tunnel::{
     ssh_tunnel_close, ssh_tunnel_close_all, ssh_tunnel_list, ssh_tunnel_open,
 };
@@ -135,34 +141,39 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::new().build());
-    #[cfg(feature = "performance-telemetry")]
     let builder = builder.setup(|app| {
-        let service = match load_config(app.handle()) {
-            ConfigLoadResult::Disabled => PerformanceTelemetryService::disabled(),
-            ConfigLoadResult::Invalid(error) => {
-                error.log();
-                PerformanceTelemetryService::disabled()
-            }
-            ConfigLoadResult::Enabled(config) => {
-                match performance_telemetry::load_device_identity(app.handle()) {
-                    Ok(device) => match PerformanceTelemetryService::start(config, device) {
-                        Ok(service) => service,
+        let config_directory_state =
+            crate::config_paths::initialize_config_directory_state(app.handle())?;
+        app.manage(config_directory_state);
+        #[cfg(feature = "performance-telemetry")]
+        {
+            let service = match load_config(app.handle()) {
+                ConfigLoadResult::Disabled => PerformanceTelemetryService::disabled(),
+                ConfigLoadResult::Invalid(error) => {
+                    error.log();
+                    PerformanceTelemetryService::disabled()
+                }
+                ConfigLoadResult::Enabled(config) => {
+                    match performance_telemetry::load_device_identity(app.handle()) {
+                        Ok(device) => match PerformanceTelemetryService::start(config, device) {
+                            Ok(service) => service,
+                            Err(error) => {
+                                error.log();
+                                PerformanceTelemetryService::disabled()
+                            }
+                        },
                         Err(error) => {
                             error.log();
                             PerformanceTelemetryService::disabled()
                         }
-                    },
-                    Err(error) => {
-                        error.log();
-                        PerformanceTelemetryService::disabled()
                     }
                 }
+            };
+            if let Some(sink) = service.sink() {
+                let _ = install_global_sink(sink);
             }
-        };
-        if let Some(sink) = service.sink() {
-            let _ = install_global_sink(sink);
+            app.manage(service);
         }
-        app.manage(service);
         Ok(())
     });
     let builder = builder
@@ -195,6 +206,11 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             profile_list,
+            config_read_text,
+            config_write_text,
+            background_import,
+            background_read,
+            background_delete,
             profile_groups_list,
             profile_groups_save,
             profile_save,
@@ -258,6 +274,10 @@ pub fn run() {
             resource_monitor_stop,
             app_config_dir,
             app_data_dir,
+            config_directory_status,
+            config_directory_select_parent,
+            config_directory_reset,
+            bootstrap_locale_set,
             get_system_info,
             open_devtools,
             proxy_open,

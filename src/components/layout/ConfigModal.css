@@ -164,6 +164,7 @@
 }
 
 .config-dir-card {
+  container: config-dir-card / inline-size;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -185,6 +186,81 @@
   color: var(--text-primary);
   line-height: 1.6;
   word-break: break-all;
+}
+
+.config-dir-source {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.config-toggle-copy.config-dir-heading {
+  flex-flow: row nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px 10px;
+}
+
+.config-dir-heading .config-toggle-title,
+.config-dir-heading .config-dir-source {
+  align-self: auto;
+  white-space: nowrap;
+}
+
+.config-dir-notice,
+.config-dir-pending {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: var(--font-size-sm);
+}
+
+.config-dir-notice.is-locked {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.config-dir-pending {
+  display: grid;
+  gap: 8px;
+  background: var(--info-soft);
+  color: var(--text-secondary);
+}
+
+.config-dir-pending > span:first-child {
+  color: var(--info);
+  font-weight: 600;
+}
+
+.config-dir-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.config-dir-actions .ui-button {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+@container config-dir-card (min-width: 680px) {
+  .config-dir-actions {
+    grid-template-columns: repeat(4, max-content);
+  }
+
+  .config-dir-actions .ui-button {
+    width: auto;
+  }
+}
+
+@container config-dir-card (max-width: 360px) {
+  .config-dir-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .config-toggle-card {
