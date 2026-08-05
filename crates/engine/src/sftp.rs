@@ -305,6 +305,15 @@ const BATCH_WORKER_COUNT: usize = 8;
 const SFTP_INIT_STAGE_TIMEOUT_MS: u64 = 1200;
 /// 单文件上传分块并发写窗口。
 const UPLOAD_WRITE_WINDOW: usize = 8;
+/// 服务端未声明写入限制时使用的兼容分块大小。
+///
+/// ARM 麒麟系统随附的 OpenSSH（Ubuntu-4kylin3k0.8）未声明
+/// `limits@openssh.com`；若直接发送 256 KiB 数据，`SSH_FXP_WRITE`
+/// 加上协议字段后会超过服务端 256 KiB 消息上限，导致服务端记录
+/// `bad message` 并关闭 SFTP 会话。
+const DEFAULT_UPLOAD_CHUNK_SIZE: usize = 128 * 1024;
+/// 服务端明确允许时使用的最大上传分块大小。
+const MAX_UPLOAD_CHUNK_SIZE: usize = 256 * 1024;
 /// 单文件下载分块并发读窗口。
 const DOWNLOAD_READ_WINDOW: usize = 8;
 
@@ -2906,14 +2915,11 @@ fn download_chunk_size(read_limit: Option<u64>) -> usize {
 
 /// 根据服务端限制确定窗口化上传分块大小。
 fn upload_chunk_size(write_limit: Option<u64>) -> usize {
-    let mut chunk_size = 256 * 1024usize;
-    if let Some(limit) = write_limit {
-        chunk_size = chunk_size.min(limit as usize);
-    }
-    if chunk_size == 0 {
-        256 * 1024
-    } else {
-        chunk_size
+    match write_limit {
+        Some(limit) if limit > 0 => usize::try_from(limit)
+            .unwrap_or(usize::MAX)
+            .min(MAX_UPLOAD_CHUNK_SIZE),
+        _ => DEFAULT_UPLOAD_CHUNK_SIZE,
     }
 }
 
@@ -3585,10 +3591,16 @@ mod tests {
     }
 
     #[test]
-    fn upload_chunk_size_uses_256_kib_and_respects_server_limit() {
-        assert_eq!(upload_chunk_size(None), 256 * 1024);
+    fn upload_chunk_size_uses_safe_fallback_and_respects_server_limit() {
+        assert_eq!(upload_chunk_size(None), 128 * 1024);
+        assert_eq!(upload_chunk_size(Some(0)), 128 * 1024);
+        assert_eq!(upload_chunk_size(Some(64 * 1024)), 64 * 1024);
         assert_eq!(upload_chunk_size(Some(128 * 1024)), 128 * 1024);
-        assert_eq!(upload_chunk_size(Some(0)), 256 * 1024);
+        assert_eq!(
+            upload_chunk_size(Some(256 * 1024 - 1024)),
+            256 * 1024 - 1024
+        );
+        assert_eq!(upload_chunk_size(Some(512 * 1024)), 256 * 1024);
     }
 
     #[cfg(feature = "performance-telemetry")]
