@@ -59,6 +59,7 @@ export type BottomAreaProps = {
   securityLocked: boolean;
   securityProvider: SecurityProvider;
   onSecurityAction: () => void;
+  onLockScreen: () => void;
   locale: Locale;
   t: Translate;
 };

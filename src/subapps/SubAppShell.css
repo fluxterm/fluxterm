@@ -19,6 +19,20 @@
   color: var(--text-primary, #e8f1ff);
 }
 
+.subapp-lock-screen-region {
+  position: fixed;
+  inset: var(--chrome-titlebar-height) 0 0;
+  z-index: 9000;
+}
+
+.subapp-lock-screen-region.is-native-titlebar {
+  top: 0;
+}
+
+body[data-lock-screen="true"] .subapp-titlebar .menu-bar {
+  visibility: hidden;
+}
+
 .subapp-content {
   flex: 1;
   display: grid;

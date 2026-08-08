@@ -355,6 +355,22 @@ select {
   overflow: hidden;
 }
 
+.main-lock-screen-region {
+  position: absolute;
+  inset: var(--chrome-titlebar-height) 0 0;
+  z-index: 9000;
+}
+
+.main-lock-screen-region.is-native-titlebar {
+  top: 0;
+}
+
+.app-shell.is-lock-screen-active > .workspace,
+.app-shell.is-lock-screen-active > .bottom-area {
+  pointer-events: none;
+  user-select: none;
+}
+
 .titlebar {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -698,6 +714,16 @@ input[type="number"] {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.floating-lock-screen-region {
+  position: absolute;
+  inset: var(--chrome-titlebar-height) 0 0;
+  z-index: 9000;
+}
+
+.floating-lock-screen-region.is-native-titlebar {
+  top: 0;
 }
 
 .floating-body {

@@ -41,6 +41,8 @@ import {
 } from "@/hooks/useAppSettings";
 import useAiSettings from "@/hooks/useAiSettings";
 import useSecurity from "@/hooks/useSecurity";
+import useLockScreen from "@/hooks/useLockScreen";
+import LockScreen from "@/features/lock-screen/components/LockScreen";
 import useSessionSettings from "@/hooks/useSessionSettings";
 import useSerialProfiles from "@/hooks/useSerialProfiles";
 import useSerialMonitorState from "@/hooks/useSerialMonitorState";
@@ -494,7 +496,8 @@ export default function AppShell() {
     changePassword: changeSecurityPassword,
     enableWeakProtection: enableSecurityWeakProtection,
   } = useSecurity();
-  const { pushToast, openDialog } = useNotices();
+  const { pushToast, openDialog, dialogs, closeDialog } = useNotices();
+  const lockScreen = useLockScreen();
   const [aboutOpen, setAboutOpen] = useState(false);
   useDisableBrowserShortcuts();
   usePreventBrowserDefaults();
@@ -548,6 +551,26 @@ export default function AppShell() {
   );
   const nextSshConnectRequestIdRef = useRef(0);
   const isMac = useMemo(() => isMacOS(), []);
+
+  const handleLockScreen = useCallback(() => {
+    setAboutOpen(false);
+    setQuickbarManagerOpen(false);
+    setConfigModalOpen(false);
+    setProfileModalOpen(false);
+    setRdpProfileModalOpen(false);
+    setSerialProfileModalOpen(false);
+    setLocalShellProfileModalOpen(false);
+    dialogs.forEach((dialog) => closeDialog(dialog.id));
+    if (
+      document.activeElement instanceof HTMLElement &&
+      !document.activeElement.closest(".lock-screen")
+    ) {
+      document.activeElement.blur();
+    }
+    void lockScreen.lock().catch((error) => {
+      pushToast({ level: "error", message: getErrorMessage(error) });
+    });
+  }, [lockScreen, closeDialog, dialogs, pushToast]);
 
   const t: Translate = useMemo(
     () => (key, vars) =>
@@ -1984,6 +2007,7 @@ export default function AppShell() {
   });
 
   useMacAppMenu({
+    locked: lockScreen.locked,
     layoutCollapsed,
     onToggleCollapsed: handleToggleCollapsed,
     footerVisibility,
@@ -3255,9 +3279,13 @@ export default function AppShell() {
           layoutMenuDisabled={layoutMenuDisabled}
           onOpenConfigSection={openConfigSection}
           t={t}
+          lockScreen={lockScreen}
         />
       ) : (
-        <div className="app-shell" style={layoutVars}>
+        <div
+          className={`app-shell ${lockScreen.locked ? "is-lock-screen-active" : ""}`.trim()}
+          style={layoutVars}
+        >
           {!isMac && (
             <TitleBar
               onOpenConfigSection={openConfigSection}
@@ -3272,6 +3300,7 @@ export default function AppShell() {
                 }))
               }
               layoutDisabled={layoutMenuDisabled}
+              showMenus={!lockScreen.locked}
               subApps={subApps}
               onLaunchSubApp={(id) => {
                 launchSubApp(id).catch(() => {});
@@ -3458,9 +3487,23 @@ export default function AppShell() {
               }
               openConfigSection("security");
             }}
+            onLockScreen={handleLockScreen}
             locale={locale}
             t={t}
           />
+
+          {lockScreen.locked ? (
+            <div
+              className={`main-lock-screen-region ${isMac ? "is-native-titlebar" : ""}`.trim()}
+            >
+              <LockScreen
+                pending={lockScreen.pending}
+                mainWindow
+                onUnlock={lockScreen.unlock}
+                t={t}
+              />
+            </div>
+          ) : null}
 
           {aboutOpen ? (
             <Suspense fallback={null}>
@@ -3649,6 +3692,7 @@ export default function AppShell() {
                 await reloadProfiles();
               })
             }
+            onLockScreenPasswordSet={lockScreen.setPassword}
             onWebLinksEnabledChange={setWebLinksEnabled}
             onCommandAutocompleteEnabledChange={setCommandAutocompleteEnabled}
             onSelectionAutoCopyEnabledChange={setSelectionAutoCopyEnabled}

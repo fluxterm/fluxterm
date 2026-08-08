@@ -6,6 +6,7 @@ import type { ConfigSectionKey } from "@/main/config/configNavigation";
 import TitleBar from "@/components/layout/TitleBar";
 import WidgetTitleBar from "@/components/layout/WidgetTitleBar";
 import { isMacOS } from "@/utils/platform";
+import LockScreen from "@/features/lock-screen/components/LockScreen";
 
 type FloatingShellProps = {
   floatingWidgetKey: WidgetKey;
@@ -16,6 +17,10 @@ type FloatingShellProps = {
   layoutMenuDisabled: boolean;
   onOpenConfigSection: (section: ConfigSectionKey) => void;
   t: Translate;
+  lockScreen: {
+    locked: boolean;
+    pending: boolean;
+  };
 };
 
 /** 悬浮窗口的整体容器。 */
@@ -28,6 +33,7 @@ export default function FloatingShell({
   layoutMenuDisabled,
   onOpenConfigSection,
   t,
+  lockScreen,
 }: FloatingShellProps) {
   const isMac = isMacOS();
 
@@ -58,6 +64,13 @@ export default function FloatingShell({
           <div className="widget-body">{widgetBody}</div>
         </section>
       </div>
+      {lockScreen.locked ? (
+        <div
+          className={`floating-lock-screen-region ${isMac ? "is-native-titlebar" : ""}`.trim()}
+        >
+          <LockScreen pending={lockScreen.pending} mainWindow={false} t={t} />
+        </div>
+      ) : null}
     </div>
   );
 }

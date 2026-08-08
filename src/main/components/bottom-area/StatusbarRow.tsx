@@ -37,6 +37,7 @@ type StatusbarRowProps = {
   securityLocked: boolean;
   securityProvider: SecurityProvider;
   onSecurityAction: () => void;
+  onLockScreen: () => void;
   locale: Locale;
   t: Translate;
 };
@@ -54,6 +55,7 @@ export default function StatusbarRow({
   securityLocked,
   securityProvider,
   onSecurityAction,
+  onLockScreen,
   locale,
   t,
 }: StatusbarRowProps) {
@@ -298,6 +300,15 @@ export default function StatusbarRow({
             }}
           >
             <span>Issues</span>
+          </button>
+          <button
+            type="button"
+            className="statusbar-lock-screen-chip"
+            data-ui="lock-screen-trigger"
+            aria-label={t("lockScreen.lock")}
+            onClick={onLockScreen}
+          >
+            <span>{t("lockScreen.lock")}</span>
           </button>
           <span className="statusbar-info-chip">
             {formatDateTime(now, locale)}

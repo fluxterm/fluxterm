@@ -18,6 +18,7 @@ import {
 } from "@/main/config/configNavigation";
 
 type UseMacAppMenuOptions = {
+  locked?: boolean;
   layoutCollapsed: Record<"left" | "right" | "bottom", boolean>;
   onToggleCollapsed: (side: "left" | "right" | "bottom") => void;
   footerVisibility?: { quickbar: boolean; statusbar: boolean };
@@ -252,6 +253,7 @@ async function createHelpMenu(
 
 /** macOS 原生菜单适配。 */
 export default function useMacAppMenu({
+  locked = false,
   layoutCollapsed,
   onToggleCollapsed,
   footerVisibility = { quickbar: true, statusbar: true },
@@ -276,11 +278,30 @@ export default function useMacAppMenu({
 
     const applyMenu = async () => {
       try {
-        const appMenu = await createAppMenu({
-          appName: t("app.name"),
-          t,
-          onOpenAbout,
-        });
+        const appMenu = locked
+          ? await Submenu.new({
+              id: "app-menu",
+              text: t("app.name"),
+              items: [await PredefinedMenuItem.new({ item: "Quit" })],
+            })
+          : await createAppMenu({
+              appName: t("app.name"),
+              t,
+              onOpenAbout,
+            });
+        const windowMenu = await createWindowMenu(t("menu.window.title"));
+        if (locked) {
+          const menu = await Menu.new();
+          await menu.append([appMenu, windowMenu]);
+          if (cancelled) {
+            await menu.close();
+            return;
+          }
+          const previousMenu = await menu.setAsAppMenu();
+          await windowMenu.setAsWindowsMenuForNSApp();
+          if (previousMenu) await previousMenu.close();
+          return;
+        }
         // macOS 原生菜单的“配置”入口必须与 Windows/Web 的 Menus.tsx 保持同步，
         // 后续新增或调整配置分组时，两处都要一起修改，避免某个平台缺入口。
         const configMenu = await createConfigMenu(onOpenConfigSection, t);
@@ -302,7 +323,6 @@ export default function useMacAppMenu({
               })
             : null;
         const editMenu = await createEditMenu(t("menu.edit.title"));
-        const windowMenu = await createWindowMenu(t("menu.window.title"));
         const helpMenu = await createHelpMenu(
           t("menu.help.title"),
           onOpenAbout,
@@ -349,6 +369,7 @@ export default function useMacAppMenu({
       cancelled = true;
     };
   }, [
+    locked,
     layoutCollapsed,
     onToggleCollapsed,
     footerVisibility,

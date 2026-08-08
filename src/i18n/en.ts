@@ -50,6 +50,23 @@ export const enUsTranslations = {
   "config.section.sessionShell": "Default Shell",
   "config.section.appDirectory": "App Directories",
   "config.security.currentMode": "Current Mode",
+  "config.lockScreen.title": "Lock Screen",
+  "config.lockScreen.description":
+    "Set a separate lock screen password without affecting the security password or active connections.",
+  "config.lockScreen.passwordPlaceholder":
+    "Enter a new lock screen password (optional)",
+  "config.lockScreen.confirmPlaceholder":
+    "Re-enter the new lock screen password",
+  "config.lockScreen.passwordMismatch":
+    "The two lock screen passwords do not match",
+  "config.lockScreen.save": "Save Lock Screen Password",
+  "config.lockScreen.saved": "The lock screen password was saved",
+  "lockScreen.title": "FluxTerm Screen Locked",
+  "lockScreen.password": "Lock screen password",
+  "lockScreen.lock": "Lock Screen",
+  "lockScreen.unlock": "Unlock",
+  "lockScreen.invalidPassword": "The lock screen password is incorrect",
+  "lockScreen.unlockInMain": "Unlock FluxTerm in the main window",
   "config.security.providerWeak": "Weak Protection",
   "config.security.providerStrong": "Strong Protection",
   "config.security.loading": "Loading security status",

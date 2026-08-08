@@ -67,6 +67,14 @@
 - `subapp:main-shutdown`：Main 关闭前广播，触发子窗口联动回收
 - `subapp:appearance-sync`：Main -> SubApp，实时同步 `locale / theme / background / alpha`
 
+### 4.4 应用锁屏协议
+
+1. 应用锁屏状态由 Tauri 进程内状态持有，程序完全退出后恢复为未锁定
+2. 所有 Webview 通过 `lock-screen://changed` 事件同步状态，并在首次查询完成前按锁屏态遮挡内容
+3. 只有 Main 可以发起锁定、解锁和修改锁屏密码；Widget 浮窗与 SubApp 仅展示锁定提示
+4. 锁定时各窗口保留标题栏、拖动与系统窗控，隐藏业务菜单并遮挡业务区
+5. 锁屏不卸载业务运行单元，也不改变连接、传输或凭据加密会话
+
 ## 5. 标题栏与外观一致性
 
 1. SubApp 标题栏行为与 Main 保持一致，包括拖拽、双击最大化与窗口控制按钮

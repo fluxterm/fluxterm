@@ -4,6 +4,7 @@ pub mod configuration;
 pub mod file;
 pub mod local;
 pub mod local_shell;
+pub mod lock_screen;
 pub mod profile;
 pub mod proxy;
 pub mod rdp;

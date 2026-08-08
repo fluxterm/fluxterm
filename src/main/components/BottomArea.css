@@ -190,6 +190,7 @@
 .statusbar-ai-chip,
 .statusbar-info-chip,
 .statusbar-link-chip,
+.statusbar-lock-screen-chip,
 .statusbar-resource-chip,
 .statusbar-transfer-token,
 .statusbar-security-chip {
@@ -204,7 +205,8 @@
   flex-shrink: 0;
 }
 
-.statusbar-link-chip {
+.statusbar-link-chip,
+.statusbar-lock-screen-chip {
   margin: 0;
   font: inherit;
   line-height: inherit;
@@ -226,7 +228,8 @@
   color: color-mix(in srgb, var(--danger, #f87171) 78%, var(--text-primary));
 }
 
-.statusbar-link-chip:hover {
+.statusbar-link-chip:hover,
+.statusbar-lock-screen-chip:hover {
   color: var(--text-primary);
   border-color: color-mix(in srgb, var(--accent) 32%, var(--border-soft));
 }

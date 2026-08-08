@@ -187,6 +187,7 @@ type ConfigModalProps = {
     nextPassword: string,
   ) => Promise<void> | void;
   onSecurityEnableWeakProtection?: () => Promise<void> | void;
+  onLockScreenPasswordSet?: (password: string) => Promise<void> | void;
   onWebLinksEnabledChange?: (enabled: boolean) => void;
   onCommandAutocompleteEnabledChange?: (enabled: boolean) => void;
   onSelectionAutoCopyEnabledChange?: (enabled: boolean) => void;
@@ -326,6 +327,7 @@ export default function ConfigModal({
   onSecurityEnableStrongProtection,
   onSecurityChangePassword,
   onSecurityEnableWeakProtection,
+  onLockScreenPasswordSet,
   onWebLinksEnabledChange,
   onCommandAutocompleteEnabledChange,
   onSelectionAutoCopyEnabledChange,
@@ -454,6 +456,10 @@ export default function ConfigModal({
     securityNextPasswordConfirmDraft,
     setSecurityNextPasswordConfirmDraft,
   ] = useKeyedDraftState(securityDraftSourceKey, "");
+  const [lockScreenPasswordDraft, setLockScreenPasswordDraft] =
+    useKeyedDraftState(activeSection, "");
+  const [lockScreenPasswordConfirmDraft, setLockScreenPasswordConfirmDraft] =
+    useKeyedDraftState(activeSection, "");
   const normalizedBackgroundMediaType =
     normalizeBackgroundMediaType(backgroundMediaType);
   const normalizedBackgroundRenderMode =
@@ -1400,6 +1406,75 @@ export default function ConfigModal({
       return (
         <div className="config-modal-widget config-modal-widget-scrollable config-security-section">
           <h3>{t("config.section.security")}</h3>
+          <div
+            className="config-toggle-card config-feature-group"
+            data-ui="lock-screen-settings"
+          >
+            <div className="config-toggle-copy">
+              <span className="config-toggle-title">
+                {t("config.lockScreen.title")}
+              </span>
+              <span className="config-toggle-desc">
+                {t("config.lockScreen.description")}
+              </span>
+            </div>
+            <input
+              type="password"
+              autoComplete="off"
+              className="config-text-input"
+              value={lockScreenPasswordDraft}
+              placeholder={t("config.lockScreen.passwordPlaceholder")}
+              onChange={(event) =>
+                setLockScreenPasswordDraft(event.target.value)
+              }
+            />
+            <input
+              type="password"
+              autoComplete="off"
+              className="config-text-input"
+              value={lockScreenPasswordConfirmDraft}
+              placeholder={t("config.lockScreen.confirmPlaceholder")}
+              onChange={(event) =>
+                setLockScreenPasswordConfirmDraft(event.target.value)
+              }
+            />
+            <div className="config-file-picker-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (
+                    lockScreenPasswordDraft !== lockScreenPasswordConfirmDraft
+                  ) {
+                    pushToast({
+                      level: "error",
+                      message: t("config.lockScreen.passwordMismatch"),
+                    });
+                    return;
+                  }
+                  void Promise.resolve(
+                    onLockScreenPasswordSet?.(lockScreenPasswordDraft),
+                  )
+                    .then(() => {
+                      setLockScreenPasswordDraft("");
+                      setLockScreenPasswordConfirmDraft("");
+                      pushToast({
+                        level: "success",
+                        message: t("config.lockScreen.saved"),
+                      });
+                    })
+                    .catch((error) => {
+                      pushToast({
+                        level: "error",
+                        message: getTranslatedErrorMessage(error, t),
+                      });
+                    });
+                }}
+              >
+                {t("config.lockScreen.save")}
+              </Button>
+            </div>
+          </div>
           <div className="config-toggle-card config-feature-group">
             <div className="config-toggle-copy">
               <span className="config-toggle-title">

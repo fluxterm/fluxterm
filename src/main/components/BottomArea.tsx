@@ -68,6 +68,7 @@ export default function BottomArea({
   securityLocked,
   securityProvider,
   onSecurityAction,
+  onLockScreen,
   locale,
   t,
 }: BottomAreaProps) {
@@ -164,6 +165,7 @@ export default function BottomArea({
             securityLocked={securityLocked}
             securityProvider={securityProvider}
             onSecurityAction={onSecurityAction}
+            onLockScreen={onLockScreen}
             locale={locale}
             t={t}
           />

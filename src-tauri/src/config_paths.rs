@@ -577,6 +577,11 @@ pub fn resolve_security_config_path(app: &AppHandle) -> Result<PathBuf, EngineEr
     Ok(resolve_global_config_dir(app)?.join("security.json"))
 }
 
+/// 解析应用锁屏配置文件路径。
+pub fn resolve_lock_screen_config_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    Ok(resolve_global_config_dir(app)?.join("lock-screen.json"))
+}
+
 /// 解析全局 session 配置文件路径。
 pub fn resolve_session_settings_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
     Ok(resolve_global_config_dir(app)?.join("session.json"))

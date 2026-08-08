@@ -48,6 +48,9 @@ use crate::commands::local_shell::{
     local_shell_connect, local_shell_disconnect, local_shell_list, local_shell_resize,
     local_shell_write, local_shell_write_binary,
 };
+use crate::commands::lock_screen::{
+    LockScreenState, lock_screen, lock_screen_password_set, lock_screen_status, unlock_screen,
+};
 use crate::commands::profile::{
     profile_groups_list, profile_groups_save, profile_list, profile_remove, profile_save,
     ssh_import_openssh_config,
@@ -181,6 +184,7 @@ pub fn run() {
             engine: Arc::new(Engine::new()),
         })
         .manage(SecurityState::default())
+        .manage(LockScreenState::default())
         .manage(SerialState {
             manager: Arc::new(engine::SerialManager::new()),
         })
@@ -222,6 +226,10 @@ pub fn run() {
             ai_settings_get,
             ai_settings_save,
             ai_provider_test,
+            lock_screen_status,
+            lock_screen,
+            unlock_screen,
+            lock_screen_password_set,
             security_status,
             security_unlock,
             security_lock,

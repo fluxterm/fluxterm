@@ -36,6 +36,9 @@ import "@/subapps/proxy/ProxySubApp.css";
 import "@/subapps/rdp/RdpSubApp.css";
 import { callTauri } from "@/shared/tauri/commands";
 import { resolveBackgroundAssetUrl } from "@/features/backgrounds/core/assetResolver";
+import useLockScreen from "@/hooks/useLockScreen";
+import LockScreen from "@/features/lock-screen/components/LockScreen";
+import { isMacOS } from "@/utils/platform";
 import {
   resolveDetachedBackgroundImageStyle,
   waitForDetachedBackgroundMediaReady,
@@ -65,6 +68,20 @@ function clampBackgroundImageSurfaceAlpha(value: number) {
 export default function SubAppRoot() {
   useDisableBrowserShortcuts();
   usePreventBrowserDefaults();
+  const lockScreen = useLockScreen();
+  const isMac = isMacOS();
+
+  useEffect(() => {
+    if (!lockScreen.locked || lockScreen.pending) return;
+    void (async () => {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen().catch(() => {});
+      }
+      await getCurrentWindow()
+        .setFullscreen(false)
+        .catch(() => {});
+    })();
+  }, [lockScreen.locked, lockScreen.pending]);
 
   const themeIds = useMemo(() => Object.keys(themePresets) as ThemeId[], []);
   const {
@@ -460,6 +477,13 @@ export default function SubAppRoot() {
           </main>
         </div>
       )}
+      {lockScreen.locked ? (
+        <div
+          className={`subapp-lock-screen-region ${isMac ? "is-native-titlebar" : ""}`.trim()}
+        >
+          <LockScreen pending={lockScreen.pending} mainWindow={false} t={t} />
+        </div>
+      ) : null}
     </>
   );
 }

@@ -1,0 +1,65 @@
+.lock-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--surface-panel) 96%, transparent);
+  backdrop-filter: blur(18px);
+  color: var(--text-primary);
+}
+
+.lock-screen-card {
+  width: min(380px, calc(100vw - 48px));
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-strong);
+}
+
+.lock-screen-logo {
+  width: 52px;
+  height: 52px;
+}
+
+.lock-screen-card h1,
+.lock-screen-card p {
+  margin: 0;
+}
+
+.lock-screen-card form {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.lock-screen-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  background: var(--input-bg);
+}
+
+.lock-screen-card [role="alert"] {
+  color: var(--danger);
+  font-size: var(--font-size-sm);
+}
+
+.lock-screen-secondary-message {
+  text-align: center;
+}
+
+body[data-lock-screen="true"] .menu-sub,
+body[data-lock-screen="true"] .widget-settings-menu,
+body[data-lock-screen="true"] .modal-overlay,
+body[data-lock-screen="true"] .toast-layer,
+body[data-lock-screen="true"] .dialog-overlay {
+  display: none !important;
+}
