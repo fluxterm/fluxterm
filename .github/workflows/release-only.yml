@@ -1,0 +1,62 @@
+name: Release Only
+
+run-name: "Release Only ${{ inputs.tag_name }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "App version (e.g. 0.1.0-rc.1)"
+        required: true
+      release_name:
+        description: "The name of the release."
+        required: false
+        default: Version
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          version=$(node -e "const fs=require('fs'); const cfg=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8')); process.stdout.write(cfg.version);")
+
+          if [ "$INPUT_TAG_NAME" != "$version" ]; then
+            echo "Input tag_name ($INPUT_TAG_NAME) does not match src-tauri/tauri.conf.json version ($version)." >&2
+            exit 1
+          fi
+
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create tag and release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          INPUT_RELEASE_NAME: ${{ inputs.release_name }}
+          RELEASE_TARGET: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          release_name="$INPUT_RELEASE_NAME"
+          if [ "$release_name" = "Version" ]; then
+            release_name="Version $RELEASE_TAG"
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_TARGET" \
+            --title "$release_name" \
+            --notes "Draft release, will be updated later." \
+            --draft \
+            --prerelease
