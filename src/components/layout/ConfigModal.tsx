@@ -1414,9 +1414,6 @@ export default function ConfigModal({
               <span className="config-toggle-title">
                 {t("config.lockScreen.title")}
               </span>
-              <span className="config-toggle-desc">
-                {t("config.lockScreen.description")}
-              </span>
             </div>
             <input
               type="password"

@@ -51,8 +51,6 @@ export const enUsTranslations = {
   "config.section.appDirectory": "App Directories",
   "config.security.currentMode": "Current Mode",
   "config.lockScreen.title": "Lock Screen",
-  "config.lockScreen.description":
-    "Set a separate lock screen password without affecting the security password or active connections.",
   "config.lockScreen.passwordPlaceholder":
     "Enter a new lock screen password (optional)",
   "config.lockScreen.confirmPlaceholder":
@@ -61,7 +59,7 @@ export const enUsTranslations = {
     "The two lock screen passwords do not match",
   "config.lockScreen.save": "Save Lock Screen Password",
   "config.lockScreen.saved": "The lock screen password was saved",
-  "lockScreen.title": "FluxTerm Screen Locked",
+  "lockScreen.title": "Screen Locked",
   "lockScreen.password": "Lock screen password",
   "lockScreen.lock": "Lock Screen",
   "lockScreen.unlock": "Unlock",

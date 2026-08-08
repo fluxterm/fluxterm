@@ -532,6 +532,7 @@ select {
 
 .window-controls {
   display: flex;
+  grid-column: 3;
   align-items: center;
   gap: var(--chrome-window-controls-gap);
   justify-self: end;
