@@ -25,6 +25,7 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{MissedTickBehavior, interval, timeout};
 use uuid::Uuid;
 
@@ -44,6 +45,7 @@ use crate::util::decode_terminal_output;
 
 const TERMINAL_OUTPUT_BATCH_BYTES: usize = 64 * 1024;
 const TERMINAL_OUTPUT_FLUSH_INTERVAL: Duration = Duration::from_millis(16);
+const SSH_SHUTDOWN_OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// 会话发送通道句柄。
 #[derive(Clone)]
@@ -175,7 +177,10 @@ struct RemoteRoute {
 struct TunnelHandle {
     runtime: Arc<Mutex<SshTunnelRuntime>>,
     stop: tokio::sync::watch::Sender<bool>,
+    task: JoinHandle<()>,
 }
+
+type RemoteConnectionTasks = Arc<Mutex<HashMap<String, Vec<JoinHandle<()>>>>>;
 
 impl TunnelHandle {
     fn snapshot(&self) -> Arc<Mutex<SshTunnelRuntime>> {
@@ -188,6 +193,7 @@ pub struct ClientHandler {
     expected_host_key: Option<ExpectedHostKey>,
     host_key_state: HostKeyCheckState,
     remote_routes: Arc<RwLock<HashMap<u16, RemoteRoute>>>,
+    remote_connection_tasks: RemoteConnectionTasks,
     session_id: String,
     on_event: Option<EventCallback>,
 }
@@ -201,6 +207,7 @@ impl ClientHandler {
                 error: Arc::new(StdMutex::new(None)),
             },
             remote_routes: Arc::new(RwLock::new(HashMap::new())),
+            remote_connection_tasks: Arc::new(Mutex::new(HashMap::new())),
             session_id: String::new(),
             on_event: None,
         }
@@ -214,6 +221,7 @@ impl ClientHandler {
                 error: Arc::new(StdMutex::new(None)),
             },
             remote_routes: Arc::new(RwLock::new(HashMap::new())),
+            remote_connection_tasks: Arc::new(Mutex::new(HashMap::new())),
             session_id: String::new(),
             on_event: None,
         }
@@ -266,7 +274,8 @@ impl client::Handler for ClientHandler {
 
         let on_event = self.on_event.clone();
         let session_id = self.session_id.clone();
-        tokio::spawn(async move {
+        let tunnel_id = route.tunnel_id.clone();
+        let task = tokio::spawn(async move {
             let Ok(local_stream) =
                 TcpStream::connect(format!("{}:{}", route.target_host, route.target_port)).await
             else {
@@ -301,6 +310,16 @@ impl client::Handler for ClientHandler {
             let _ = ssh_stream.shutdown().await;
             let _ = tcp_stream.shutdown().await;
         });
+        let mut remote_connection_tasks = self.remote_connection_tasks.lock().await;
+        if let Some(tasks) = remote_connection_tasks.get_mut(&tunnel_id) {
+            tasks.retain(|task| !task.is_finished());
+            tasks.push(task);
+        } else {
+            // 路由关闭可能与服务端已发出的 forwarded-tcpip 并发；关闭后到达的任务不得逃逸。
+            drop(remote_connection_tasks);
+            task.abort();
+            let _ = task.await;
+        }
         Ok(())
     }
 }
@@ -394,11 +413,12 @@ async fn open_local_or_dynamic_tunnel(
 
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
     let runtime_clone = Arc::clone(&runtime);
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
+        let mut connection_tasks = JoinSet::new();
         loop {
             tokio::select! {
-                _ = stop_rx.changed() => {
-                    if *stop_rx.borrow() {
+                changed = stop_rx.changed() => {
+                    if changed.is_err() || *stop_rx.borrow() {
                         break;
                     }
                 }
@@ -417,7 +437,7 @@ async fn open_local_or_dynamic_tunnel(
                     let runtime_for_conn = Arc::clone(&runtime_clone);
                     let on_event_for_conn = Arc::clone(&on_event);
                     let session_for_conn = Arc::clone(&session);
-                    tokio::spawn(async move {
+                    connection_tasks.spawn(async move {
                         let (target_host, target_port, upstream) = match spec.kind {
                             SshTunnelKind::Dynamic => {
                                 match socks5_connect_handshake(tcp_stream).await {
@@ -465,8 +485,11 @@ async fn open_local_or_dynamic_tunnel(
                         emit_tunnel_update(&on_event_for_conn, &g.clone());
                     });
                 }
+                _ = connection_tasks.join_next(), if !connection_tasks.is_empty() => {}
             }
         }
+        connection_tasks.abort_all();
+        while connection_tasks.join_next().await.is_some() {}
         let mut g = runtime_clone.lock().await;
         g.status = SshTunnelStatus::Stopped;
         g.active_connections = 0;
@@ -484,6 +507,7 @@ async fn open_local_or_dynamic_tunnel(
     Ok(TunnelHandle {
         runtime,
         stop: stop_tx,
+        task,
     })
 }
 
@@ -492,6 +516,7 @@ async fn open_remote_tunnel(
     session: Arc<Mutex<client::Handle<ClientHandler>>>,
     spec: SshTunnelSpec,
     remote_routes: Arc<RwLock<HashMap<u16, RemoteRoute>>>,
+    remote_connection_tasks: RemoteConnectionTasks,
     on_event: EventCallback,
 ) -> Result<TunnelHandle, EngineError> {
     let tunnel_id = Uuid::new_v4().to_string();
@@ -542,6 +567,10 @@ async fn open_remote_tunnel(
             )
         })?;
     let bind_port = assigned_port as u16;
+    remote_connection_tasks
+        .lock()
+        .await
+        .insert(tunnel_id.clone(), Vec::new());
     remote_routes.write().await.insert(
         bind_port,
         RemoteRoute {
@@ -559,19 +588,32 @@ async fn open_remote_tunnel(
 
     let (stop_tx, mut stop_rx) = tokio::sync::watch::channel(false);
     let runtime_clone = Arc::clone(&runtime);
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         let _ = stop_rx.changed().await;
         {
             let mut g = runtime_clone.lock().await;
             g.status = SshTunnelStatus::Stopping;
             emit_tunnel_update(&on_event, &g.clone());
         }
-        let _ = session
-            .lock()
-            .await
-            .cancel_tcpip_forward(spec.bind_host.clone(), bind_port as u32)
-            .await;
+        // 先阻断新路由并结束现有连接，服务端不响应取消请求时也不能拖住本地清理。
         remote_routes.write().await.remove(&bind_port);
+        let connection_tasks = remote_connection_tasks.lock().await.remove(&tunnel_id);
+        if let Some(connection_tasks) = connection_tasks {
+            for task in &connection_tasks {
+                task.abort();
+            }
+            for task in connection_tasks {
+                let _ = task.await;
+            }
+        }
+        let _ = timeout(SSH_SHUTDOWN_OPERATION_TIMEOUT, async {
+            session
+                .lock()
+                .await
+                .cancel_tcpip_forward(spec.bind_host.clone(), bind_port as u32)
+                .await
+        })
+        .await;
         let mut g = runtime_clone.lock().await;
         g.status = SshTunnelStatus::Stopped;
         log_event!(
@@ -588,12 +630,42 @@ async fn open_remote_tunnel(
     Ok(TunnelHandle {
         runtime,
         stop: stop_tx,
+        task,
     })
 }
 
 async fn close_tunnel(handle: TunnelHandle) -> Result<(), EngineError> {
     let _ = handle.stop.send(true);
-    Ok(())
+    handle.task.await.map_err(|err| {
+        EngineError::with_detail(
+            "ssh_tunnel_close_failed",
+            "Tunnel shutdown task failed",
+            err.to_string(),
+        )
+    })
+}
+
+/// 关闭并等待会话下的全部 SSH 隧道释放其后台资源。
+async fn close_all_tunnels(tunnel_handles: &Arc<Mutex<HashMap<String, TunnelHandle>>>) {
+    let mut handles = tunnel_handles.lock().await;
+    let values: Vec<TunnelHandle> = handles.drain().map(|(_, value)| value).collect();
+    drop(handles);
+    for handle in values {
+        let _ = close_tunnel(handle).await;
+    }
+}
+
+/// 判断服务端消息是否表示交互式 shell 已经结束。
+fn terminal_channel_ended(message: Option<&russh::ChannelMsg>) -> bool {
+    matches!(
+        message,
+        None | Some(
+            russh::ChannelMsg::ExitStatus { .. }
+                | russh::ChannelMsg::ExitSignal { .. }
+                | russh::ChannelMsg::Eof
+                | russh::ChannelMsg::Close
+        )
+    )
 }
 
 async fn socks5_connect_handshake(
@@ -753,6 +825,7 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
     };
     let remote_routes: Arc<RwLock<HashMap<u16, RemoteRoute>>> =
         Arc::new(RwLock::new(HashMap::new()));
+    let remote_connection_tasks: RemoteConnectionTasks = Arc::new(Mutex::new(HashMap::new()));
     let connection = timeout(
         Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
         connect_ssh_client(
@@ -763,6 +836,7 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                 expected_host_key,
                 host_key_state: host_key_state.clone(),
                 remote_routes: Arc::clone(&remote_routes),
+                remote_connection_tasks: Arc::clone(&remote_connection_tasks),
                 session_id: session_id.clone(),
                 on_event: Some(Arc::clone(&on_event)),
             },
@@ -1074,6 +1148,7 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                                     Arc::clone(&session),
                                     spec.clone(),
                                     Arc::clone(&remote_routes),
+                                    Arc::clone(&remote_connection_tasks),
                                     Arc::clone(&on_event),
                                 )
                                 .await
@@ -1108,40 +1183,28 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         let _ = respond_to.send(Ok(snapshots));
                     }
                     SessionCommand::TunnelCloseAll { respond_to } => {
-                        let mut handles = tunnel_handles.lock().await;
-                        let values: Vec<TunnelHandle> = handles.drain().map(|(_, value)| value).collect();
-                        drop(handles);
-                        for handle in values {
-                            let _ = close_tunnel(handle).await;
-                        }
+                        close_all_tunnels(&tunnel_handles).await;
                         let _ = respond_to.send(Ok(()));
                     }
                     SessionCommand::Disconnect => {
-                        let mut handles = tunnel_handles.lock().await;
-                        let values: Vec<TunnelHandle> =
-                            handles.drain().map(|(_, value)| value).collect();
-                        drop(handles);
-                        for handle in values {
-                            let _ = close_tunnel(handle).await;
-                        }
-                        let _ = channel.eof().await;
-                        let _ = channel.close().await;
                         running = false;
                     }
                 }
             }
             result = channel.wait(), if terminal_output.len() < TERMINAL_OUTPUT_BATCH_BYTES => {
-                match result {
+                if terminal_channel_ended(result.as_ref()) {
+                    running = false;
+                } else {
+                    match result {
                     Some(russh::ChannelMsg::Data { data }) => {
                         terminal_output.extend_from_slice(data.as_ref());
                     }
                     Some(russh::ChannelMsg::ExtendedData { data, .. }) => {
                         terminal_output.extend_from_slice(data.as_ref());
                     }
-                    Some(russh::ChannelMsg::Eof) | Some(russh::ChannelMsg::Close) | None => {
-                        running = false;
-                    }
                     Some(_) => {}
+                    None => unreachable!("终端结束消息已在前置分支处理"),
+                    }
                 }
             }
             _ = terminal_output_interval.tick(), if !terminal_output.is_empty() => {
@@ -1155,12 +1218,21 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
         }
     }
     emit_terminal_output_batch(&on_event, &session_id, &mut terminal_output, true);
-    let mut handles = tunnel_handles.lock().await;
-    let values: Vec<TunnelHandle> = handles.drain().map(|(_, value)| value).collect();
-    drop(handles);
-    for handle in values {
-        let _ = close_tunnel(handle).await;
-    }
+    close_all_tunnels(&tunnel_handles).await;
+    let _ = channel.eof().await;
+    let _ = channel.close().await;
+    let _ = timeout(SSH_SHUTDOWN_OPERATION_TIMEOUT, async {
+        session
+            .lock()
+            .await
+            .disconnect(
+                russh::Disconnect::ByApplication,
+                "FluxTerm session ended",
+                "",
+            )
+            .await
+    })
+    .await;
 
     on_event(EngineEvent::TerminalExit {
         session_id: session_id.clone(),
@@ -1186,13 +1258,75 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientHandler, ExpectedHostKey};
+    use super::{
+        ClientHandler, ExpectedHostKey, TunnelHandle, close_tunnel, terminal_channel_ended,
+    };
     use crate::error::EngineError;
+    use crate::types::{SshTunnelKind, SshTunnelRuntime, SshTunnelStatus};
     use russh::client::Handler;
     use russh::keys::{self, HashAlg, PublicKeyBase64};
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
 
     const KEY_A: &str = "AAAAC3NzaC1lZDI1NTE5AAAAILIG2T/B0l0gaqj3puu510tu9N1OkQ4znY3LYuEm5zCF";
     const KEY_B: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
+
+    #[test]
+    fn terminal_exit_messages_end_the_session() {
+        assert!(terminal_channel_ended(None));
+        assert!(terminal_channel_ended(Some(
+            &russh::ChannelMsg::ExitStatus { exit_status: 0 }
+        )));
+        assert!(terminal_channel_ended(Some(
+            &russh::ChannelMsg::ExitSignal {
+                signal_name: russh::Sig::TERM,
+                core_dumped: false,
+                error_message: String::new(),
+                lang_tag: String::new(),
+            }
+        )));
+        assert!(terminal_channel_ended(Some(&russh::ChannelMsg::Eof)));
+        assert!(terminal_channel_ended(Some(&russh::ChannelMsg::Close)));
+        assert!(!terminal_channel_ended(Some(&russh::ChannelMsg::Data {
+            data: vec![1_u8].into(),
+        })));
+    }
+
+    #[tokio::test]
+    async fn close_tunnel_waits_for_shutdown_task() {
+        let runtime = Arc::new(Mutex::new(SshTunnelRuntime {
+            tunnel_id: "tunnel-test".to_string(),
+            session_id: "session-test".to_string(),
+            kind: SshTunnelKind::Local,
+            name: None,
+            bind_host: "127.0.0.1".to_string(),
+            bind_port: 0,
+            target_host: Some("127.0.0.1".to_string()),
+            target_port: Some(22),
+            status: SshTunnelStatus::Running,
+            bytes_in: 0,
+            bytes_out: 0,
+            active_connections: 0,
+            last_error: None,
+        }));
+        let runtime_for_task = Arc::clone(&runtime);
+        let (stop, mut stop_rx) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(async move {
+            let _ = stop_rx.changed().await;
+            tokio::task::yield_now().await;
+            runtime_for_task.lock().await.status = SshTunnelStatus::Stopped;
+        });
+
+        close_tunnel(TunnelHandle {
+            runtime: Arc::clone(&runtime),
+            stop,
+            task,
+        })
+        .await
+        .expect("关闭隧道");
+
+        assert_eq!(runtime.lock().await.status, SshTunnelStatus::Stopped);
+    }
 
     #[tokio::test]
     async fn client_handler_accepts_matching_expected_host_key() {

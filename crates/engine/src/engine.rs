@@ -23,7 +23,7 @@ use crate::util::now_epoch;
 
 /// 会话引擎，负责连接管理与命令分发。
 pub struct Engine {
-    sessions: Mutex<HashMap<String, SessionHandle>>,
+    sessions: Arc<Mutex<HashMap<String, SessionHandle>>>,
     proxy_backend: Arc<dyn ProxyBackend>,
     runtime: Arc<Runtime>,
 }
@@ -39,7 +39,7 @@ impl Engine {
     pub fn new() -> Self {
         let runtime = Arc::new(Runtime::new().expect("failed to create runtime"));
         Self {
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             proxy_backend: Arc::new(BuiltinProxyBackend::new(Arc::clone(&runtime))),
             runtime,
         }
@@ -85,6 +85,12 @@ impl Engine {
         let operation_id_clone = operation_id.clone();
         let started_at = Instant::now();
         let failure_profile = profile.clone();
+        let sessions = Arc::clone(&self.sessions);
+
+        self.sessions
+            .lock()
+            .unwrap()
+            .insert(session_id.clone(), SessionHandle { tx });
 
         runtime.spawn(async move {
             let result = run_session_loop(SessionLoopRequest {
@@ -127,12 +133,8 @@ impl Engine {
                     error: Some(err),
                 });
             }
+            sessions.lock().unwrap().remove(&session_id_clone);
         });
-
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), SessionHandle { tx });
 
         Ok(Session {
             session_id,
