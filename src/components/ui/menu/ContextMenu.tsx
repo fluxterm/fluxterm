@@ -74,6 +74,7 @@ export default function ContextMenu({
         {items.map((item) => (
           <button
             key={item.id ?? item.label}
+            data-ui={item.id}
             className={item.danger ? "danger" : ""}
             disabled={item.disabled}
             onClick={item.onClick}

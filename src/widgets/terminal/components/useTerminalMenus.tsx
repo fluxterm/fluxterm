@@ -387,6 +387,19 @@ export default function useTerminalMenus({
             x={activeLinkMenu.x}
             y={activeLinkMenu.y}
             items={[
+              ...(hasActiveSelection()
+                ? [
+                    {
+                      id: "copy-link-selection",
+                      label: t("terminal.menu.copy"),
+                      icon: <FiCopy />,
+                      onClick: () => {
+                        onCopySelection().catch(() => {});
+                        onCloseLinkMenu();
+                      },
+                    },
+                  ]
+                : []),
               {
                 id: "open-link",
                 label: t("terminal.menu.openLink"),
