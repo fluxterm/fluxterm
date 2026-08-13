@@ -617,6 +617,14 @@ export const enUsTranslations = {
   "rdp.error.viewportUnavailable":
     "Unable to resolve the current viewport size for window-sync RDP.",
   "rdp.error.profileNotFound": "Unable to find the requested RDP profile.",
+  "rdp.error.tcpConnectTimeout":
+    "The connection to the remote host timed out. Check the address, port, and network.",
+  "rdp.error.tcpConnectFailed":
+    "Unable to connect to the remote host. Check the address, port, and network.",
+  "rdp.error.protocolNegotiationTimeout":
+    "The target did not respond to RDP protocol negotiation within 8 seconds. Check the address, port, and Remote Desktop service.",
+  "rdp.error.protocolNegotiationFailed":
+    "RDP protocol negotiation failed. Check the Remote Desktop service and security protocol settings.",
   "rdp.metrics.resolution": "{value}",
   "rdp.metrics.bridgeState.idle": "Idle",
   "rdp.metrics.bridgeState.connecting": "Connecting",

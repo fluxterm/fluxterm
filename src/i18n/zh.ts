@@ -566,6 +566,14 @@ export const zhCnTranslations = {
   "rdp.error.viewportUnavailable":
     "当前无法获取窗口视口尺寸，不能启动跟随窗口模式的 RDP 连接。",
   "rdp.error.profileNotFound": "找不到要连接的 RDP Profile。",
+  "rdp.error.tcpConnectTimeout":
+    "连接远程主机超时，请检查地址、端口和网络状态。",
+  "rdp.error.tcpConnectFailed":
+    "无法连接远程主机，请检查地址、端口和网络状态。",
+  "rdp.error.protocolNegotiationTimeout":
+    "目标主机未在 8 秒内响应 RDP 协议，请检查地址、端口和远程桌面服务。",
+  "rdp.error.protocolNegotiationFailed":
+    "RDP 协议协商失败，请检查远程桌面服务和安全协议配置。",
   "rdp.metrics.resolution": "{value}",
   "rdp.metrics.bridgeState.idle": "空闲",
   "rdp.metrics.bridgeState.connecting": "连接中",

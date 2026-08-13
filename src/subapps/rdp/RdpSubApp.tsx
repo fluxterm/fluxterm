@@ -205,6 +205,27 @@ function getStatusIndicatorToneLabel(
   return t(`rdp.statusPanel.legend.${tone}`);
 }
 
+/** 判断 RDP 会话是否已经进入不可恢复的终止状态。 */
+function isTerminalRdpSessionState(state: string) {
+  return state === "error" || state === "disconnected";
+}
+
+/** 将后端稳定错误码转换为用户可读文案，避免展示运行时诊断详情。 */
+function resolveRdpRuntimeErrorMessage(code: string, t: Translate) {
+  switch (code) {
+    case "rdp_tcp_connect_timeout":
+      return t("rdp.error.tcpConnectTimeout");
+    case "rdp_tcp_connect_failed":
+      return t("rdp.error.tcpConnectFailed");
+    case "rdp_protocol_negotiation_timeout":
+      return t("rdp.error.protocolNegotiationTimeout");
+    case "rdp_protocol_negotiation_failed":
+      return t("rdp.error.protocolNegotiationFailed");
+    default:
+      return t("rdp.status.sessionErrorHint");
+  }
+}
+
 /** 判断当前会话是否仍允许前端重新附着桥接。 */
 function canAttachBridge(
   session: RdpSessionSnapshot | null | undefined,
@@ -640,8 +661,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   const handleWireEvent = useCallback(
     (sessionId: string, payload: RdpWireEvent) => {
       if (payload.type === "state") {
-        const isTerminalState =
-          payload.state === "error" || payload.state === "disconnected";
+        const isTerminalState = isTerminalRdpSessionState(payload.state);
         if (isTerminalState) {
           mainThreadBridgeRef.current?.disconnect(sessionId);
           workerRef.current?.postMessage({
@@ -716,7 +736,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       if (payload.type === "error") {
         updateSessionTab(sessionId, (tab) => ({
           ...tab,
-          errorMessage: payload.message || payload.code,
+          errorMessage: resolveRdpRuntimeErrorMessage(payload.code, t),
           statusText: t("rdp.status.runtimeError"),
           perf: { ...tab.perf, bridgeState: "closed" },
         }));
@@ -1376,15 +1396,17 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       return;
     }
     if (!canAttachBridge(activeTab.session)) {
-      logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
-        operationId: activeTab.operationId,
-        sessionId: activeTab.session.sessionId,
-        reason: "session_not_attachable",
-        sessionState: activeTab.session.state,
-        rendererMode: getRendererMode(),
-        bridgeState: activeTab.perf.bridgeState,
-        ...getSafeWsUrlFields(activeTab.session.wsUrl),
-      });
+      if (!isTerminalRdpSessionState(activeTab.session.state)) {
+        logRdpSubAppEvent("warn", "rdp.bridge.connect.skipped", {
+          operationId: activeTab.operationId,
+          sessionId: activeTab.session.sessionId,
+          reason: "session_not_attachable",
+          sessionState: activeTab.session.state,
+          rendererMode: getRendererMode(),
+          bridgeState: activeTab.perf.bridgeState,
+          ...getSafeWsUrlFields(activeTab.session.wsUrl),
+        });
+      }
       postRendererControl({
         type: "disconnect",
         sessionId: activeTab.session.sessionId,

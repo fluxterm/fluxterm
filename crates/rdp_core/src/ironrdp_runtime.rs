@@ -83,7 +83,39 @@ const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_DENOMINATOR: u64 = 1;
 const HIGH_PRESSURE_COLLAPSE_RAW_RECTS: u32 = 180;
 const HIGH_PRESSURE_COLLAPSE_CYCLES: u32 = 700;
 const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const RDP_PROTOCOL_NEGOTIATION_TIMEOUT: Duration = Duration::from_secs(8);
 const GRACEFUL_DISCONNECT_TIMEOUT_MS: u64 = 4_000;
+
+/// RDP 运行任务的结构化失败信息。
+///
+/// `message` 可安全发送到前端，`detail` 仅用于后端诊断日志。
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RdpRuntimeFailure {
+    code: &'static str,
+    message: &'static str,
+    detail: String,
+}
+
+impl RdpRuntimeFailure {
+    /// 创建带稳定错误码、用户安全消息和诊断详情的失败结果。
+    fn new(code: &'static str, message: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            message,
+            detail: detail.into(),
+        }
+    }
+}
+
+impl From<String> for RdpRuntimeFailure {
+    fn from(detail: String) -> Self {
+        Self::new(
+            "rdp_runtime_error",
+            "The remote desktop session failed. Check runtime logs.",
+            detail,
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 struct FramePerfWindow {
@@ -365,17 +397,17 @@ pub async fn run_ironrdp_session(
                 json!({
                     "sessionId": &session_id,
                     "error": {
-                        "code": "rdp_runtime_failed",
+                        "code": error.code,
                         "message": "RDP session connection failed",
-                        "detail": &error,
+                        "detail": &error.detail,
                     },
                 }),
             );
             let _ = sender.send(json_message(
                 "error",
                 json!({
-                    "code": "rdp_runtime_error",
-                    "message": error,
+                    "code": error.code,
+                    "message": error.message,
                 }),
             ));
             let _ = sessions.publish_runtime_state(&session_id, "error", "RDP runtime failed");
@@ -397,7 +429,7 @@ async fn connect_and_run(
     profile: &RuntimeConnectRequest,
     operation_id: &str,
     command_rx: &mut mpsc::UnboundedReceiver<RuntimeCommand>,
-) -> Result<RuntimeCloseReason, String> {
+) -> Result<RuntimeCloseReason, RdpRuntimeFailure> {
     let prepared_connection = PreparedConnection::from_request(profile)?;
     let socket = await_tcp_connect(
         TcpStream::connect((prepared_connection.host.as_str(), prepared_connection.port)),
@@ -456,9 +488,11 @@ async fn connect_and_run(
         }),
     );
 
-    let should_upgrade = ironrdp_tokio::connect_begin(&mut framed, &mut connector)
-        .await
-        .map_err(|error| format!("connect_begin failed: {error}"))?;
+    let should_upgrade = await_protocol_negotiation(
+        ironrdp_tokio::connect_begin(&mut framed, &mut connector),
+        RDP_PROTOCOL_NEGOTIATION_TIMEOUT,
+    )
+    .await?;
 
     let (initial_stream, leftover_bytes) = framed.into_inner();
     let (upgraded_stream, tls_cert) =
@@ -547,7 +581,7 @@ async fn connect_and_run(
         cliprdr_tx,
     };
 
-    run_active_stage(
+    Ok(run_active_stage(
         ctx,
         command_rx,
         cliprdr_rx,
@@ -556,20 +590,57 @@ async fn connect_and_run(
         upgraded_framed,
         connection_result,
     )
-    .await
+    .await?)
 }
 
 /// 等待 TCP 建链完成，并为主机解析及全部候选地址连接设置统一期限。
-async fn await_tcp_connect<T, F>(connect: F, connect_timeout: Duration) -> Result<T, String>
+async fn await_tcp_connect<T, F>(
+    connect: F,
+    connect_timeout: Duration,
+) -> Result<T, RdpRuntimeFailure>
 where
     F: Future<Output = io::Result<T>>,
 {
     match tokio::time::timeout(connect_timeout, connect).await {
         Ok(Ok(socket)) => Ok(socket),
-        Ok(Err(error)) => Err(format!("tcp connect failed: {error}")),
-        Err(_) => Err(format!(
-            "tcp connect timed out after {} seconds",
-            connect_timeout.as_secs()
+        Ok(Err(error)) => Err(RdpRuntimeFailure::new(
+            "rdp_tcp_connect_failed",
+            "Unable to connect to the remote host. Check the address, port, and network.",
+            format!("tcp connect failed: {error}"),
+        )),
+        Err(_) => Err(RdpRuntimeFailure::new(
+            "rdp_tcp_connect_timeout",
+            "The TCP connection to the remote host timed out.",
+            format!(
+                "tcp connect timed out after {} seconds",
+                connect_timeout.as_secs()
+            ),
+        )),
+    }
+}
+
+/// 等待目标完成 RDP 初始协议协商，并隔离 IronRDP 的内部诊断文本。
+async fn await_protocol_negotiation<T, F>(
+    negotiation: F,
+    negotiation_timeout: Duration,
+) -> Result<T, RdpRuntimeFailure>
+where
+    F: Future<Output = connector::ConnectorResult<T>>,
+{
+    match tokio::time::timeout(negotiation_timeout, negotiation).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(error)) => Err(RdpRuntimeFailure::new(
+            "rdp_protocol_negotiation_failed",
+            "RDP protocol negotiation failed.",
+            format!("connect_begin failed: {}", error.report()),
+        )),
+        Err(_) => Err(RdpRuntimeFailure::new(
+            "rdp_protocol_negotiation_timeout",
+            "The target did not respond to RDP protocol negotiation in time.",
+            format!(
+                "RDP protocol negotiation timed out after {} seconds",
+                negotiation_timeout.as_secs()
+            ),
         )),
     }
 }
@@ -2279,10 +2350,10 @@ mod tests {
     use super::{
         FramePerfWindow, GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_BASE_MS,
         GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_HIGH_MS, GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_MEDIUM_MS,
-        await_tcp_connect, build_performance_flags, encode_multitransport_abort_response,
-        maybe_collapse_flush_rects, merge_update_rects, normalize_credentials,
-        pointer_bitmap_to_css_cursor, resolve_client_hostname, schedule_graphics_flush,
-        select_adaptive_flush_interval_ms,
+        await_protocol_negotiation, await_tcp_connect, build_performance_flags,
+        encode_multitransport_abort_response, maybe_collapse_flush_rects, merge_update_rects,
+        normalize_credentials, pointer_bitmap_to_css_cursor, resolve_client_hostname,
+        schedule_graphics_flush, select_adaptive_flush_interval_ms,
     };
     use crate::protocol::RuntimePerformanceFlags;
 
@@ -2294,9 +2365,11 @@ mod tests {
         )
         .await;
 
+        let failure = result.expect_err("pending TCP connect should time out");
+        assert_eq!(failure.code, "rdp_tcp_connect_timeout");
         assert_eq!(
-            result,
-            Err("tcp connect timed out after 0 seconds".to_string())
+            failure.detail,
+            "tcp connect timed out after 0 seconds".to_string()
         );
     }
 
@@ -2324,10 +2397,60 @@ mod tests {
         )
         .await;
 
+        let failure = result.expect_err("connection refusal should be preserved");
+        assert_eq!(failure.code, "rdp_tcp_connect_failed");
+        assert_eq!(failure.detail, "tcp connect failed: connection refused");
+    }
+
+    #[tokio::test]
+    async fn protocol_negotiation_timeout_stops_waiting_at_deadline() {
+        let result = await_protocol_negotiation(
+            std::future::pending::<ironrdp::connector::ConnectorResult<()>>(),
+            std::time::Duration::ZERO,
+        )
+        .await;
+
+        let failure = result.expect_err("pending RDP negotiation should time out");
+        assert_eq!(failure.code, "rdp_protocol_negotiation_timeout");
         assert_eq!(
-            result,
-            Err("tcp connect failed: connection refused".to_string())
+            failure.detail,
+            "RDP protocol negotiation timed out after 0 seconds"
         );
+    }
+
+    #[tokio::test]
+    async fn protocol_negotiation_preserves_success() {
+        let result = await_protocol_negotiation(
+            async { Ok::<_, ironrdp::connector::ConnectorError>("negotiated") },
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        assert_eq!(result, Ok("negotiated"));
+    }
+
+    #[tokio::test]
+    async fn protocol_negotiation_keeps_diagnostics_out_of_user_message() {
+        let connector_error = ironrdp::connector::ConnectorError::new(
+            "read frame by hint",
+            ironrdp::connector::ConnectorErrorKind::Custom,
+        )
+        .with_source(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "not enough bytes",
+        ));
+        let result = await_protocol_negotiation(
+            async { Err::<(), _>(connector_error) },
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        let failure = result.expect_err("invalid RDP response should fail negotiation");
+        assert_eq!(failure.code, "rdp_protocol_negotiation_failed");
+        assert_eq!(failure.message, "RDP protocol negotiation failed.");
+        assert!(!failure.message.contains("read frame by hint"));
+        assert!(failure.detail.contains("read frame by hint"));
+        assert!(failure.detail.contains("caused by: not enough bytes"));
     }
 
     #[test]
