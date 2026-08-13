@@ -8,7 +8,9 @@
 //! 3. 运行事件循环，处理网络数据包、解码图像帧并转发用户输入。
 //! 4. 将解码后的 RGBA 画面通过 WebSocket 桥接推送到前端。
 
-use std::time::Instant as StdInstant;
+use std::future::Future;
+use std::io;
+use std::time::{Duration, Instant as StdInstant};
 
 use axum::extract::ws::Message;
 use base64::Engine as _;
@@ -80,6 +82,7 @@ const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_NUMERATOR: u64 = 10;
 const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_DENOMINATOR: u64 = 1;
 const HIGH_PRESSURE_COLLAPSE_RAW_RECTS: u32 = 180;
 const HIGH_PRESSURE_COLLAPSE_CYCLES: u32 = 700;
+const TCP_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const GRACEFUL_DISCONNECT_TIMEOUT_MS: u64 = 4_000;
 
 #[derive(Debug, Clone)]
@@ -396,9 +399,11 @@ async fn connect_and_run(
     command_rx: &mut mpsc::UnboundedReceiver<RuntimeCommand>,
 ) -> Result<RuntimeCloseReason, String> {
     let prepared_connection = PreparedConnection::from_request(profile)?;
-    let socket = TcpStream::connect((prepared_connection.host.as_str(), prepared_connection.port))
-        .await
-        .map_err(|error| format!("tcp connect failed: {error}"))?;
+    let socket = await_tcp_connect(
+        TcpStream::connect((prepared_connection.host.as_str(), prepared_connection.port)),
+        TCP_CONNECT_TIMEOUT,
+    )
+    .await?;
     log_event!(
         LogLevel::Debug,
         "rdp.runtime.tcp.connected",
@@ -552,6 +557,21 @@ async fn connect_and_run(
         connection_result,
     )
     .await
+}
+
+/// 等待 TCP 建链完成，并为主机解析及全部候选地址连接设置统一期限。
+async fn await_tcp_connect<T, F>(connect: F, connect_timeout: Duration) -> Result<T, String>
+where
+    F: Future<Output = io::Result<T>>,
+{
+    match tokio::time::timeout(connect_timeout, connect).await {
+        Ok(Ok(socket)) => Ok(socket),
+        Ok(Err(error)) => Err(format!("tcp connect failed: {error}")),
+        Err(_) => Err(format!(
+            "tcp connect timed out after {} seconds",
+            connect_timeout.as_secs()
+        )),
+    }
 }
 
 /// 运行 RDP 活动阶段的主事件循环。
@@ -2259,11 +2279,56 @@ mod tests {
     use super::{
         FramePerfWindow, GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_BASE_MS,
         GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_HIGH_MS, GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_MEDIUM_MS,
-        build_performance_flags, encode_multitransport_abort_response, maybe_collapse_flush_rects,
-        merge_update_rects, normalize_credentials, pointer_bitmap_to_css_cursor,
-        resolve_client_hostname, schedule_graphics_flush, select_adaptive_flush_interval_ms,
+        await_tcp_connect, build_performance_flags, encode_multitransport_abort_response,
+        maybe_collapse_flush_rects, merge_update_rects, normalize_credentials,
+        pointer_bitmap_to_css_cursor, resolve_client_hostname, schedule_graphics_flush,
+        select_adaptive_flush_interval_ms,
     };
     use crate::protocol::RuntimePerformanceFlags;
+
+    #[tokio::test]
+    async fn tcp_connect_timeout_stops_waiting_at_deadline() {
+        let result = await_tcp_connect(
+            std::future::pending::<std::io::Result<()>>(),
+            std::time::Duration::ZERO,
+        )
+        .await;
+
+        assert_eq!(
+            result,
+            Err("tcp connect timed out after 0 seconds".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn tcp_connect_timeout_preserves_success() {
+        let result = await_tcp_connect(
+            async { Ok::<_, std::io::Error>("connected") },
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        assert_eq!(result, Ok("connected"));
+    }
+
+    #[tokio::test]
+    async fn tcp_connect_timeout_preserves_io_error() {
+        let result = await_tcp_connect(
+            async {
+                Err::<(), _>(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionRefused,
+                    "connection refused",
+                ))
+            },
+            std::time::Duration::from_secs(1),
+        )
+        .await;
+
+        assert_eq!(
+            result,
+            Err("tcp connect failed: connection refused".to_string())
+        );
+    }
 
     #[test]
     fn normalizes_domain_qualified_username() {
