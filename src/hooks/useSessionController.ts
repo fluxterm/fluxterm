@@ -57,6 +57,7 @@ export default function useSessionController(
       writeToSession: raw.writeToSession,
       resizeSession: raw.resizeSession,
       connectProfile: raw.connectProfile,
+      cancelSshConnectSession: raw.cancelSshConnectSession,
       connectLocalShell: raw.connectLocalShell,
       connectSerialProfile: raw.connectSerialProfile,
       cancelSerialConnect: raw.cancelSerialConnect,

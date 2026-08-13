@@ -56,6 +56,11 @@ export async function connectProfileCommand({
     const result = await createSshSession(profile);
     const existingState = sessionStatesRef.current[result.sessionId];
     onSessionCreated?.(result);
+    // 显式取消可能发生在后端会话创建前；回调负责关闭迟到会话，
+    // 此处阻止它继续写入前端状态或附着工作区。
+    if (shouldSuppressError?.()) {
+      return;
+    }
     setSessions((prev) => prev.concat(result));
     attachSessionToWorkspace(result.sessionId);
     if (existingState !== "error" && existingState !== "disconnected") {

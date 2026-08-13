@@ -148,6 +148,7 @@ type UseSessionStateResult = {
       shouldSuppressError?: () => boolean;
     },
   ) => Promise<void>;
+  cancelSshConnectSession: (sessionId: string) => Promise<void>;
   connectLocalShell: (
     shell: LocalShellProfile | null,
     activate?: boolean,
@@ -261,6 +262,7 @@ export default function useSessionState({
   const terminalEofRequestAtRef = useRef<Record<string, number>>({});
   const sessionInputQueueRef = useRef<Record<string, Promise<void>>>({});
   const errorDialogShownRef = useRef<Record<string, boolean>>({});
+  const suppressedSshFeedbackTimersRef = useRef<Record<string, number>>({});
   // 按 profile 记录待确认的 Host Key 重连链路。
   // Host Key 事件不带 sessionId，这里用 profileId 映射对应会话。
   const pendingHostKeyReconnectSessionByProfileRef = useRef<
@@ -418,6 +420,51 @@ export default function useSessionState({
   function clearPendingHostKeyForProfile(profileId: string) {
     delete pendingHostKeyReconnectSessionByProfileRef.current[profileId];
     delete pendingHostKeyDialogProfilesRef.current[profileId];
+  }
+
+  /** 临时抑制显式取消 SSH 会话的迟到状态反馈，并通过定时器兜底清理。 */
+  function suppressSshSessionFeedback(sessionId: string) {
+    // Engine 会在 Tauri 返回 Session 前发布 Connecting；先清理可能已经
+    // 写入的临时状态，避免后续终态被静默消费后留下幽灵 sessionId。
+    setSessionStates((current) => {
+      if (!(sessionId in current)) return current;
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    setSessionReasons((current) => {
+      if (!(sessionId in current)) return current;
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    delete errorDialogShownRef.current[sessionId];
+    delete sessionCloseHandledRef.current[sessionId];
+
+    const existingTimer = suppressedSshFeedbackTimersRef.current[sessionId];
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+    suppressedSshFeedbackTimersRef.current[sessionId] = window.setTimeout(
+      () => {
+        delete suppressedSshFeedbackTimersRef.current[sessionId];
+      },
+      5 * 60 * 1000,
+    );
+  }
+
+  /** 判断状态是否属于显式取消会话；终态到达后立即消费抑制标记。 */
+  function consumeSuppressedSshSessionFeedback(
+    sessionId: string,
+    state: SessionStateUi,
+  ) {
+    const timer = suppressedSshFeedbackTimersRef.current[sessionId];
+    if (timer === undefined) return false;
+    if (state !== "connecting") {
+      window.clearTimeout(timer);
+      delete suppressedSshFeedbackTimersRef.current[sessionId];
+    }
+    return true;
   }
 
   function replaceSessionConnection(
@@ -659,6 +706,11 @@ export default function useSessionState({
     sessionEventHandlersRef.current = {
       handleSessionDisconnected,
       handleSessionStatus: (payload) => {
+        if (
+          consumeSuppressedSshSessionFeedback(payload.sessionId, payload.state)
+        ) {
+          return;
+        }
         const label = resolveSessionLabel(payload.sessionId);
         const serialSession = isSerialSession(payload.sessionId);
         if (payload.state === "disconnected") {
@@ -1019,6 +1071,16 @@ export default function useSessionState({
     }
   }
 
+  /** 取消正在建立的 SSH 会话，并抑制该会话后续迟到的前端状态反馈。 */
+  async function cancelSshConnectSession(sessionId: string) {
+    suppressSshSessionFeedback(sessionId);
+    if (getSessionKind(sessionId)) {
+      await disconnectSession(sessionId);
+      return;
+    }
+    await callTauri("ssh_disconnect", { sessionId }).catch(() => {});
+  }
+
   async function reconnectSession(sessionId: string) {
     if (isLocalSession(sessionId)) {
       await reconnectLocalShell(sessionId);
@@ -1360,6 +1422,7 @@ export default function useSessionState({
     writeToSession,
     resizeSession,
     connectProfile,
+    cancelSshConnectSession,
     connectLocalShell,
     connectSerialProfile,
     cancelSerialConnect,

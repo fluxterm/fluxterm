@@ -2194,13 +2194,14 @@ export default function AppShell() {
       let resolvedProfileId = profileId;
       const requestId = nextSshConnectRequestIdRef.current + 1;
       nextSshConnectRequestIdRef.current = requestId;
+      const runtime: PendingSshConnectRuntime = {
+        requestId,
+        sessionId: null,
+        cancelled: false,
+      };
       if (profileId) {
         pickProfile(profileId);
-        sshConnectRuntimeRef.current[profileId] = {
-          requestId,
-          sessionId: null,
-          cancelled: false,
-        };
+        sshConnectRuntimeRef.current[profileId] = runtime;
         setSshConnectingState(profileId, true);
       }
       sessionActions.setBusyMessage(t("messages.connecting"));
@@ -2209,47 +2210,33 @@ export default function AppShell() {
           ? profileInput
           : await saveProfile(profileInput);
         resolvedProfileId = profile.id;
-        sshConnectRuntimeRef.current[profile.id] = {
-          requestId,
-          sessionId: null,
-          cancelled: false,
-        };
+        sshConnectRuntimeRef.current[profile.id] = runtime;
         setSshConnectingState(profile.id, true);
         await sessionActions.connectProfile(profile, {
           onSessionCreated: (session: Session) => {
-            const runtime = sshConnectRuntimeRef.current[profile.id];
-            if (!runtime || runtime.requestId !== requestId) return;
             runtime.sessionId = session.sessionId;
             if (runtime.cancelled) {
               void sessionActions
-                .disconnectSession(session.sessionId)
+                .cancelSshConnectSession(session.sessionId)
                 .catch(() => {});
             }
           },
-          shouldSuppressError: () => {
-            const runtime = sshConnectRuntimeRef.current[profile.id];
-            return Boolean(
-              runtime && runtime.requestId === requestId && runtime.cancelled,
-            );
-          },
+          shouldSuppressError: () => runtime.cancelled,
         });
-        sessionActions.setBusyMessage(null);
+        if (sshConnectRuntimeRef.current[profile.id] === runtime) {
+          sessionActions.setBusyMessage(null);
+        }
       } catch (error: unknown) {
-        const runtime = profileId
-          ? sshConnectRuntimeRef.current[profileId]
-          : undefined;
-        if (!runtime || runtime.requestId !== requestId || !runtime.cancelled) {
+        if (!runtime.cancelled) {
           sessionActions.setBusyMessage(
             translateAppError(error, t) || t("messages.connectFailed"),
           );
         }
       } finally {
         const effectiveProfileId = resolvedProfileId || "";
-        const runtime = sshConnectRuntimeRef.current[effectiveProfileId];
-        if (runtime && runtime.requestId === requestId) {
+        const currentRuntime = sshConnectRuntimeRef.current[effectiveProfileId];
+        if (currentRuntime === runtime) {
           delete sshConnectRuntimeRef.current[effectiveProfileId];
-        }
-        if (effectiveProfileId) {
           setSshConnectingState(effectiveProfileId, false);
         }
       }
@@ -2275,7 +2262,9 @@ export default function AppShell() {
         prev === t("messages.connecting") ? null : prev,
       );
       if (!runtime.sessionId) return;
-      await sessionActions.disconnectSession(runtime.sessionId).catch(() => {});
+      await sessionActions
+        .cancelSshConnectSession(runtime.sessionId)
+        .catch(() => {});
     },
     [sessionActions, setSshConnectingState, t],
   );
