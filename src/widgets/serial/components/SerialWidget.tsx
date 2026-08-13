@@ -9,6 +9,7 @@ import {
   FiPlay,
   FiPlus,
   FiTrash2,
+  FiX,
 } from "react-icons/fi";
 import Button from "@/components/ui/button";
 import InputDialog from "@/components/ui/InputDialog";
@@ -31,6 +32,7 @@ type SerialWidgetProps = {
   connectingProfileIds: string[];
   onPick: (profileId: string) => void;
   onConnect: (profile: SerialProfile) => void;
+  onCancelConnect: (profileId: string) => void;
   onOpenNewProfile: (defaultGroup?: string | null) => void;
   onOpenEditProfile: (profile: SerialProfile) => void;
   onRemoveProfile: (profile: SerialProfile) => void;
@@ -66,6 +68,7 @@ export default function SerialWidget({
   connectingProfileIds,
   onPick,
   onConnect,
+  onCancelConnect,
   onOpenNewProfile,
   onOpenEditProfile,
   onRemoveProfile,
@@ -270,7 +273,31 @@ export default function SerialWidget({
           {connecting.has(profile.id) ? (
             <span className="serial-connecting-chip">
               <FiLoader className="serial-spinning" />
-              {t("session.connecting")}
+              <span
+                className="serial-connecting-cancel"
+                role="button"
+                aria-label={t("actions.cancel")}
+                tabIndex={0}
+                data-ui="serial-connect-cancel"
+                onMouseDown={(event) => {
+                  event.stopPropagation();
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCancelConnect(profile.id);
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onCancelConnect(profile.id);
+                }}
+              >
+                <FiX />
+              </span>
             </span>
           ) : null}
         </span>

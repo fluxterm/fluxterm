@@ -773,6 +773,7 @@ export const zhCnTranslations = {
   "error.serial.writeFailed": "串口写入失败",
   "error.serial.flushFailed": "串口缓冲区刷新失败",
   "error.serial.connectTaskFailed": "串口连接任务意外结束",
+  "error.serial.connectTimeout": "串口连接超时（5 秒）",
   "error.serial.sessionClosed": "串口会话已经关闭",
   "error.serial.sessionNotFound": "串口会话不存在",
   "error.serial.portRequired": "串口名称不能为空",

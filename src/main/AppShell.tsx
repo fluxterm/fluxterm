@@ -151,6 +151,7 @@ import {
   extractErrorMessage,
   translateAppError,
 } from "@/shared/errors/appError";
+import { createOperationId } from "@/shared/logging";
 import {
   clampBackgroundVideoReplayIntervalSec,
   normalizeBackgroundMediaType,
@@ -222,6 +223,11 @@ function getErrorMessage(error: unknown) {
 type PendingSshConnectRuntime = {
   requestId: number;
   sessionId: string | null;
+  cancelled: boolean;
+};
+
+type PendingSerialConnectRuntime = {
+  operationId: string;
   cancelled: boolean;
 };
 
@@ -537,6 +543,9 @@ export default function AppShell() {
   const [connectingSerialProfileIds, setConnectingSerialProfileIds] = useState<
     string[]
   >([]);
+  const serialConnectRuntimeRef = useRef<
+    Record<string, PendingSerialConnectRuntime>
+  >({});
   const [profileDraft, setProfileDraft] = useState<HostProfile>(defaultProfile);
   const [localShellProfileModalOpen, setLocalShellProfileModalOpen] =
     useState(false);
@@ -1188,16 +1197,54 @@ export default function AppShell() {
         return;
       }
       const requestId = profile.id || `port:${profile.portName}`;
+      const runtime = {
+        operationId: createOperationId(),
+        cancelled: false,
+      };
+      serialConnectRuntimeRef.current[requestId] = runtime;
       setConnectingSerialProfileIds((current) =>
         current.includes(requestId) ? current : [...current, requestId],
       );
       try {
-        await sessionActions.connectSerialProfile(profile);
+        await sessionActions.connectSerialProfile(profile, {
+          operationId: runtime.operationId,
+          isCancelled: () => runtime.cancelled,
+        });
       } finally {
-        setConnectingSerialProfileIds((current) =>
-          current.filter((item) => item !== requestId),
-        );
+        if (serialConnectRuntimeRef.current[requestId] === runtime) {
+          delete serialConnectRuntimeRef.current[requestId];
+          setConnectingSerialProfileIds((current) =>
+            current.filter((item) => item !== requestId),
+          );
+        }
       }
+    },
+    [isFloatingSerialWidget, postFloatingSerialMessage, sessionActions],
+  );
+
+  /** 取消指定 Profile 当前仍在等待的串口连接。 */
+  const cancelSerialProfileConnect = useCallback(
+    async (profileId: string) => {
+      if (isFloatingSerialWidget) {
+        postFloatingSerialMessage({
+          type: "serial:cancel-connect",
+          profileId,
+        });
+        return;
+      }
+      const runtime = serialConnectRuntimeRef.current[profileId];
+      if (!runtime) return;
+      runtime.cancelled = true;
+      try {
+        await sessionActions.cancelSerialConnect(runtime.operationId);
+      } catch {
+        runtime.cancelled = false;
+        return;
+      }
+      if (serialConnectRuntimeRef.current[profileId] !== runtime) return;
+      setConnectingSerialProfileIds((current) =>
+        current.filter((item) => item !== profileId),
+      );
     },
     [isFloatingSerialWidget, postFloatingSerialMessage, sessionActions],
   );
@@ -1581,6 +1628,9 @@ export default function AppShell() {
         case "serial:connect":
           void connectSerialProfile(message.profile);
           break;
+        case "serial:cancel-connect":
+          void cancelSerialProfileConnect(message.profileId);
+          break;
         case "serial:save-profile":
           void serialProfilesState
             .save(message.profile)
@@ -1615,6 +1665,7 @@ export default function AppShell() {
     },
     deps: [
       connectSerialProfile,
+      cancelSerialProfileConnect,
       connectingSerialProfileIds,
       serialProfilesState.loading,
       serialProfilesState.groups,
@@ -3041,6 +3092,9 @@ export default function AppShell() {
         onConnectSerialProfile: (profile) => {
           void connectSerialProfile(profile);
         },
+        onCancelSerialConnect: (profileId) => {
+          void cancelSerialProfileConnect(profileId);
+        },
         onPickSerialProfile: setActiveSerialProfileId,
         activeSerialProfileId,
         onOpenNewSerialProfile: openNewSerialProfile,
@@ -3180,6 +3234,7 @@ export default function AppShell() {
       handleCancelConnectProfile,
       handleConnectRdpProfile,
       connectSerialProfile,
+      cancelSerialProfileConnect,
       openNewSerialProfile,
       openEditSerialProfile,
       removeSerialProfile,

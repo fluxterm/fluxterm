@@ -1,4 +1,9 @@
 .serial-widget {
+  --serial-accent-soft-bg: color-mix(
+    in srgb,
+    var(--accent-soft) var(--chrome-surface-alpha-base),
+    transparent
+  );
   display: flex;
   height: 100%;
   min-height: 0;
@@ -52,6 +57,10 @@
   flex-shrink: 0;
   border-color: transparent;
 }
+.serial-root-profile .serial-row-label,
+.serial-profile-nested .serial-row-label {
+  width: 100%;
+}
 .serial-widget-list button.active {
   border-color: var(--accent);
   background: transparent;
@@ -62,11 +71,32 @@
 }
 .serial-connecting-chip {
   display: inline-flex;
-  flex: none;
   align-items: center;
-  gap: 3px;
-  color: var(--text-muted);
-  font-size: 10px;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
+  padding: 1px 4px;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  border-radius: 999px;
+  background: var(--serial-accent-soft-bg);
+  color: var(--accent);
+  font-size: 11px;
+}
+.serial-connecting-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 160ms ease;
+}
+.serial-connecting-cancel:hover,
+.serial-connecting-cancel:focus-visible {
+  color: var(--text-primary);
+  outline: none;
 }
 .serial-widget-empty {
   display: grid;

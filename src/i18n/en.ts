@@ -831,6 +831,7 @@ export const enUsTranslations = {
   "error.serial.flushFailed": "Failed to flush the serial port buffer",
   "error.serial.connectTaskFailed":
     "The serial connection task ended unexpectedly",
+  "error.serial.connectTimeout": "Serial connection timed out after 5 seconds",
   "error.serial.sessionClosed": "The serial session is already closed",
   "error.serial.sessionNotFound": "Serial session not found",
   "error.serial.portRequired": "Serial port name is required",

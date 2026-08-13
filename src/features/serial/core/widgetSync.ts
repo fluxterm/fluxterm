@@ -15,6 +15,7 @@ export type FloatingSerialMessage =
   | { type: "serial:request-snapshot" }
   | { type: "serial:refresh" }
   | { type: "serial:connect"; profile: SerialProfile }
+  | { type: "serial:cancel-connect"; profileId: string }
   | { type: "serial:save-profile"; profile: SerialProfile }
   | { type: "serial:remove-profile"; profileId: string }
   | { type: "serial:save-groups"; groups: string[] }

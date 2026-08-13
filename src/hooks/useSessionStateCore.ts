@@ -152,7 +152,11 @@ type UseSessionStateResult = {
     shell: LocalShellProfile | null,
     activate?: boolean,
   ) => Promise<void>;
-  connectSerialProfile: (profile: SerialProfile) => Promise<void>;
+  connectSerialProfile: (
+    profile: SerialProfile,
+    options: { operationId: string; isCancelled?: () => boolean },
+  ) => Promise<void>;
+  cancelSerialConnect: (operationId: string) => Promise<boolean>;
   disconnectSession: (sessionId: string) => Promise<void>;
   reconnectSession: (sessionId: string) => Promise<void>;
   reconnectLocalShell: (sessionId: string) => Promise<void>;
@@ -917,9 +921,32 @@ export default function useSessionState({
 
   /** 建立串口会话并附着到当前活动终端区域。 */
   const connectSerialProfile = useCallback(
-    async (profile: SerialProfile) => {
+    async (
+      profile: SerialProfile,
+      options: { operationId: string; isCancelled?: () => boolean },
+    ) => {
       try {
-        const session = await callTauri<Session>("serial_connect", { profile });
+        const session = await callTauri<Session>("serial_connect", {
+          operationId: options.operationId,
+          profile,
+        });
+        if (options?.isCancelled?.()) {
+          await callTauri("serial_disconnect", {
+            sessionId: session.sessionId,
+          }).catch(() => {});
+          setSessionStates((current) => {
+            const next = { ...current };
+            delete next[session.sessionId];
+            return next;
+          });
+          setSessionReasons((current) => {
+            const next = { ...current };
+            delete next[session.sessionId];
+            return next;
+          });
+          delete errorDialogShownRef.current[session.sessionId];
+          return;
+        }
         setSerialSessionProfiles((current) => ({
           ...current,
           [session.sessionId]: { ...profile },
@@ -941,6 +968,7 @@ export default function useSessionState({
             : undefined,
         );
       } catch (error) {
+        if (options?.isCancelled?.()) return;
         openDialog({
           title: t("serial.connect.failed"),
           message: translateAppError(error, t),
@@ -951,6 +979,11 @@ export default function useSessionState({
     },
     [openDialog, sessionWorkspace, t],
   );
+
+  /** 取消尚未完成的串口连接任务。 */
+  const cancelSerialConnect = useCallback((operationId: string) => {
+    return callTauri<boolean>("serial_cancel_connect", { operationId });
+  }, []);
 
   async function disconnectSession(sessionId: string) {
     const state = sessionStatesRef.current[sessionId];
@@ -1000,6 +1033,7 @@ export default function useSessionState({
       }));
       try {
         const nextSession = await callTauri<Session>("serial_connect", {
+          operationId: createOperationId(),
           profile,
         });
         replaceSessionConnection(sessionId, nextSession, "connected");
@@ -1328,6 +1362,7 @@ export default function useSessionState({
     connectProfile,
     connectLocalShell,
     connectSerialProfile,
+    cancelSerialConnect,
     disconnectSession,
     reconnectSession,
     reconnectLocalShell,

@@ -59,6 +59,7 @@ export default function useSessionController(
       connectProfile: raw.connectProfile,
       connectLocalShell: raw.connectLocalShell,
       connectSerialProfile: raw.connectSerialProfile,
+      cancelSerialConnect: raw.cancelSerialConnect,
       disconnectSession: raw.disconnectSession,
       reconnectSession: raw.reconnectSession,
       reconnectLocalShell: raw.reconnectLocalShell,

@@ -92,6 +92,7 @@ type buildWidgetsProps = {
   onCancelSshConnectProfile: (profileId: string) => Promise<void>;
   onConnectRdpProfile: (profile: RdpProfile) => Promise<void>;
   onConnectSerialProfile: (profile: SerialProfile) => void;
+  onCancelSerialConnect: (profileId: string) => void;
   onPickSerialProfile: (profileId: string) => void;
   activeSerialProfileId: string | null;
   onOpenNewSerialProfile: (defaultGroup?: string | null) => void;
@@ -212,6 +213,7 @@ export function buildWidgets(
     onCancelSshConnectProfile,
     onConnectRdpProfile,
     onConnectSerialProfile,
+    onCancelSerialConnect,
     onPickSerialProfile,
     activeSerialProfileId,
     onOpenNewSerialProfile,
@@ -328,6 +330,7 @@ export function buildWidgets(
           activeProfileId={activeSerialProfileId}
           connectingProfileIds={connectingSerialProfileIds}
           onConnect={onConnectSerialProfile}
+          onCancelConnect={onCancelSerialConnect}
           onPick={onPickSerialProfile}
           onOpenNewProfile={onOpenNewSerialProfile}
           onOpenEditProfile={onOpenEditSerialProfile}

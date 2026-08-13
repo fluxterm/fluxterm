@@ -84,13 +84,23 @@ pub fn serial_profile_remove(app: AppHandle, profile_id: String) -> Result<bool,
 pub async fn serial_connect(
     app: AppHandle,
     state: State<'_, SerialState>,
+    operation_id: String,
     profile: SerialProfile,
 ) -> Result<Session, EngineError> {
     let profile_id = (!profile.id.trim().is_empty()).then(|| profile.id.clone());
     state
         .manager
-        .connect(profile, profile_id, build_event_bridge(app))
+        .connect(operation_id, profile, profile_id, build_event_bridge(app))
         .await
+}
+
+/// 取消尚未完成的串口连接任务。
+#[tauri::command]
+pub fn serial_cancel_connect(
+    state: State<'_, SerialState>,
+    operation_id: String,
+) -> Result<bool, EngineError> {
+    state.manager.cancel_connect(&operation_id)
 }
 
 /// 按指定编码向串口写入文本。

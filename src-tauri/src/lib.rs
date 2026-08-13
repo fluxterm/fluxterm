@@ -73,9 +73,9 @@ use crate::commands::security::{
     security_lock, security_status, security_unlock,
 };
 use crate::commands::serial::{
-    serial_connect, serial_disconnect, serial_port_list, serial_profile_groups_list,
-    serial_profile_groups_save, serial_profile_list, serial_profile_remove, serial_profile_save,
-    serial_write_binary, serial_write_text,
+    serial_cancel_connect, serial_connect, serial_disconnect, serial_port_list,
+    serial_profile_groups_list, serial_profile_groups_save, serial_profile_list,
+    serial_profile_remove, serial_profile_save, serial_write_binary, serial_write_text,
 };
 use crate::commands::sftp::{
     sftp_cancel_transfer, sftp_download, sftp_download_dir, sftp_home, sftp_list, sftp_mkdir,
@@ -249,6 +249,7 @@ pub fn run() {
             serial_profile_save,
             serial_profile_remove,
             serial_connect,
+            serial_cancel_connect,
             serial_disconnect,
             serial_write_text,
             serial_write_binary,
