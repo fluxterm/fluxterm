@@ -1,7 +1,7 @@
 //! SFTP 文件操作命令。
 use std::sync::Arc;
 
-use engine::{Engine, EngineError, SftpEntry};
+use engine::{Engine, EngineError, SftpEntry, SftpProgress};
 use tauri::State;
 
 use crate::state::EngineState;
@@ -80,7 +80,7 @@ pub async fn sftp_upload(
     session_id: String,
     local_path: String,
     remote_path: String,
-) -> Result<(), EngineError> {
+) -> Result<SftpProgress, EngineError> {
     let engine: Arc<Engine> = Arc::clone(&state.engine);
     tauri::async_runtime::spawn_blocking({
         let session_id = session_id.clone();
@@ -105,7 +105,7 @@ pub async fn sftp_upload_paths(
     session_id: String,
     local_paths: Vec<String>,
     remote_dir: String,
-) -> Result<(), EngineError> {
+) -> Result<SftpProgress, EngineError> {
     let engine: Arc<Engine> = Arc::clone(&state.engine);
     tauri::async_runtime::spawn_blocking({
         let session_id = session_id.clone();
@@ -130,7 +130,7 @@ pub async fn sftp_download(
     session_id: String,
     remote_path: String,
     local_path: String,
-) -> Result<(), EngineError> {
+) -> Result<SftpProgress, EngineError> {
     let engine: Arc<Engine> = Arc::clone(&state.engine);
     tauri::async_runtime::spawn_blocking({
         let session_id = session_id.clone();
@@ -155,7 +155,7 @@ pub async fn sftp_download_dir(
     session_id: String,
     remote_path: String,
     local_dir: String,
-) -> Result<(), EngineError> {
+) -> Result<SftpProgress, EngineError> {
     let engine: Arc<Engine> = Arc::clone(&state.engine);
     tauri::async_runtime::spawn_blocking({
         let session_id = session_id.clone();

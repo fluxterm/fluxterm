@@ -38,8 +38,9 @@ use crate::sftp::{
 };
 use crate::ssh_transport::{JumpHostSpec, connect_ssh_client};
 use crate::types::{
-    EngineEvent, EventCallback, HostProfile, SessionState, SftpEntry, SshTunnelKind,
-    SshTunnelRuntime, SshTunnelSpec, SshTunnelStatus, TerminalSize,
+    EngineEvent, EventCallback, HostProfile, SessionState, SftpEntry, SftpProgress,
+    SftpTransferStatus, SshTunnelKind, SshTunnelRuntime, SshTunnelSpec, SshTunnelStatus,
+    TerminalSize,
 };
 use crate::util::decode_terminal_output;
 
@@ -51,6 +52,44 @@ const SSH_SHUTDOWN_OPERATION_TIMEOUT: Duration = Duration::from_secs(2);
 #[derive(Clone)]
 pub struct SessionHandle {
     pub tx: mpsc::UnboundedSender<SessionCommand>,
+}
+
+/// 为单个传输任务捕获准确的终态进度，同时继续向应用转发原始事件。
+fn capture_terminal_sftp_progress(
+    on_event: &EventCallback,
+) -> (EventCallback, Arc<StdMutex<Option<SftpProgress>>>) {
+    let terminal_progress = Arc::new(StdMutex::new(None));
+    let terminal_sink = Arc::clone(&terminal_progress);
+    let forward_event = Arc::clone(on_event);
+    let task_callback: EventCallback = Arc::new(move |event| {
+        if let EngineEvent::SftpProgress(progress) = &event
+            && !matches!(progress.status, SftpTransferStatus::Running)
+        {
+            *terminal_sink
+                .lock()
+                .expect("sftp terminal progress mutex poisoned") = Some(progress.clone());
+        }
+        forward_event(event);
+    });
+    (task_callback, terminal_progress)
+}
+
+/// 将传输执行结果与其终态进度合并为命令响应。
+fn resolve_sftp_transfer_response(
+    result: Result<(), EngineError>,
+    terminal_progress: &Arc<StdMutex<Option<SftpProgress>>>,
+) -> Result<SftpProgress, EngineError> {
+    result?;
+    let progress = terminal_progress
+        .lock()
+        .expect("sftp terminal progress mutex poisoned")
+        .clone();
+    progress.ok_or_else(|| {
+        EngineError::new(
+            "sftp_terminal_progress_missing",
+            "Transfer completed without terminal progress",
+        )
+    })
 }
 
 /// 将 SSH 通道累计的字节解码并发送为单个终端输出批次。
@@ -102,22 +141,22 @@ pub enum SessionCommand {
     SftpUpload {
         local_path: String,
         remote_path: String,
-        respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
+        respond_to: tokio::sync::oneshot::Sender<Result<SftpProgress, EngineError>>,
     },
     SftpUploadPaths {
         local_paths: Vec<String>,
         remote_dir: String,
-        respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
+        respond_to: tokio::sync::oneshot::Sender<Result<SftpProgress, EngineError>>,
     },
     SftpDownload {
         remote_path: String,
         local_path: String,
-        respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
+        respond_to: tokio::sync::oneshot::Sender<Result<SftpProgress, EngineError>>,
     },
     SftpDownloadDir {
         remote_path: String,
         local_dir: String,
-        respond_to: tokio::sync::oneshot::Sender<Result<(), EngineError>>,
+        respond_to: tokio::sync::oneshot::Sender<Result<SftpProgress, EngineError>>,
     },
     /// 标记指定 transfer_id 的传输任务为取消状态。
     SftpCancelTransfer {
@@ -989,6 +1028,8 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
+                            let (task_on_event, terminal_progress) =
+                                capture_terminal_sftp_progress(&on_event);
                             let guard = session_handle.lock().await;
                             let result = sftp_upload(
                                 &guard,
@@ -1001,11 +1042,14 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                                 &local_path,
                                 &remote_path,
                                 &cancel_flag,
-                                &on_event,
+                                &task_on_event,
                             )
                             .await;
                             transfer_cancellations.lock().await.remove(&transfer_id);
-                            let _ = respond_to.send(result);
+                            let _ = respond_to.send(resolve_sftp_transfer_response(
+                                result,
+                                &terminal_progress,
+                            ));
                         });
                     }
                     SessionCommand::SftpUploadPaths { local_paths, remote_dir, respond_to } => {
@@ -1019,6 +1063,8 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
+                            let (task_on_event, terminal_progress) =
+                                capture_terminal_sftp_progress(&on_event);
                             let guard = session_handle.lock().await;
                             let result = sftp_upload_paths(
                                 &guard,
@@ -1031,11 +1077,14 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                                 &local_paths,
                                 &remote_dir,
                                 &cancel_flag,
-                                &on_event,
+                                &task_on_event,
                             )
                             .await;
                             transfer_cancellations.lock().await.remove(&transfer_id);
-                            let _ = respond_to.send(result);
+                            let _ = respond_to.send(resolve_sftp_transfer_response(
+                                result,
+                                &terminal_progress,
+                            ));
                         });
                     }
                     SessionCommand::SftpDownload { remote_path, local_path, respond_to } => {
@@ -1049,6 +1098,8 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
+                            let (task_on_event, terminal_progress) =
+                                capture_terminal_sftp_progress(&on_event);
                             let guard = session_handle.lock().await;
                             let result = sftp_download(
                                 &guard,
@@ -1061,11 +1112,14 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                                 &remote_path,
                                 &local_path,
                                 &cancel_flag,
-                                &on_event,
+                                &task_on_event,
                             )
                             .await;
                             transfer_cancellations.lock().await.remove(&transfer_id);
-                            let _ = respond_to.send(result);
+                            let _ = respond_to.send(resolve_sftp_transfer_response(
+                                result,
+                                &terminal_progress,
+                            ));
                         });
                     }
                     SessionCommand::SftpDownloadDir { remote_path, local_dir, respond_to } => {
@@ -1079,6 +1133,8 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         let on_event = Arc::clone(&on_event);
                         let transfer_cancellations = Arc::clone(&transfer_cancellations);
                         tokio::spawn(async move {
+                            let (task_on_event, terminal_progress) =
+                                capture_terminal_sftp_progress(&on_event);
                             let guard = session_handle.lock().await;
                             let result = sftp_download_dir(
                                 &guard,
@@ -1091,11 +1147,14 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                                 &remote_path,
                                 &local_dir,
                                 &cancel_flag,
-                                &on_event,
+                                &task_on_event,
                             )
                             .await;
                             transfer_cancellations.lock().await.remove(&transfer_id);
-                            let _ = respond_to.send(result);
+                            let _ = respond_to.send(resolve_sftp_transfer_response(
+                                result,
+                                &terminal_progress,
+                            ));
                         });
                     }
                     SessionCommand::SftpCancelTransfer { transfer_id, respond_to } => {

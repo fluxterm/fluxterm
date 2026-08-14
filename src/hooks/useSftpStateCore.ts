@@ -31,6 +31,13 @@ import {
   sftpUploadPaths,
 } from "@/features/sftp/core/commands";
 import { registerSftpProgressListener } from "@/features/sftp/core/listeners";
+import {
+  getSftpTransferKey,
+  selectRunningSftpTransfers,
+  syncRunningSftpTransfer,
+  type RunningSftpTransfer,
+  type RunningSftpTransfers,
+} from "@/features/sftp/core/transferState";
 
 type UseSftpStateProps = {
   enabled: boolean;
@@ -49,14 +56,14 @@ type UseSftpStateProps = {
 type UseSftpStateResult = {
   currentPath: string;
   entries: SftpEntry[];
-  progressBySession: Record<string, SftpProgress>;
+  runningTransfers: RunningSftpTransfer[];
   availabilityBySession: Record<string, SftpAvailability>;
   refreshList: (path?: string, sessionId?: string | null) => Promise<void>;
   openRemoteDir: (path: string) => Promise<void>;
   uploadFile: () => Promise<void>;
   uploadDroppedPaths: (paths: string[]) => Promise<void>;
   downloadFile: (entry: SftpEntry) => Promise<void>;
-  cancelTransfer: () => Promise<void>;
+  cancelTransfer: (sessionId: string, transferId: string) => Promise<void>;
   createFolder: (name: string) => Promise<void>;
   rename: (entry: SftpEntry, name: string) => Promise<void>;
   remove: (entry: SftpEntry) => Promise<void>;
@@ -79,14 +86,13 @@ export default function useSftpState({
   const [fileViews, setFileViews] = useState<
     Record<string, { path: string; entries: SftpEntry[] }>
   >({});
-  const [progressBySession, setProgressBySession] = useState<
-    Record<string, SftpProgress>
-  >({});
+  const [runningTransfersById, setRunningTransfersById] =
+    useState<RunningSftpTransfers>({});
   const [availabilityBySession, setAvailabilityBySession] = useState<
     Record<string, SftpAvailability>
   >({});
   const unsupportedLoggedRef = useRef<Record<string, boolean>>({});
-  const progressBySessionRef = useRef<Record<string, SftpProgress>>({});
+  const runningTransfersByIdRef = useRef<RunningSftpTransfers>({});
   const clearFileViewRef = useRef<(sessionId: string) => void>(() => {});
   const loadHomePathRef = useRef<(sessionId?: string | null) => Promise<void>>(
     async () => {},
@@ -103,6 +109,10 @@ export default function useSftpState({
 
   const currentPath = activeFileView?.path ?? "";
   const entries = activeFileView?.entries ?? [];
+  const runningTransfers = useMemo(
+    () => selectRunningSftpTransfers(runningTransfersById),
+    [runningTransfersById],
+  );
 
   function joinLocalTargetPath(directory: string, name: string) {
     const normalizedDirectory = normalizeLocalPath(directory);
@@ -173,16 +183,15 @@ export default function useSftpState({
     );
   }
 
-  /** 同步最近一次传输进度，供传输面板展示。 */
+  /** 同步活动传输进度，供全局传输中心展示。 */
   function syncProgressEntry(payload: SftpProgress) {
-    progressBySessionRef.current = {
-      ...progressBySessionRef.current,
-      [payload.sessionId]: payload,
-    };
-    setProgressBySession((prev) => ({
-      ...prev,
-      [payload.sessionId]: payload,
-    }));
+    const next = syncRunningSftpTransfer(
+      runningTransfersByIdRef.current,
+      payload,
+    );
+    if (next === runningTransfersByIdRef.current) return;
+    runningTransfersByIdRef.current = next;
+    setRunningTransfersById(next);
   }
 
   function clearFileView(sessionId: string) {
@@ -354,19 +363,21 @@ export default function useSftpState({
     });
     setBusyMessage(t("messages.uploading"));
     try {
-      await sftpUploadPaths(activeSession.sessionId, [file], currentPath);
+      const transferProgress = await sftpUploadPaths(
+        activeSession.sessionId,
+        [file],
+        currentPath,
+      );
       await refreshList();
       setBusyMessage(null);
-      const latestProgress =
-        progressBySessionRef.current[activeSession.sessionId] ?? null;
-      if (latestProgress?.status === "cancelled") {
+      if (transferProgress.status === "cancelled") {
         appendTransferEvent({
           op: "upload",
           state: "cancelled",
           titleKey: "log.event.uploadCancelled",
           name: fileName,
           details: {
-            transferId: latestProgress.transferId,
+            transferId: transferProgress.transferId,
             localPath: file,
             remoteDirectory: currentPath,
           },
@@ -378,11 +389,11 @@ export default function useSftpState({
           titleKey: "log.event.uploadDone",
           name: fileName,
           details: {
-            transferId: latestProgress?.transferId ?? null,
+            transferId: transferProgress.transferId,
             localPath: file,
             remoteDirectory: currentPath,
-            transferred: latestProgress?.transferred ?? null,
-            total: latestProgress?.total ?? null,
+            transferred: transferProgress.transferred,
+            total: transferProgress.total ?? null,
           },
         });
       }
@@ -423,43 +434,41 @@ export default function useSftpState({
     });
     setBusyMessage(t("messages.uploading"));
     try {
-      await sftpUploadPaths(
+      const transferProgress = await sftpUploadPaths(
         activeSession.sessionId,
         normalizedPaths,
         currentPath,
       );
       await refreshList();
       setBusyMessage(null);
-      const latestProgress =
-        progressBySessionRef.current[activeSession.sessionId] ?? null;
-      if (latestProgress?.status === "cancelled") {
+      if (transferProgress.status === "cancelled") {
         appendTransferEvent({
           op: "upload",
           state: "cancelled",
           titleKey: "log.event.uploadCancelled",
           name: uploadLabel,
           details: {
-            transferId: latestProgress.transferId,
+            transferId: transferProgress.transferId,
             localPaths: normalizedPaths,
             remoteDirectory: currentPath,
-            completedItems: latestProgress.completedItems,
-            totalItems: latestProgress.totalItems ?? normalizedPaths.length,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? normalizedPaths.length,
           },
         });
-      } else if (latestProgress?.status === "partial_success") {
+      } else if (transferProgress.status === "partial_success") {
         appendTransferEvent({
           op: "upload",
           state: "partial_success",
           titleKey: "log.event.uploadPartial",
           name: uploadLabel,
-          failed: latestProgress.failedItems,
+          failed: transferProgress.failedItems,
           details: {
-            transferId: latestProgress.transferId,
+            transferId: transferProgress.transferId,
             localPaths: normalizedPaths,
             remoteDirectory: currentPath,
-            completedItems: latestProgress.completedItems,
-            totalItems: latestProgress.totalItems ?? normalizedPaths.length,
-            failedItems: latestProgress.failedItems,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? normalizedPaths.length,
+            failedItems: transferProgress.failedItems,
           },
         });
       } else {
@@ -469,13 +478,13 @@ export default function useSftpState({
           titleKey: "log.event.uploadDone",
           name: uploadLabel,
           details: {
-            transferId: latestProgress?.transferId ?? null,
+            transferId: transferProgress.transferId,
             localPaths: normalizedPaths,
             remoteDirectory: currentPath,
-            completedItems: latestProgress?.completedItems ?? null,
-            totalItems: latestProgress?.totalItems ?? normalizedPaths.length,
-            transferred: latestProgress?.transferred ?? null,
-            total: latestProgress?.total ?? null,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? normalizedPaths.length,
+            transferred: transferProgress.transferred,
+            total: transferProgress.total ?? null,
           },
         });
       }
@@ -520,56 +529,52 @@ export default function useSftpState({
     });
     setBusyMessage(t("messages.downloading"));
     try {
-      if (entry.kind === "dir") {
-        if (Array.isArray(target)) return;
-        await sftpDownloadDir(activeSession.sessionId, entry.path, target);
-      } else {
-        if (Array.isArray(target)) return;
-        await sftpDownload(
-          activeSession.sessionId,
-          entry.path,
-          joinLocalTargetPath(target, entry.name),
-        );
-      }
+      if (Array.isArray(target)) return;
+      const transferProgress =
+        entry.kind === "dir"
+          ? await sftpDownloadDir(activeSession.sessionId, entry.path, target)
+          : await sftpDownload(
+              activeSession.sessionId,
+              entry.path,
+              joinLocalTargetPath(target, entry.name),
+            );
       setBusyMessage(null);
-      const latestProgress =
-        progressBySessionRef.current[activeSession.sessionId] ?? null;
-      if (latestProgress?.status === "cancelled") {
+      if (transferProgress.status === "cancelled") {
         appendTransferEvent({
           op: "download",
           state: "cancelled",
           titleKey: "log.event.downloadCancelled",
           name:
-            latestProgress.totalItems && latestProgress.totalItems > 1
-              ? t("log.itemsCount", { count: latestProgress.totalItems })
+            transferProgress.totalItems && transferProgress.totalItems > 1
+              ? t("log.itemsCount", { count: transferProgress.totalItems })
               : entry.name,
           details: {
-            transferId: latestProgress.transferId,
+            transferId: transferProgress.transferId,
             remotePath: entry.path,
             targetDirectory: Array.isArray(target) ? null : target,
             kind: entry.kind,
-            completedItems: latestProgress.completedItems,
-            totalItems: latestProgress.totalItems ?? null,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? null,
           },
         });
-      } else if (latestProgress?.status === "partial_success") {
+      } else if (transferProgress.status === "partial_success") {
         appendTransferEvent({
           op: "download",
           state: "partial_success",
           titleKey: "log.event.downloadPartial",
           name:
-            latestProgress.totalItems && latestProgress.totalItems > 1
-              ? t("log.itemsCount", { count: latestProgress.totalItems })
+            transferProgress.totalItems && transferProgress.totalItems > 1
+              ? t("log.itemsCount", { count: transferProgress.totalItems })
               : entry.name,
-          failed: latestProgress.failedItems,
+          failed: transferProgress.failedItems,
           details: {
-            transferId: latestProgress.transferId,
+            transferId: transferProgress.transferId,
             remotePath: entry.path,
             targetDirectory: Array.isArray(target) ? null : target,
             kind: entry.kind,
-            completedItems: latestProgress.completedItems,
-            totalItems: latestProgress.totalItems ?? null,
-            failedItems: latestProgress.failedItems,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? null,
+            failedItems: transferProgress.failedItems,
           },
         });
       } else {
@@ -578,11 +583,11 @@ export default function useSftpState({
           state: "success",
           titleKey: "log.event.downloadDone",
           name:
-            latestProgress?.totalItems && latestProgress.totalItems > 1
-              ? t("log.itemsCount", { count: latestProgress.totalItems })
+            transferProgress.totalItems && transferProgress.totalItems > 1
+              ? t("log.itemsCount", { count: transferProgress.totalItems })
               : entry.name,
           details: {
-            transferId: latestProgress?.transferId ?? null,
+            transferId: transferProgress.transferId,
             remotePath: entry.path,
             targetDirectory: Array.isArray(target) ? null : target,
             localPath: Array.isArray(target)
@@ -591,10 +596,10 @@ export default function useSftpState({
                 ? target
                 : joinLocalTargetPath(target, entry.name),
             kind: entry.kind,
-            completedItems: latestProgress?.completedItems ?? null,
-            totalItems: latestProgress?.totalItems ?? null,
-            transferred: latestProgress?.transferred ?? null,
-            total: latestProgress?.total ?? entry.size ?? null,
+            completedItems: transferProgress.completedItems,
+            totalItems: transferProgress.totalItems ?? null,
+            transferred: transferProgress.transferred,
+            total: transferProgress.total ?? entry.size ?? null,
           },
         });
       }
@@ -616,17 +621,18 @@ export default function useSftpState({
   }
 
   /**
-   * 取消当前活动会话最近一个运行中的传输任务。
+   * 取消指定会话中的指定运行任务。
    *
    * 取消请求会发给后端真实传输任务，而不是只在前端隐藏进度。
    * 任务最终状态会由后端进度事件回写为 `cancelled`。
    */
-  async function cancelTransfer() {
-    if (!activeSessionId) return;
-    const progress = progressBySessionRef.current[activeSessionId];
-    if (!progress || progress.status !== "running") return;
-    await sftpCancelTransfer(activeSessionId, progress.transferId);
-    setBusyMessage(null);
+  async function cancelTransfer(sessionId: string, transferId: string) {
+    const task =
+      runningTransfersByIdRef.current[
+        getSftpTransferKey(sessionId, transferId)
+      ];
+    if (!task) return;
+    await sftpCancelTransfer(sessionId, transferId);
   }
 
   async function createFolder(name: string) {
@@ -711,7 +717,7 @@ export default function useSftpState({
   return {
     currentPath,
     entries,
-    progressBySession,
+    runningTransfers,
     availabilityBySession,
     refreshList,
     openRemoteDir,

@@ -61,9 +61,11 @@ import useMainAppearance from "@/main/hooks/useMainAppearance";
 import useRemoteEditSessions from "@/main/hooks/useRemoteEditSessions";
 import useSessionResourceMonitor from "@/main/hooks/useSessionResourceMonitor";
 import useTerminalPathSync from "@/main/hooks/useTerminalPathSync";
+import useFloatingTransferCancelRpc from "@/main/hooks/useFloatingTransferCancelRpc";
 import { moveWidgetToSlot, widgetKeys } from "@/layout/model";
 import type { WidgetSide, WidgetSlotId } from "@/layout/types";
 import type {
+  AppEvent,
   HostProfile,
   LocalShellConfig,
   LocalShellProfile,
@@ -137,6 +139,8 @@ import {
   WIDGET_TRANSFERS_CHANNEL,
   type FloatingTransfersMessage,
   type FloatingTransfersSnapshot,
+  type SftpTransferHistoryItem,
+  type SftpTransferTaskView,
 } from "@/features/sftp/core/widgetTransfersSync";
 import {
   WIDGET_TUNNELS_CHANNEL,
@@ -224,6 +228,15 @@ function formatMessage(
 
 function getErrorMessage(error: unknown) {
   return extractErrorMessage(error);
+}
+
+/** 判断应用事件是否属于 SFTP 上传或下载历史。 */
+function isSftpTransferEvent(event: AppEvent) {
+  return (
+    event.scope === "sftp" &&
+    (event.type.startsWith("sftp.upload.") ||
+      event.type.startsWith("sftp.download."))
+  );
 }
 
 type PendingSshConnectRuntime = {
@@ -698,6 +711,10 @@ export default function AppShell() {
     useState<FloatingFilesSnapshot | null>(null);
   const [floatingTransfersSnapshot, setFloatingTransfersSnapshot] =
     useState<FloatingTransfersSnapshot | null>(null);
+  const {
+    requestCancel: requestFloatingTransferCancel,
+    handleResult: handleFloatingTransferCancelResult,
+  } = useFloatingTransferCancelRpc();
   const [floatingEventsSnapshot, setFloatingEventsSnapshot] =
     useState<FloatingEventsSnapshot | null>(null);
   const [floatingHistorySnapshot, setFloatingHistorySnapshot] =
@@ -1358,36 +1375,37 @@ export default function AppShell() {
     },
   });
 
-  const { floatingWidgets, handleFloat, openAllDevtools } = useFloatingWidgets({
-    floatingWidgetKey,
-    floatingOrigins,
-    setFloatingOrigins,
-    slotGroups,
-    setSlotGroups,
-    widgetLabels,
-    layoutCollapsed,
-    locale,
-    themeId,
-    backgroundImageEnabled,
-    backgroundImageAsset,
-    backgroundImageSurfaceAlpha: normalizedBackgroundImageSurfaceAlpha,
-    backgroundMediaType: normalizedBackgroundMediaType,
-    backgroundRenderMode: normalizedBackgroundRenderMode,
-    backgroundVideoReplayMode: normalizedBackgroundVideoReplayMode,
-    backgroundVideoReplayIntervalSec:
-      normalizedBackgroundVideoReplayIntervalSec,
-    setLocale,
-    setThemeId,
-    setBackgroundImageEnabled,
-    setBackgroundImageAsset,
-    setBackgroundImageSurfaceAlpha,
-    setBackgroundMediaType,
-    setBackgroundRenderMode,
-    setBackgroundVideoReplayMode,
-    setBackgroundVideoReplayIntervalSec,
-    onOpenCurrentDevtools: openCurrentDevtools,
-    onMainShutdown: notifyMainShutdown,
-  });
+  const { floatingWidgets, handleFloat, focusFloatingWidget, openAllDevtools } =
+    useFloatingWidgets({
+      floatingWidgetKey,
+      floatingOrigins,
+      setFloatingOrigins,
+      slotGroups,
+      setSlotGroups,
+      widgetLabels,
+      layoutCollapsed,
+      locale,
+      themeId,
+      backgroundImageEnabled,
+      backgroundImageAsset,
+      backgroundImageSurfaceAlpha: normalizedBackgroundImageSurfaceAlpha,
+      backgroundMediaType: normalizedBackgroundMediaType,
+      backgroundRenderMode: normalizedBackgroundRenderMode,
+      backgroundVideoReplayMode: normalizedBackgroundVideoReplayMode,
+      backgroundVideoReplayIntervalSec:
+        normalizedBackgroundVideoReplayIntervalSec,
+      setLocale,
+      setThemeId,
+      setBackgroundImageEnabled,
+      setBackgroundImageAsset,
+      setBackgroundImageSurfaceAlpha,
+      setBackgroundMediaType,
+      setBackgroundRenderMode,
+      setBackgroundVideoReplayMode,
+      setBackgroundVideoReplayIntervalSec,
+      onOpenCurrentDevtools: openCurrentDevtools,
+      onMainShutdown: notifyMainShutdown,
+    });
   function handleOpenDevtools() {
     openCurrentDevtools();
     openAllDevtools();
@@ -1447,6 +1465,75 @@ export default function AppShell() {
     rename: renameEntry,
     remove: removeEntry,
   } = sftpActions;
+  const transferProfileLabelsById = useMemo(() => {
+    const result: Record<string, string> = {};
+    profiles.forEach((profile) => {
+      const label = profile.name.trim() || profile.host.trim();
+      if (label) result[profile.id] = label;
+    });
+    return result;
+  }, [profiles]);
+  const transferSessionProfileIds = useMemo(() => {
+    const result: Record<string, string> = {};
+    sessionState.sessions.forEach((session) => {
+      if (session.kind !== "ssh" || !session.profileId) return;
+      result[session.sessionId] = session.profileId;
+    });
+    return result;
+  }, [sessionState.sessions]);
+  const transferRecentProfileIdsBySession = useMemo(() => {
+    const result: Record<string, string> = {};
+    sessionState.appEvents.forEach((event) => {
+      if (!isSftpTransferEvent(event)) return;
+      if (!event.sessionId || !event.profileId || result[event.sessionId]) {
+        return;
+      }
+      result[event.sessionId] = event.profileId;
+    });
+    return result;
+  }, [sessionState.appEvents]);
+  const transferTasks = useMemo<SftpTransferTaskView[]>(
+    () =>
+      sftpState.runningTransfers.map((task) => {
+        const sessionId = task.progress.sessionId;
+        const profileId =
+          transferSessionProfileIds[sessionId] ??
+          transferRecentProfileIdsBySession[sessionId];
+        return {
+          ...task,
+          sessionLabel:
+            (profileId && transferProfileLabelsById[profileId]) || sessionId,
+        };
+      }),
+    [
+      sftpState.runningTransfers,
+      transferProfileLabelsById,
+      transferRecentProfileIdsBySession,
+      transferSessionProfileIds,
+    ],
+  );
+  const transferHistory = useMemo<SftpTransferHistoryItem[]>(
+    () =>
+      sessionState.appEvents.filter(isSftpTransferEvent).map((event) => {
+        const sessionProfileId = event.sessionId
+          ? transferSessionProfileIds[event.sessionId]
+          : null;
+        return {
+          event,
+          sessionLabel:
+            (event.profileId && transferProfileLabelsById[event.profileId]) ||
+            (sessionProfileId && transferProfileLabelsById[sessionProfileId]) ||
+            event.sessionId ||
+            t("session.defaultName"),
+        };
+      }),
+    [
+      sessionState.appEvents,
+      t,
+      transferProfileLabelsById,
+      transferSessionProfileIds,
+    ],
+  );
   const activeSftpAvailability = useMemo(() => {
     const activeSessionId = sessionState.activeSessionId;
     if (!activeSessionId) return "ready";
@@ -1714,14 +1801,9 @@ export default function AppShell() {
     floatingWidgetKey,
     isFloatingWidget: isFloatingTransfersWidget,
     broadcastSnapshot: (channel) => {
-      const activeSessionId = sessionState.activeSessionId;
       const payload: FloatingTransfersSnapshot = {
-        activeSessionId,
-        progress: activeSessionId
-          ? (sftpState.progressBySession[activeSessionId] ?? null)
-          : null,
-        busyMessage: sessionState.busyMessage,
-        events: sessionState.appEvents,
+        tasks: transferTasks,
+        history: transferHistory,
       };
       channel.postMessage({
         type: "transfers:snapshot",
@@ -1731,14 +1813,9 @@ export default function AppShell() {
     onMainWindowMessage: (message, channel) => {
       switch (message.type) {
         case "transfers:request-snapshot": {
-          const activeSessionId = sessionState.activeSessionId;
           const payload: FloatingTransfersSnapshot = {
-            activeSessionId,
-            progress: activeSessionId
-              ? (sftpState.progressBySession[activeSessionId] ?? null)
-              : null,
-            busyMessage: sessionState.busyMessage,
-            events: sessionState.appEvents,
+            tasks: transferTasks,
+            history: transferHistory,
           };
           channel.postMessage({
             type: "transfers:snapshot",
@@ -1747,15 +1824,40 @@ export default function AppShell() {
           break;
         }
         case "transfers:cancel":
-          cancelTransfer().catch(() => {});
+          void cancelTransfer(message.sessionId, message.transferId).then(
+            () => {
+              channel.postMessage({
+                type: "transfers:cancel-result",
+                requestId: message.requestId,
+                ok: true,
+              } satisfies FloatingTransfersMessage);
+            },
+            () => {
+              channel.postMessage({
+                type: "transfers:cancel-result",
+                requestId: message.requestId,
+                ok: false,
+              } satisfies FloatingTransfersMessage);
+            },
+          );
           break;
+        case "transfers:cancel-result":
         case "transfers:snapshot":
           break;
       }
     },
     onFloatingWindowMessage: (message) => {
-      if (message.type === "transfers:snapshot") {
-        setFloatingTransfersSnapshot(message.payload);
+      switch (message.type) {
+        case "transfers:snapshot":
+          setFloatingTransfersSnapshot(message.payload);
+          break;
+        case "transfers:cancel-result": {
+          handleFloatingTransferCancelResult(message);
+          break;
+        }
+        case "transfers:request-snapshot":
+        case "transfers:cancel":
+          break;
       }
     },
     requestSnapshot: (channel) => {
@@ -1765,10 +1867,9 @@ export default function AppShell() {
     },
     deps: [
       cancelTransfer,
-      sessionState.activeSessionId,
-      sessionState.appEvents,
-      sessionState.busyMessage,
-      sftpState.progressBySession,
+      handleFloatingTransferCancelResult,
+      transferHistory,
+      transferTasks,
     ],
   });
 
@@ -2683,6 +2784,7 @@ export default function AppShell() {
       WIDGET_TUNNELS_CHANNEL,
       isFloatingTunnelsWidget,
     );
+
   const postFloatingBroadcastMessage =
     useFloatingWidgetMessagePoster<FloatingBroadcastMessage>(
       WIDGET_BROADCAST_CHANNEL,
@@ -2729,25 +2831,18 @@ export default function AppShell() {
     () =>
       isFloatingTransfersWidget
         ? {
-            progress: floatingTransfersSnapshot?.progress ?? null,
-            busyMessage: floatingTransfersSnapshot?.busyMessage ?? null,
-            events: floatingTransfersSnapshot?.events ?? [],
+            tasks: floatingTransfersSnapshot?.tasks ?? [],
+            history: floatingTransfersSnapshot?.history ?? [],
           }
         : {
-            progress: sessionState.activeSessionId
-              ? (sftpState.progressBySession[sessionState.activeSessionId] ??
-                null)
-              : null,
-            busyMessage: sessionState.busyMessage,
-            events: sessionState.appEvents,
+            tasks: transferTasks,
+            history: transferHistory,
           },
     [
       floatingTransfersSnapshot,
       isFloatingTransfersWidget,
-      sessionState.activeSessionId,
-      sessionState.appEvents,
-      sessionState.busyMessage,
-      sftpState.progressBySession,
+      transferHistory,
+      transferTasks,
     ],
   );
 
@@ -2849,15 +2944,22 @@ export default function AppShell() {
     () =>
       isFloatingTransfersWidget
         ? {
-            cancel: () => {
-              postFloatingTransfersMessage({ type: "transfers:cancel" });
-              return Promise.resolve();
-            },
+            cancel: (sessionId: string, transferId: string) =>
+              requestFloatingTransferCancel(
+                postFloatingTransfersMessage,
+                sessionId,
+                transferId,
+              ),
           }
         : {
             cancel: cancelTransfer,
           },
-    [cancelTransfer, isFloatingTransfersWidget, postFloatingTransfersMessage],
+    [
+      cancelTransfer,
+      isFloatingTransfersWidget,
+      postFloatingTransfersMessage,
+      requestFloatingTransferCancel,
+    ],
   );
 
   const EventsWidgetState = useMemo(
@@ -3115,11 +3217,9 @@ export default function AppShell() {
           : sessionState.sessionStates,
         isRemoteSession: filesWidgetState.isRemoteSession,
         isRemoteConnected: filesWidgetState.isRemoteConnected,
-        transferProgress: TransfersWidgetState.progress,
-        busyMessage: TransfersWidgetState.busyMessage,
-        appEvents: isFloatingTransfersWidget
-          ? TransfersWidgetState.events
-          : EventsWidgetState.events,
+        transferTasks: TransfersWidgetState.tasks,
+        transferHistory: TransfersWidgetState.history,
+        appEvents: EventsWidgetState.events,
         historyLoaded: historyWidgetState.loaded,
         hasActiveSession: historyWidgetState.hasActiveSession,
         historyLiveCapture: historyWidgetState.liveCapture,
@@ -3262,7 +3362,6 @@ export default function AppShell() {
       AiWidgetState,
       isFloatingAiWidget,
       isFloatingBroadcastWidget,
-      isFloatingTransfersWidget,
       EventsWidgetState,
       floatingBroadcastSnapshot,
       filesWidgetState.isRemoteSession,
@@ -3322,6 +3421,10 @@ export default function AppShell() {
 
   function handleOpenTransfersWidget() {
     // 仅在用户主动点击状态栏传输指示器时展开并切换，不在传输开始时自动打断当前布局。
+    if (floatingWidgets.transfers || floatingOrigins.transfers) {
+      void focusFloatingWidget("transfers");
+      return;
+    }
     setWidgetCollapsed("bottom", false);
     setSlotGroups((prev) => {
       const bottomGroup = prev.bottom;
@@ -3582,7 +3685,7 @@ export default function AppShell() {
             resourceMonitorEnabled={resourceMonitorEnabled}
             resourceMonitorStatus={activeResourceMonitorStatus}
             resourceSnapshot={activeResourceSnapshot}
-            sftpProgressBySession={sftpState.progressBySession}
+            runningTransfers={sftpState.runningTransfers}
             onOpenTransfersWidget={handleOpenTransfersWidget}
             activeAiConfigName={aiActiveProvider?.name?.trim() || null}
             securityLocked={securityStatus.locked}

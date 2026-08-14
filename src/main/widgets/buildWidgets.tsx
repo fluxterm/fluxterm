@@ -17,6 +17,10 @@ import {
   TunnelWidget,
 } from "@/main/widgets/lazyWidgets";
 import type { AiChatMessage } from "@/features/ai/types";
+import type {
+  SftpTransferHistoryItem,
+  SftpTransferTaskView,
+} from "@/features/sftp/core/widgetTransfersSync";
 import type { Locale, Translate } from "@/i18n";
 import type {
   CommandHistoryItem,
@@ -34,7 +38,6 @@ import type {
   SessionStateUi,
   SftpAvailability,
   SftpEntry,
-  SftpProgress,
   SshTunnelRuntime,
   SshTunnelSpec,
 } from "@/types";
@@ -59,8 +62,8 @@ type buildWidgetsProps = {
   sessionStates: Record<string, SessionStateUi>;
   isRemoteSession: boolean;
   isRemoteConnected: boolean;
-  transferProgress: SftpProgress | null;
-  busyMessage: string | null;
+  transferTasks: SftpTransferTaskView[];
+  transferHistory: SftpTransferHistoryItem[];
   appEvents: AppEvent[];
   historyLoaded: boolean;
   hasActiveSession: boolean;
@@ -141,7 +144,7 @@ type buildWidgetsProps = {
   onUploadFile: () => Promise<void>;
   onUploadDroppedPaths: (paths: string[]) => Promise<void>;
   onDownloadFile: (entry: SftpEntry) => Promise<void>;
-  onCancelTransfer: () => Promise<void>;
+  onCancelTransfer: (sessionId: string, transferId: string) => Promise<void>;
   onCreateFolder: (name: string) => Promise<void>;
   onRenameEntry: (entry: SftpEntry, name: string) => Promise<void>;
   onRemoveEntry: (entry: SftpEntry) => Promise<void>;
@@ -185,8 +188,8 @@ export function buildWidgets(
     sessionStates,
     isRemoteSession,
     isRemoteConnected,
-    transferProgress,
-    busyMessage,
+    transferTasks,
+    transferHistory,
     appEvents,
     historyLoaded,
     hasActiveSession,
@@ -344,9 +347,8 @@ export function buildWidgets(
     transfers: (
       <Suspense fallback={null}>
         <TransfersWidget
-          progress={transferProgress}
-          busyMessage={busyMessage}
-          events={appEvents}
+          tasks={transferTasks}
+          history={transferHistory}
           onCancel={onCancelTransfer}
           locale={locale}
           t={t}

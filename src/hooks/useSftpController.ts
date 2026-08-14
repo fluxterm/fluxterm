@@ -17,7 +17,7 @@ export default function useSftpController(
     sftpState: {
       currentPath: raw.currentPath,
       entries: raw.entries,
-      progressBySession: raw.progressBySession,
+      runningTransfers: raw.runningTransfers,
       availabilityBySession: raw.availabilityBySession,
     },
     sftpActions: {

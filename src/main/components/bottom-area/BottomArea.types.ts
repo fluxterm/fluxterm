@@ -6,8 +6,8 @@ import type {
   QuickCommandItem,
   ResourceMonitorStatus,
   SessionResourceSnapshot,
-  SftpProgress,
 } from "@/types";
+import type { RunningSftpTransfer } from "@/features/sftp/core/transferState";
 
 export type GroupMutationResult =
   | { ok: true; id?: string }
@@ -53,7 +53,7 @@ export type BottomAreaProps = {
   resourceMonitorEnabled: boolean;
   resourceMonitorStatus: ResourceMonitorStatus;
   resourceSnapshot: SessionResourceSnapshot | null;
-  sftpProgressBySession: Record<string, SftpProgress>;
+  runningTransfers: RunningSftpTransfer[];
   onOpenTransfersWidget: () => void;
   activeAiConfigName: string | null;
   securityLocked: boolean;

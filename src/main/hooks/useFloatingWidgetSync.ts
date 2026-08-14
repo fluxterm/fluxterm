@@ -88,6 +88,7 @@ export function useFloatingWidgetSnapshotSync<Message>({
   const onMainWindowMessageRef = useRef(onMainWindowMessage);
   const onFloatingWindowMessageRef = useRef(onFloatingWindowMessage);
   const requestSnapshotRef = useRef(requestSnapshot);
+  const channelRef = useRef<BroadcastChannel | null>(null);
   const depsSignature = deps.map(getFloatingSyncDepToken).join("|");
 
   useEffect(() => {
@@ -104,33 +105,43 @@ export function useFloatingWidgetSnapshotSync<Message>({
 
   useEffect(() => {
     if (typeof BroadcastChannel === "undefined") return;
+    if (floatingWidgetKey && !isFloatingWidget) return;
     const channel = new BroadcastChannel(channelName);
+    channelRef.current = channel;
 
     if (!floatingWidgetKey) {
-      broadcastSnapshotRef.current?.(channel);
       channel.onmessage = (event) => {
         const message = event.data as Message | undefined;
         if (!message) return;
         onMainWindowMessageRef.current?.(message, channel);
       };
       return () => {
+        if (channelRef.current === channel) {
+          channelRef.current = null;
+        }
         channel.close();
       };
     }
 
-    if (isFloatingWidget) {
-      channel.onmessage = (event) => {
-        const message = event.data as Message | undefined;
-        if (!message) return;
-        onFloatingWindowMessageRef.current?.(message);
-      };
-      requestSnapshotRef.current(channel);
-      return () => {
-        channel.close();
-      };
-    }
+    channel.onmessage = (event) => {
+      const message = event.data as Message | undefined;
+      if (!message) return;
+      onFloatingWindowMessageRef.current?.(message);
+    };
+    requestSnapshotRef.current(channel);
+    return () => {
+      if (channelRef.current === channel) {
+        channelRef.current = null;
+      }
+      channel.close();
+    };
+  }, [channelName, floatingWidgetKey, isFloatingWidget]);
 
-    channel.close();
-    return undefined;
-  }, [channelName, floatingWidgetKey, isFloatingWidget, depsSignature]);
+  // 主窗口的数据更新只触发快照广播，不重建消息频道，避免高频进度更新造成动作消息丢失。
+  useEffect(() => {
+    if (floatingWidgetKey) return;
+    const channel = channelRef.current;
+    if (!channel) return;
+    broadcastSnapshotRef.current?.(channel);
+  }, [channelName, floatingWidgetKey, depsSignature]);
 }

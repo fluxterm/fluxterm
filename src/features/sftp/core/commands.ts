@@ -3,7 +3,7 @@
  * 职责：封装本地文件与远端 SFTP 的 tauri 命令调用。
  */
 import { callTauri } from "@/shared/tauri/commands";
-import type { SftpEntry } from "@/types";
+import type { SftpEntry, SftpProgress } from "@/types";
 
 /** 读取本地目录。 */
 export function localList(path: string) {
@@ -36,7 +36,11 @@ export function sftpUpload(
   localPath: string,
   remotePath: string,
 ) {
-  return callTauri("sftp_upload", { sessionId, localPath, remotePath });
+  return callTauri<SftpProgress>("sftp_upload", {
+    sessionId,
+    localPath,
+    remotePath,
+  });
 }
 
 /** 上传一组文件或目录。 */
@@ -45,7 +49,11 @@ export function sftpUploadPaths(
   localPaths: string[],
   remoteDir: string,
 ) {
-  return callTauri("sftp_upload_paths", { sessionId, localPaths, remoteDir });
+  return callTauri<SftpProgress>("sftp_upload_paths", {
+    sessionId,
+    localPaths,
+    remoteDir,
+  });
 }
 
 /** 下载文件。 */
@@ -54,7 +62,11 @@ export function sftpDownload(
   remotePath: string,
   localPath: string,
 ) {
-  return callTauri("sftp_download", { sessionId, remotePath, localPath });
+  return callTauri<SftpProgress>("sftp_download", {
+    sessionId,
+    remotePath,
+    localPath,
+  });
 }
 
 /** 下载目录。 */
@@ -63,7 +75,11 @@ export function sftpDownloadDir(
   remotePath: string,
   localDir: string,
 ) {
-  return callTauri("sftp_download_dir", { sessionId, remotePath, localDir });
+  return callTauri<SftpProgress>("sftp_download_dir", {
+    sessionId,
+    remotePath,
+    localDir,
+  });
 }
 
 /** 取消传输。 */

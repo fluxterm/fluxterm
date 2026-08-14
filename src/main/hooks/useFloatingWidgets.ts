@@ -66,6 +66,7 @@ type useFloatingWidgetsProps = {
 type FloatingWidgetsState = {
   floatingWidgets: Partial<Record<WidgetKey, boolean>>;
   handleFloat: (slot: WidgetSlotId) => Promise<void>;
+  focusFloatingWidget: (widget: WidgetKey) => Promise<boolean>;
   restoreWidgetFloating: (widget: WidgetKey) => void;
   openAllDevtools: () => void;
 };
@@ -568,6 +569,18 @@ export default function useFloatingWidgets({
     [openFloatingWindow, setFloatingOrigins, setSlotGroups, slotGroups],
   );
 
+  /** 将已存在的浮动组件窗口带到前台。 */
+  const focusFloatingWidget = useCallback(async (widget: WidgetKey) => {
+    const current = floatingWindowRef.current[widget];
+    if (!current) return false;
+    try {
+      await current.setFocus();
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   /** 通知所有窗口打开开发者工具。 */
   const openAllDevtools = useCallback(() => {
     floatSyncChannelRef.current?.postMessage({ type: "devtools:open" });
@@ -576,6 +589,7 @@ export default function useFloatingWidgets({
   return {
     floatingWidgets,
     handleFloat,
+    focusFloatingWidget,
     restoreWidgetFloating,
     openAllDevtools,
   };

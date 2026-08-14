@@ -37,11 +37,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
+use uuid::Uuid;
 
 use crate::error::EngineError;
 use crate::types::{
@@ -624,7 +625,7 @@ struct DownloadScanContext<'a> {
 ///
 /// 该标识会跨 session 主循环与具体传输任务共享，用于进度归集和取消定位。
 pub(crate) fn next_transfer_id() -> String {
-    format!("sftp-{}", now_epoch_millis())
+    format!("sftp-{}", Uuid::new_v4())
 }
 
 /// 构造统一的“用户主动取消”错误。
@@ -643,6 +644,22 @@ fn items_label(total_items: Option<u64>) -> String {
         Some(count) => format!("{count} items"),
         None => "items".to_string(),
     }
+}
+
+/// 生成批量上传任务的初始展示名称。
+///
+/// 单根上传使用真实文件或目录名，避免扫描完成前把内部 `items` 占位符暴露给界面；
+/// 多根上传仍使用聚合占位名称，随后由扫描进度中的条目总数接管展示。
+fn upload_roots_display_name(roots: &[PathBuf]) -> String {
+    if roots.len() == 1
+        && let Some(name) = roots[0].file_name()
+    {
+        let display_name = name.to_string_lossy();
+        if !display_name.trim().is_empty() {
+            return display_name.into_owned();
+        }
+    }
+    items_label(None)
 }
 
 /// 发出任务取消的最终状态事件。
@@ -1203,7 +1220,7 @@ pub(crate) async fn sftp_upload_paths(
         op: SftpProgressOp::Upload,
         kind: upload_kind.transfer_kind(),
         path: remote_dir.to_string(),
-        display_name: items_label(None),
+        display_name: upload_roots_display_name(&local_roots),
         target_name: None,
         on_event: Arc::clone(on_event),
     };
@@ -3267,14 +3284,6 @@ fn file_name_from_path(path: &str) -> String {
         .to_string()
 }
 
-/// 获取当前 Unix 时间戳（毫秒）。
-fn now_epoch_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0)
-}
-
 /// 记录 SFTP 传输成功日志。
 fn log_sftp_success(event: SftpLogEvent, context: &TransferLogContext<'_>) {
     event.record(json!({
@@ -3535,8 +3544,8 @@ mod tests {
     use super::{
         DownloadReadChunk, DownloadReadFollowUp, PipelineEmitContext, PipelineProgressState,
         UploadJobKind, classify_upload_roots, download_chunk_size,
-        drain_contiguous_download_chunks, emit_pipeline_progress, queue_download_read_chunk,
-        upload_chunk_size,
+        drain_contiguous_download_chunks, emit_pipeline_progress, next_transfer_id,
+        queue_download_read_chunk, upload_chunk_size, upload_roots_display_name,
     };
     use crate::types::{EngineEvent, SftpProgressOp, SftpTransferKind, SftpTransferStatus};
     use std::collections::BTreeMap;
@@ -3556,6 +3565,16 @@ mod tests {
 
     fn temporary_test_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("fluxterm-sftp-{name}-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn transfer_ids_are_globally_unique() {
+        let first = next_transfer_id();
+        let second = next_transfer_id();
+
+        assert!(first.starts_with("sftp-"));
+        assert!(second.starts_with("sftp-"));
+        assert_ne!(first, second);
     }
 
     #[test]
@@ -3581,6 +3600,25 @@ mod tests {
         assert!(classify_upload_roots(&[root.join("missing")]).is_err());
 
         std::fs::remove_dir_all(&root).expect("remove test directory");
+    }
+
+    #[test]
+    fn single_upload_root_uses_real_display_name() {
+        assert_eq!(
+            upload_roots_display_name(&[PathBuf::from("folder/file.txt")]),
+            "file.txt"
+        );
+        assert_eq!(
+            upload_roots_display_name(&[PathBuf::from("folder/directory")]),
+            "directory"
+        );
+        assert_eq!(
+            upload_roots_display_name(&[
+                PathBuf::from("folder/a.txt"),
+                PathBuf::from("folder/b.txt")
+            ]),
+            "items"
+        );
     }
 
     #[test]

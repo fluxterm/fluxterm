@@ -17,7 +17,7 @@ use crate::session::{
 use crate::ssh_transport::JumpHostSpec;
 use crate::types::{
     EventCallback, HostProfile, ProxyRuntime, ProxySpec, Session, SessionKind, SessionState,
-    SftpEntry, SshTunnelRuntime, SshTunnelSpec, TerminalSize,
+    SftpEntry, SftpProgress, SshTunnelRuntime, SshTunnelSpec, TerminalSize,
 };
 use crate::util::now_epoch;
 
@@ -291,7 +291,7 @@ impl Engine {
         session_id: &str,
         local_path: &str,
         remote_path: &str,
-    ) -> Result<(), EngineError> {
+    ) -> Result<SftpProgress, EngineError> {
         let (resp_tx, resp_rx) = oneshot::channel();
         let handle = self
             .sessions
@@ -322,7 +322,7 @@ impl Engine {
         session_id: &str,
         local_paths: &[String],
         remote_dir: &str,
-    ) -> Result<(), EngineError> {
+    ) -> Result<SftpProgress, EngineError> {
         let (resp_tx, resp_rx) = oneshot::channel();
         let handle = self
             .sessions
@@ -353,7 +353,7 @@ impl Engine {
         session_id: &str,
         remote_path: &str,
         local_path: &str,
-    ) -> Result<(), EngineError> {
+    ) -> Result<SftpProgress, EngineError> {
         let (resp_tx, resp_rx) = oneshot::channel();
         let handle = self
             .sessions
@@ -384,7 +384,7 @@ impl Engine {
         session_id: &str,
         remote_path: &str,
         local_dir: &str,
-    ) -> Result<(), EngineError> {
+    ) -> Result<SftpProgress, EngineError> {
         let (resp_tx, resp_rx) = oneshot::channel();
         let handle = self
             .sessions

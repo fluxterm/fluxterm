@@ -8,11 +8,8 @@ import {
   FiUnlock,
 } from "react-icons/fi";
 import type { Locale, Translate } from "@/i18n";
-import type {
-  ResourceMonitorStatus,
-  SessionResourceSnapshot,
-  SftpProgress,
-} from "@/types";
+import type { ResourceMonitorStatus, SessionResourceSnapshot } from "@/types";
+import type { RunningSftpTransfer } from "@/features/sftp/core/transferState";
 import { FLUXTERM_ISSUES_URL } from "@/constants/links";
 import { formatDateTime } from "@/utils/format";
 import type { TerminalStats } from "@/main/components/bottom-area/BottomArea.types";
@@ -31,7 +28,7 @@ type StatusbarRowProps = {
   resourceMonitorEnabled: boolean;
   resourceMonitorStatus: ResourceMonitorStatus;
   resourceSnapshot: SessionResourceSnapshot | null;
-  sftpProgressBySession: Record<string, SftpProgress>;
+  runningTransfers: RunningSftpTransfer[];
   onOpenTransfersWidget: () => void;
   activeAiConfigName: string | null;
   securityLocked: boolean;
@@ -49,7 +46,7 @@ export default function StatusbarRow({
   resourceMonitorEnabled,
   resourceMonitorStatus,
   resourceSnapshot,
-  sftpProgressBySession,
+  runningTransfers,
   onOpenTransfersWidget,
   activeAiConfigName,
   securityLocked,
@@ -63,7 +60,7 @@ export default function StatusbarRow({
 
   const transferHint = useMemo(() => {
     // 仅统计运行中的上传/下载任务，用于状态栏常驻指示器与点击行为控制。
-    const progresses = Object.values(sftpProgressBySession);
+    const progresses = runningTransfers.map((item) => item.progress);
     const runningUploads = progresses.filter(
       (item) => item.status === "running" && item.op === "upload",
     ).length;
@@ -75,7 +72,7 @@ export default function StatusbarRow({
       runningDownloads,
       hasTransfer: runningUploads > 0 || runningDownloads > 0,
     };
-  }, [sftpProgressBySession]);
+  }, [runningTransfers]);
 
   const showResourceStatus = resourceMonitorEnabled;
   const resourceStatus = resourceMonitorStatus;
@@ -238,6 +235,7 @@ export default function StatusbarRow({
           <div className="statusbar-transfer" aria-live="polite">
             <button
               type="button"
+              data-ui="statusbar-transfer-button"
               className={`statusbar-transfer-token ${transferHint.hasTransfer ? "active" : "idle"}`.trim()}
               aria-label={
                 transferHint.hasTransfer

@@ -62,7 +62,7 @@ export default function BottomArea({
   resourceMonitorEnabled,
   resourceMonitorStatus,
   resourceSnapshot,
-  sftpProgressBySession,
+  runningTransfers,
   onOpenTransfersWidget,
   activeAiConfigName,
   securityLocked,
@@ -159,7 +159,7 @@ export default function BottomArea({
             resourceMonitorEnabled={resourceMonitorEnabled}
             resourceMonitorStatus={resourceMonitorStatus}
             resourceSnapshot={resourceSnapshot}
-            sftpProgressBySession={sftpProgressBySession}
+            runningTransfers={runningTransfers}
             onOpenTransfersWidget={onOpenTransfersWidget}
             activeAiConfigName={activeAiConfigName}
             securityLocked={securityLocked}
