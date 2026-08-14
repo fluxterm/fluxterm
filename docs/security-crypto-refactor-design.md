@@ -2,7 +2,7 @@
 
 ## 概述
 
-FluxTerm 使用统一的安全数据保护模型管理 SSH 密码、私钥口令与 AI Key。
+FluxTerm 使用统一的安全数据保护模型管理 SSH/RDP 密码、分类型密码管理器凭据、私钥口令与 AI Key。
 
 当前实现基于两种加密 Provider：
 
@@ -17,6 +17,7 @@ FluxTerm 使用统一的安全数据保护模型管理 SSH 密码、私钥口令
 
 - `HostProfile.password_ref`
 - `HostProfile.private_key_passphrase_ref`
+- `Credential.password_ref`
 - AI Provider 的 `api_key_ref`
 
 其余普通配置项仍按原有方式保存。
@@ -58,6 +59,8 @@ src-tauri/src/security
 
 - `src-tauri/src/profile_secrets.rs`
   负责 `HostProfile` 敏感字段的保护与解保护
+- `src-tauri/src/credential_store.rs`
+  负责 SSH/RDP 分类型凭据的持久化，以及密码字段的统一保护与解保护
 - `src-tauri/src/commands/security.rs`
   负责安全状态查询、启用强保护、解锁、锁定、更换密码与降级回弱保护
 - `src-tauri/src/commands/ssh.rs`
@@ -187,7 +190,7 @@ enc:v1:<base64(payload-bytes)>
 用户在安全页设置安全密码后：
 
 1. 后端生成新的强保护配置与当前会话密钥
-2. 已保存的 SSH 密码、私钥口令与 AI Key 统一重新加密
+2. 已保存的 SSH/RDP 密码、密码管理器凭据、私钥口令与 AI Key 统一重新加密
 3. 当前运行期保持已解锁状态
 
 ### 解锁
@@ -222,7 +225,7 @@ enc:v1:<base64(payload-bytes)>
 2. `profiles.json` 中的安全模式切换回 `embedded`
 3. 后续不再要求输入安全密码
 
-## SSH 与 AI 的读取规则
+## SSH、RDP、密码管理器与 AI 的读取规则
 
 ### SSH
 
@@ -233,6 +236,14 @@ SSH 建立连接时，后端不直接信任前端内存中的凭据副本，而�
 3. 在强保护且已锁定状态下直接阻止连接
 
 该机制用于确保锁定后 SSH 凭据立即失效。
+
+### 密码管理器
+
+- 凭据按 `ssh` 与 `rdp` 类型严格隔离，Profile 仅保存 `credentialId`
+- 动态引用在连接前由后端按协议类型解析，不接受跨类型引用
+- 凭据名称、类型和用户名属于可展示元数据；密码始终以 `enc:v1:` 密文保存
+- RDP 凭据模型预留空 `domain` 字段，当前版本不参与界面、复制或连接解析
+- 强保护锁定时允许读取凭据摘要，但禁止新增、修改、复制、删除和连接
 
 ### AI
 

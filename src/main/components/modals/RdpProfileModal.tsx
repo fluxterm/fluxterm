@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { FiPlus } from "react-icons/fi";
 import Modal from "@/components/ui/modal/Modal";
 import Button from "@/components/ui/button";
 import Select from "@/components/ui/select";
@@ -8,10 +9,14 @@ import { saveRdpProfile } from "@/features/rdp/core/commands";
 import { translateAppError } from "@/shared/errors/appError";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
 import type {
+  CredentialReuseMode,
+  CredentialSummary,
   RdpDisplayStrategy,
   RdpPerformanceFlags,
   RdpProfile,
 } from "@/types";
+import type { CredentialSaveInput } from "@/features/credential/core/commands";
+import ProfileCredentialSelector from "@/features/credential/components/ProfileCredentialSelector";
 import "@/main/components/modals/ProfileModal.css";
 import "@/main/components/modals/RdpProfileModal.css";
 
@@ -21,6 +26,9 @@ type RdpProfileModalProps = {
   initialProfile?: RdpProfile | null;
   defaultGroup?: string | null;
   groups: string[];
+  credentials: CredentialSummary[];
+  credentialReuseDefault: CredentialReuseMode;
+  onCredentialSave?: (input: CredentialSaveInput) => Promise<CredentialSummary>;
   onClose: () => void;
   onProfilesChange?: () => Promise<void> | void;
   t: Translate;
@@ -126,6 +134,7 @@ const RDP_PERFORMANCE_FLAG_FIELDS: Array<{
 const DEFAULT_RDP_PROFILE: RdpProfile = {
   id: "",
   name: "",
+  credentialId: null,
   host: "",
   port: 3389,
   username: "",
@@ -198,7 +207,7 @@ function validateDraftProfile(
       section: "connection",
     };
   }
-  if (!profile.username.trim()) {
+  if (!profile.username.trim() && !profile.credentialId) {
     return {
       message: t("rdp.error.usernameRequired"),
       section: "connection",
@@ -223,6 +232,9 @@ export default function RdpProfileModal({
   initialProfile = null,
   defaultGroup = null,
   groups,
+  credentials,
+  credentialReuseDefault,
+  onCredentialSave,
   onClose,
   onProfilesChange,
   t,
@@ -236,6 +248,10 @@ export default function RdpProfileModal({
   const [errorMessage, setErrorMessage] = useState("");
   const [initialDraftSnapshot, setInitialDraftSnapshot] = useState("");
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [credentialCreateOpen, setCredentialCreateOpen] = useState(false);
+  const [authenticationMethod, setAuthenticationMethod] = useState<
+    "password" | "credential"
+  >("password");
 
   const resolveInitialDraft = useCallback(() => {
     if (mode === "edit" && initialProfile) {
@@ -260,8 +276,10 @@ export default function RdpProfileModal({
       setActiveSection("connection");
       setErrorMessage("");
       setShowDiscardConfirm(false);
+      setCredentialCreateOpen(false);
       const initial = resolveInitialDraft();
       setDraftProfile(initial);
+      setAuthenticationMethod(initial.credentialId ? "credential" : "password");
       // 延迟记录快照，确保状态已应用。
       scheduleDeferredTask(() => {
         setInitialDraftSnapshot(JSON.stringify(initial));
@@ -442,6 +460,21 @@ export default function RdpProfileModal({
                   {section.label}
                 </button>
               ))}
+              <div className="profile-modal-nav-actions">
+                <button
+                  type="button"
+                  className="profile-modal-nav-item profile-modal-nav-action"
+                  disabled={!onCredentialSave}
+                  onClick={() => {
+                    setActiveSection("connection");
+                    setCredentialCreateOpen(true);
+                  }}
+                  data-ui="rdp-credential-create"
+                >
+                  <FiPlus aria-hidden="true" />
+                  {t("credentials.quickAdd", { kind: "RDP" })}
+                </button>
+              </div>
             </nav>
             <section
               className="profile-modal-content"
@@ -529,37 +562,95 @@ export default function RdpProfileModal({
                     </div>
                     <div className="form-row">
                       <label className="form-label">
-                        {t("profile.form.username")}
+                        {t("profile.form.authType")}
                       </label>
-                      <input
-                        value={draftProfile.username}
-                        autoComplete="off"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        onChange={(event) =>
+                      <Select
+                        value={authenticationMethod}
+                        options={[
+                          {
+                            value: "password",
+                            label: t("profile.auth.password"),
+                          },
+                          {
+                            value: "credential",
+                            label: t("profile.auth.credential"),
+                          },
+                        ]}
+                        onChange={(value) => {
+                          setAuthenticationMethod(
+                            value as "password" | "credential",
+                          );
                           setDraftProfile((prev) => ({
                             ...prev,
-                            username: event.target.value,
-                          }))
-                        }
+                            credentialId: null,
+                            username: "",
+                            passwordRef: null,
+                          }));
+                        }}
+                        aria-label={t("profile.form.authType")}
                       />
                     </div>
-                    <div className="form-row">
-                      <label className="form-label">
-                        {t("profile.form.password")}
-                      </label>
-                      <input
-                        type="password"
-                        value={draftProfile.passwordRef ?? ""}
-                        autoComplete="off"
-                        onChange={(event) =>
-                          setDraftProfile((prev) => ({
-                            ...prev,
-                            passwordRef: event.target.value,
-                          }))
+                    <ProfileCredentialSelector
+                      kind="rdp"
+                      credentialId={draftProfile.credentialId}
+                      credentials={credentials}
+                      defaultReuseMode={credentialReuseDefault}
+                      showFields={authenticationMethod === "credential"}
+                      createOpen={credentialCreateOpen}
+                      onCreateOpenChange={setCredentialCreateOpen}
+                      onCredentialSave={onCredentialSave}
+                      onChange={(value) => {
+                        setDraftProfile((prev) => ({
+                          ...prev,
+                          credentialId: value.credentialId,
+                          username: value.username,
+                          passwordRef: value.passwordRef,
+                        }));
+                        if (value.credentialId) {
+                          setAuthenticationMethod("credential");
+                        } else if (value.username || value.passwordRef) {
+                          setAuthenticationMethod("password");
                         }
-                      />
-                    </div>
+                      }}
+                      t={t}
+                    />
+                    {authenticationMethod !== "credential" ? (
+                      <>
+                        <div className="form-row">
+                          <label className="form-label">
+                            {t("profile.form.username")}
+                          </label>
+                          <input
+                            value={draftProfile.username}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            onChange={(event) =>
+                              setDraftProfile((prev) => ({
+                                ...prev,
+                                username: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="form-row">
+                          <label className="form-label">
+                            {t("profile.form.password")}
+                          </label>
+                          <input
+                            type="password"
+                            value={draftProfile.passwordRef ?? ""}
+                            autoComplete="off"
+                            onChange={(event) =>
+                              setDraftProfile((prev) => ({
+                                ...prev,
+                                passwordRef: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      </>
+                    ) : null}
                     <div className="form-row">
                       <label className="form-label">
                         {t("rdp.form.domain")}

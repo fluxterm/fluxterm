@@ -4,6 +4,10 @@ use engine::{EngineError, HostProfile};
 use tauri::{AppHandle, State};
 
 use crate::ai_settings::{AiSettings, read_ai_settings, write_ai_settings};
+use crate::credential_store::{
+    Credential, CredentialStore, decrypt_credentials, encrypt_credentials, read_credentials,
+    write_credentials,
+};
 use crate::profile_secrets::{
     decrypt_profile_secrets, decrypt_rdp_profile_secrets, encrypt_profile_secrets,
     encrypt_rdp_profile_secrets,
@@ -93,6 +97,7 @@ pub fn security_enable_strong_protection(
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut rdp_store = read_rdp_profiles(&app)?;
+    let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
     let current_crypto = CryptoService::new(current_config.as_ref(), current_session.as_ref())?;
@@ -105,6 +110,7 @@ pub fn security_enable_strong_protection(
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
     let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
+    let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let (next_config, next_session) = CryptoService::build_user_password_config(&input.password)?;
     let next_crypto = CryptoService::new(Some(&next_config), Some(&next_session))?;
@@ -113,8 +119,11 @@ pub fn security_enable_strong_protection(
     ssh_store.updated_at = now_epoch();
     rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &next_crypto)?;
     rdp_store.updated_at = now_epoch();
+    credential_store.credentials = encrypt_credential_store(credentials_plain, &next_crypto)?;
+    credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
     write_rdp_profiles(&app, &rdp_store)?;
+    write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
     security.set_session(next_session);
@@ -130,6 +139,7 @@ pub fn security_change_password(
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut rdp_store = read_rdp_profiles(&app)?;
+    let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let config = current_config.as_ref().ok_or_else(|| {
         EngineError::new("security_mode_invalid", "Security mode is not configured")
@@ -145,6 +155,7 @@ pub fn security_change_password(
     let current_crypto = CryptoService::new(current_config.as_ref(), Some(&current_session))?;
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
     let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
+    let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let (next_config, next_session) =
         CryptoService::build_user_password_config(&input.next_password)?;
@@ -154,8 +165,11 @@ pub fn security_change_password(
     ssh_store.updated_at = now_epoch();
     rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &next_crypto)?;
     rdp_store.updated_at = now_epoch();
+    credential_store.credentials = encrypt_credential_store(credentials_plain, &next_crypto)?;
+    credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
     write_rdp_profiles(&app, &rdp_store)?;
+    write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
     security.set_session(next_session);
@@ -170,6 +184,7 @@ pub fn security_enable_weak_protection(
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut rdp_store = read_rdp_profiles(&app)?;
+    let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
     let current_crypto = CryptoService::new(current_config.as_ref(), current_session.as_ref())?;
@@ -190,6 +205,7 @@ pub fn security_enable_weak_protection(
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
     let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
+    let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let weak_config = CryptoService::build_embedded_config();
     let weak_crypto = CryptoService::embedded();
@@ -198,8 +214,11 @@ pub fn security_enable_weak_protection(
     ssh_store.updated_at = now_epoch();
     rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &weak_crypto)?;
     rdp_store.updated_at = now_epoch();
+    credential_store.credentials = encrypt_credential_store(credentials_plain, &weak_crypto)?;
+    credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
     write_rdp_profiles(&app, &rdp_store)?;
+    write_credentials(&app, &credential_store)?;
     write_security_config(&app, &weak_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &weak_crypto)?)?;
     security.clear_session();
@@ -252,6 +271,20 @@ fn encrypt_rdp_profiles(
         .into_iter()
         .map(|profile| encrypt_rdp_profile_secrets(profile, &secret_store))
         .collect()
+}
+
+fn decrypt_credential_store(
+    store: &CredentialStore,
+    crypto: &CryptoService,
+) -> Result<Vec<Credential>, EngineError> {
+    decrypt_credentials(store.credentials.clone(), &SecretStore::new(crypto))
+}
+
+fn encrypt_credential_store(
+    credentials: Vec<Credential>,
+    crypto: &CryptoService,
+) -> Result<Vec<Credential>, EngineError> {
+    encrypt_credentials(credentials, &SecretStore::new(crypto))
 }
 
 fn decrypt_ai_settings(app: &AppHandle, crypto: &CryptoService) -> Result<AiSettings, EngineError> {

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use engine::{
-    EngineError, ExpectedHostKey, HostProfile, JumpHostProfile, JumpHostSpec, Session,
+    AuthType, EngineError, ExpectedHostKey, HostProfile, JumpHostProfile, JumpHostSpec, Session,
     TerminalSize, probe_host_key,
 };
 use fluxterm_logging::{LogLevel, create_operation_id, log_event};
@@ -12,6 +12,8 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::ai::{AiRuntimeState, register_remote_session};
+use crate::commands::credential::resolve_runtime_credential;
+use crate::credential_store::CredentialKind;
 use crate::events::build_event_bridge;
 use crate::profile_secrets::decrypt_profile_secrets;
 use crate::resource_monitor::ResourceMonitorState;
@@ -285,7 +287,11 @@ fn resolve_connect_profile(
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
-    decrypt_profile_secrets(encrypted_profile, &secret_store)
+    resolve_profile_credential(
+        app,
+        security,
+        decrypt_profile_secrets(encrypted_profile, &secret_store)?,
+    )
 }
 
 fn resolve_jump_profiles(
@@ -327,7 +333,27 @@ fn resolve_jump_profiles(
                 .ok_or_else(|| {
                     EngineError::new("ssh_jump_profile_missing", "Jump host profile not found")
                 })?;
-            decrypt_profile_secrets(encrypted_profile, &secret_store)
+            resolve_profile_credential(
+                app,
+                security,
+                decrypt_profile_secrets(encrypted_profile, &secret_store)?,
+            )
         })
         .collect()
+}
+
+/// 将 SSH Profile 的动态凭据引用解析为本次连接使用的运行时字段。
+fn resolve_profile_credential(
+    app: &AppHandle,
+    security: &State<'_, SecurityState>,
+    mut profile: HostProfile,
+) -> Result<HostProfile, EngineError> {
+    if let Some(credential_id) = profile.credential_id.as_deref() {
+        let credential =
+            resolve_runtime_credential(app, security, credential_id, CredentialKind::Ssh)?;
+        profile.auth_type = AuthType::Password;
+        profile.username = credential.username;
+        profile.password_ref = Some(credential.password);
+    }
+    Ok(profile)
 }

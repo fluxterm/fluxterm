@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { logDebug, logWarn } from "@/shared/logging";
 import type { Locale } from "@/i18n";
 import type { LocalShellConfig, LocalShellProfile, ThemeId } from "@/types";
+import type { CredentialReuseMode } from "@/types";
 import { normalizeLocalShellConfig } from "@/constants/localShellConfig";
 import {
   readConfigDocument,
@@ -50,6 +51,7 @@ type AppSettings = {
   backgroundVideoReplayMode?: BackgroundVideoReplayMode;
   backgroundVideoReplayIntervalSec?: number;
   appFontSize?: number;
+  credentialReuseDefault?: CredentialReuseMode;
 };
 
 /** 背景图表面透明度阈值。 */
@@ -101,6 +103,10 @@ type UseAppSettingsResult = {
   >;
   appFontSize: number;
   setAppFontSize: React.Dispatch<React.SetStateAction<number>>;
+  credentialReuseDefault: CredentialReuseMode;
+  setCredentialReuseDefault: React.Dispatch<
+    React.SetStateAction<CredentialReuseMode>
+  >;
   availableShells: LocalShellProfile[];
   refreshAvailableShells: () => Promise<void>;
   settingsLoaded: boolean;
@@ -191,6 +197,8 @@ export default function useAppSettings({
     setBackgroundVideoReplayIntervalSec,
   ] = useState(DEFAULT_BACKGROUND_VIDEO_REPLAY_INTERVAL_SEC);
   const [appFontSize, setAppFontSize] = useState(DEFAULT_APP_FONT_SIZE);
+  const [credentialReuseDefault, setCredentialReuseDefault] =
+    useState<CredentialReuseMode>("reference");
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [saveState, setSaveState] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -273,6 +281,12 @@ export default function useAppSettings({
       }
       if (typeof parsed?.appFontSize === "number") {
         setAppFontSize(normalizeAppFontSize(parsed.appFontSize));
+      }
+      if (
+        parsed?.credentialReuseDefault === "reference" ||
+        parsed?.credentialReuseDefault === "copy"
+      ) {
+        setCredentialReuseDefault(parsed.credentialReuseDefault);
       }
       const normalizedThemeId = normalizeThemeId(parsed?.themeId);
       if (normalizedThemeId && themeIds.includes(normalizedThemeId)) {
@@ -390,6 +404,7 @@ export default function useAppSettings({
         backgroundVideoReplayIntervalSec,
       ),
       appFontSize: normalizeAppFontSize(appFontSize),
+      credentialReuseDefault,
     };
 
     const settingsStr = JSON.stringify(currentSettings);
@@ -445,6 +460,7 @@ export default function useAppSettings({
     backgroundVideoReplayMode,
     backgroundVideoReplayIntervalSec,
     appFontSize,
+    credentialReuseDefault,
     settingsLoaded,
     saveRetryToken,
   ]);
@@ -497,6 +513,8 @@ export default function useAppSettings({
     setBackgroundVideoReplayIntervalSec,
     appFontSize: normalizeAppFontSize(appFontSize),
     setAppFontSize,
+    credentialReuseDefault,
+    setCredentialReuseDefault,
     availableShells,
     refreshAvailableShells,
     settingsLoaded,

@@ -41,6 +41,7 @@ import {
 } from "@/hooks/useAppSettings";
 import useAiSettings from "@/hooks/useAiSettings";
 import useSecurity from "@/hooks/useSecurity";
+import useCredentials from "@/hooks/useCredentials";
 import useLockScreen from "@/hooks/useLockScreen";
 import LockScreen from "@/features/lock-screen/components/LockScreen";
 import useSessionSettings from "@/hooks/useSessionSettings";
@@ -361,6 +362,8 @@ export default function AppShell() {
     setBackgroundVideoReplayIntervalSec,
     appFontSize,
     setAppFontSize,
+    credentialReuseDefault,
+    setCredentialReuseDefault,
     availableShells,
     refreshAvailableShells,
     settingsLoaded,
@@ -502,6 +505,7 @@ export default function AppShell() {
     changePassword: changeSecurityPassword,
     enableWeakProtection: enableSecurityWeakProtection,
   } = useSecurity();
+  const credentialsState = useCredentials();
   const { pushToast, openDialog, dialogs, closeDialog } = useNotices();
   const lockScreen = useLockScreen();
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -2186,7 +2190,10 @@ export default function AppShell() {
 
   const handleConnectProfile = useCallback(
     async (profileInput: HostProfile) => {
-      if (!profileInput.host || !profileInput.username) {
+      if (
+        !profileInput.host ||
+        (!profileInput.username && !profileInput.credentialId)
+      ) {
         sessionActions.setBusyMessage(t("messages.missingHostUser"));
         return;
       }
@@ -3575,6 +3582,9 @@ export default function AppShell() {
             draft={profileDraft}
             profiles={profiles}
             sshGroups={sshGroups}
+            credentials={credentialsState.sshCredentials}
+            credentialReuseDefault={credentialReuseDefault}
+            onCredentialSave={credentialsState.save}
             onDraftChange={setProfileDraft}
             onClose={closeProfileModal}
             onSubmit={() => {
@@ -3608,6 +3618,9 @@ export default function AppShell() {
             }
             defaultGroup={rdpProfileModalDefaultGroup}
             groups={rdpGroups}
+            credentials={credentialsState.rdpCredentials}
+            credentialReuseDefault={credentialReuseDefault}
+            onCredentialSave={credentialsState.save}
             onClose={closeRdpProfileModal}
             onProfilesChange={() => refreshRdpProfiles().then(() => {})}
             t={t}
@@ -3663,6 +3676,10 @@ export default function AppShell() {
             securityStatus={securityStatus}
             securityLoaded={securityLoaded}
             securityBusy={securityBusy}
+            sshCredentials={credentialsState.sshCredentials}
+            rdpCredentials={credentialsState.rdpCredentials}
+            credentialsBusy={credentialsState.busy}
+            credentialReuseDefault={credentialReuseDefault}
             webLinksEnabled={webLinksEnabled}
             commandAutocompleteEnabled={commandAutocompleteEnabled}
             selectionAutoCopyEnabled={selectionAutoCopyEnabled}
@@ -3710,10 +3727,20 @@ export default function AppShell() {
             onSecurityUnlock={(password) =>
               unlockSecurity(password).then(async (nextStatus) => {
                 if (!nextStatus.locked) {
-                  await reloadProfiles();
+                  await Promise.all([
+                    reloadProfiles(),
+                    refreshRdpProfiles(),
+                    credentialsState.reload(),
+                  ]);
                 }
               })
             }
+            onCredentialSave={credentialsState.save}
+            onCredentialDelete={async (credentialId, kind) => {
+              await credentialsState.remove(credentialId, kind);
+              await Promise.all([reloadProfiles(), refreshRdpProfiles()]);
+            }}
+            onCredentialReuseDefaultChange={setCredentialReuseDefault}
             onSecurityLock={() =>
               lockSecurity().then(async () => {
                 await reloadProfiles();

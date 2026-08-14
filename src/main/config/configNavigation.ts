@@ -6,6 +6,7 @@ export type ConfigSectionKey =
   | "language"
   | "personalization"
   | "security"
+  | "credentials"
   | "ai-settings"
   | "ai-provider-manage"
   | "ai-provider-quick"
@@ -84,6 +85,7 @@ export function getScopedConfigNavEntries(
       "language",
       "personalization",
       "security",
+      "credentials",
       "app-directory",
     ].includes(entry.key),
   );
@@ -96,6 +98,7 @@ export function buildConfigNavigation(t: Translate): ConfigNavigationModel {
     language: t("config.section.language"),
     personalization: t("config.section.personalization"),
     security: t("config.section.security"),
+    credentials: t("config.section.credentials"),
     "ai-settings": t("config.section.aiSettings"),
     "ai-provider-manage": t("config.section.aiProviderManage"),
     "ai-provider-quick": t("config.section.aiProviderQuick"),
@@ -117,6 +120,7 @@ export function buildConfigNavigation(t: Translate): ConfigNavigationModel {
       { key: "language", label: labels.language },
       { key: "personalization", label: labels.personalization },
       { key: "security", label: labels.security },
+      { key: "credentials", label: labels.credentials },
       { key: "ai-settings", label: labels["ai-settings"] },
       { key: "ai-provider-quick", label: labels["ai-provider-quick"] },
       { key: "ai-provider-compat", label: labels["ai-provider-compat"] },

@@ -557,6 +557,11 @@ pub fn resolve_connections_config_dir(app: &AppHandle) -> Result<PathBuf, Engine
     Ok(resolve_config_root_dir(app)?.join("connections"))
 }
 
+/// 解析统一凭据存储文件路径。
+pub fn resolve_credentials_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    Ok(resolve_connections_config_dir(app)?.join("credentials.json"))
+}
+
 /// 解析 SSH 连接配置目录。
 pub fn resolve_ssh_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     Ok(resolve_connections_config_dir(app)?.join("ssh"))

@@ -1,8 +1,14 @@
 /** 主机 Profile 编辑弹窗容器，负责分区导航、草稿提交和弹窗生命周期。 */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { FiServer } from "react-icons/fi";
+import { FiPlus, FiServer } from "react-icons/fi";
 import type { Translate } from "@/i18n";
-import type { HostProfile } from "@/types";
+import type {
+  CredentialReuseMode,
+  CredentialSummary,
+  HostProfile,
+} from "@/types";
+import type { CredentialSaveInput } from "@/features/credential/core/commands";
+import ProfileCredentialSelector from "@/features/credential/components/ProfileCredentialSelector";
 import { ROOT_PROFILE_GROUP_VALUE } from "@/constants/hostGroups";
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
@@ -39,6 +45,9 @@ type ProfileModalProps = {
   draft: HostProfile;
   profiles: HostProfile[];
   sshGroups: string[];
+  credentials: CredentialSummary[];
+  credentialReuseDefault: CredentialReuseMode;
+  onCredentialSave?: (input: CredentialSaveInput) => Promise<CredentialSummary>;
   onDraftChange: (draft: HostProfile) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -46,6 +55,7 @@ type ProfileModalProps = {
 };
 
 type ProfileModalSection = "session" | "terminal" | "window" | "ssh" | "modem";
+type SshAuthenticationMethod = HostProfile["authType"] | "credential";
 
 /** 主机配置编辑弹窗。 */
 export default function ProfileModal({
@@ -54,6 +64,9 @@ export default function ProfileModal({
   draft,
   profiles,
   sshGroups,
+  credentials,
+  credentialReuseDefault,
+  onCredentialSave,
   onDraftChange,
   onClose,
   onSubmit,
@@ -68,8 +81,13 @@ export default function ProfileModal({
   const [initialDraftSnapshot, setInitialDraftSnapshot] = useState("");
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [credentialCreateOpen, setCredentialCreateOpen] = useState(false);
   const [sshRoutingMode, setSshRoutingMode] =
     useState<SshRoutingMode>("direct");
+  const [sshAuthenticationMethod, setSshAuthenticationMethod] =
+    useState<SshAuthenticationMethod>(
+      draft.credentialId ? "credential" : draft.authType,
+    );
 
   useEffect(() => {
     const becameOpen = open && !wasOpenRef.current;
@@ -79,10 +97,14 @@ export default function ProfileModal({
       queueMicrotask(() => {
         setShowDiscardConfirm(false);
         setIconPickerOpen(false);
+        setCredentialCreateOpen(false);
         setInitialDraftSnapshot(JSON.stringify(draft));
         setActiveSection("session");
         setNameError(null);
         setSshRoutingMode(resolveSshRoutingMode(draft));
+        setSshAuthenticationMethod(
+          draft.credentialId ? "credential" : draft.authType,
+        );
       });
     }
   }, [open, draft]);
@@ -149,9 +171,11 @@ export default function ProfileModal({
   /** 恢复当前类型对应的默认配置，避免未来选项增多后需要逐项手工回填。 */
   function handleRestoreDefaults() {
     setActiveSection("session");
+    setSshAuthenticationMethod("password");
     onDraftChange({
       id: draft.id,
       name: "",
+      credentialId: null,
       iconKey: null,
       host: "",
       port: 22,
@@ -465,27 +489,89 @@ export default function ProfileModal({
               placeholder={t("profile.placeholder.host")}
             />
           </div>
-          <div className="form-row split">
-            <div className="form-inline-field">
-              <label className="form-label" htmlFor={portInputId}>
-                {t("profile.form.port")}
-              </label>
-              <input
-                id={portInputId}
-                type="number"
-                value={draft.port}
-                autoComplete="off"
-                autoCorrect="off"
-                spellCheck={false}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    port: Number(event.target.value),
-                  })
-                }
-              />
-            </div>
-            <div className="form-inline-field">
+          <div className="form-row">
+            <label className="form-label" htmlFor={portInputId}>
+              {t("profile.form.port")}
+            </label>
+            <input
+              id={portInputId}
+              type="number"
+              value={draft.port}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  port: Number(event.target.value),
+                })
+              }
+            />
+          </div>
+          <div className="form-row">
+            <label className="form-label" htmlFor={authTypeSelectId}>
+              {t("profile.form.authType")}
+            </label>
+            <Select
+              id={authTypeSelectId}
+              value={sshAuthenticationMethod}
+              options={[
+                { value: "password", label: t("profile.auth.password") },
+                {
+                  value: "credential",
+                  label: t("profile.auth.credential"),
+                },
+                { value: "privateKey", label: t("profile.auth.privateKey") },
+              ]}
+              onChange={(next) => {
+                const method = next as SshAuthenticationMethod;
+                const leavingCredential =
+                  sshAuthenticationMethod === "credential";
+                setSshAuthenticationMethod(method);
+                onDraftChange({
+                  ...draft,
+                  authType: method === "credential" ? "password" : method,
+                  credentialId: null,
+                  username:
+                    method === "credential" || leavingCredential
+                      ? ""
+                      : draft.username,
+                  passwordRef:
+                    method === "credential" || leavingCredential
+                      ? null
+                      : draft.passwordRef,
+                });
+              }}
+              aria-label={t("profile.form.authType")}
+            />
+          </div>
+          <ProfileCredentialSelector
+            kind="ssh"
+            credentialId={draft.credentialId}
+            credentials={credentials}
+            defaultReuseMode={credentialReuseDefault}
+            showFields={sshAuthenticationMethod === "credential"}
+            createOpen={credentialCreateOpen}
+            onCreateOpenChange={setCredentialCreateOpen}
+            onCredentialSave={onCredentialSave}
+            onChange={(value) => {
+              onDraftChange({
+                ...draft,
+                authType: "password",
+                credentialId: value.credentialId,
+                username: value.username,
+                passwordRef: value.passwordRef,
+              });
+              if (value.credentialId) {
+                setSshAuthenticationMethod("credential");
+              } else if (value.username || value.passwordRef) {
+                setSshAuthenticationMethod("password");
+              }
+            }}
+            t={t}
+          />
+          {sshAuthenticationMethod !== "credential" ? (
+            <div className="form-row">
               <label className="form-label" htmlFor={usernameInputId}>
                 {t("profile.form.username")}
               </label>
@@ -500,28 +586,8 @@ export default function ProfileModal({
                 }
               />
             </div>
-          </div>
-          <div className="form-row">
-            <label className="form-label" htmlFor={authTypeSelectId}>
-              {t("profile.form.authType")}
-            </label>
-            <Select
-              id={authTypeSelectId}
-              value={draft.authType}
-              options={[
-                { value: "password", label: t("profile.auth.password") },
-                { value: "privateKey", label: t("profile.auth.privateKey") },
-              ]}
-              onChange={(next) =>
-                onDraftChange({
-                  ...draft,
-                  authType: next as HostProfile["authType"],
-                })
-              }
-              aria-label={t("profile.form.authType")}
-            />
-          </div>
-          {draft.authType === "password" && (
+          ) : null}
+          {sshAuthenticationMethod === "password" ? (
             <div className="form-row">
               <label className="form-label" htmlFor={passwordInputId}>
                 {t("profile.form.password")}
@@ -532,12 +598,15 @@ export default function ProfileModal({
                 value={draft.passwordRef ?? ""}
                 autoComplete="off"
                 onChange={(event) =>
-                  onDraftChange({ ...draft, passwordRef: event.target.value })
+                  onDraftChange({
+                    ...draft,
+                    passwordRef: event.target.value,
+                  })
                 }
               />
             </div>
-          )}
-          {draft.authType === "privateKey" && (
+          ) : null}
+          {sshAuthenticationMethod === "privateKey" && (
             <>
               <div className="form-row">
                 <label className="form-label" htmlFor={privateKeyPathInputId}>
@@ -690,6 +759,21 @@ export default function ProfileModal({
                   {t(`profile.section.${section}`)}
                 </button>
               ))}
+              <div className="profile-modal-nav-actions">
+                <button
+                  type="button"
+                  className="profile-modal-nav-item profile-modal-nav-action"
+                  disabled={!onCredentialSave}
+                  onClick={() => {
+                    setActiveSection("session");
+                    setCredentialCreateOpen(true);
+                  }}
+                  data-ui="ssh-credential-create"
+                >
+                  <FiPlus aria-hidden="true" />
+                  {t("credentials.quickAdd", { kind: "SSH" })}
+                </button>
+              </div>
             </nav>
             <section className="profile-modal-content">
               {renderSectionContent()}

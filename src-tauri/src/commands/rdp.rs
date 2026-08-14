@@ -4,6 +4,9 @@ use engine::EngineError;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
+use crate::commands::credential::resolve_runtime_credential;
+use crate::credential_store::CredentialKind;
+use crate::credential_store::read_credentials;
 use crate::profile_secrets::{decrypt_rdp_profile_secrets, encrypt_rdp_profile_secrets};
 use crate::rdp::{RdpDisplayMode, RdpInputEvent, RdpProfile, RdpSessionSnapshot, RdpState};
 use crate::rdp_profile_store::{
@@ -47,6 +50,7 @@ pub fn rdp_profile_list(
     _operation_id: String,
 ) -> Result<Vec<RdpProfile>, EngineError> {
     let store = read_rdp_profiles(&app)?;
+    let credentials = read_credentials(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
@@ -55,8 +59,17 @@ pub fn rdp_profile_list(
     store
         .profiles
         .into_iter()
-        .map(
-            |profile| match decrypt_rdp_profile_secrets(profile.clone(), &secret_store) {
+        .map(|profile| {
+            let credential_username = profile.credential_id.as_deref().and_then(|id| {
+                credentials
+                    .credentials
+                    .iter()
+                    .find(|credential| {
+                        credential.id == id && credential.kind == CredentialKind::Rdp
+                    })
+                    .map(|credential| credential.username.clone())
+            });
+            let result = match decrypt_rdp_profile_secrets(profile.clone(), &secret_store) {
                 Ok(decrypted) => Ok(decrypted),
                 Err(err)
                     if err.code == "security_locked"
@@ -68,8 +81,14 @@ pub fn rdp_profile_list(
                     Ok(profile)
                 }
                 Err(err) => Err(err),
-            },
-        )
+            };
+            result.map(|mut profile| {
+                if let Some(username) = credential_username {
+                    profile.username = username;
+                }
+                profile
+            })
+        })
         .collect()
 }
 
@@ -90,8 +109,13 @@ pub fn rdp_profile_save(
     profile.name = validate_profile_name(profile.name)?;
     profile.host = profile.host.trim().to_string();
     profile.username = profile.username.trim().to_string();
+    profile.credential_id = profile
+        .credential_id
+        .take()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     profile.tags = normalize_profile_tags(profile.tags)?;
-    if profile.host.is_empty() || profile.username.is_empty() {
+    if profile.host.is_empty() || (profile.username.is_empty() && profile.credential_id.is_none()) {
         return Err(EngineError::new(
             "rdp_profile_required",
             "RDP host and username are required",
@@ -102,6 +126,11 @@ pub fn rdp_profile_save(
     }
     if profile.port == 0 {
         profile.port = 3389;
+    }
+    if let Some(credential_id) = profile.credential_id.as_deref() {
+        resolve_runtime_credential(&app, &security, credential_id, CredentialKind::Rdp)?;
+        profile.username.clear();
+        profile.password_ref = None;
     }
     match profile.resolution_mode {
         RdpDisplayMode::WindowSync => {
@@ -255,7 +284,14 @@ fn load_profile(
         .into_iter()
         .find(|item| item.id == profile_id)
         .ok_or_else(|| EngineError::new("rdp_profile_not_found", "RDP profile not found"))?;
-    decrypt_rdp_profile_secrets(profile, &secret_store)
+    let mut profile = decrypt_rdp_profile_secrets(profile, &secret_store)?;
+    if let Some(credential_id) = profile.credential_id.as_deref() {
+        let credential =
+            resolve_runtime_credential(app, security, credential_id, CredentialKind::Rdp)?;
+        profile.username = credential.username;
+        profile.password_ref = Some(credential.password);
+    }
+    Ok(profile)
 }
 
 fn now_epoch() -> u64 {

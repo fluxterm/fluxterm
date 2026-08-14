@@ -3,6 +3,23 @@ import type { TranslationKey } from "./i18n";
 /** 认证方式。 */
 export type AuthType = "password" | "privateKey" | "agent";
 
+/** 密码管理器凭据所属协议。 */
+export type CredentialKind = "ssh" | "rdp";
+
+/** 会话选择凭据时的复用方式。 */
+export type CredentialReuseMode = "reference" | "copy";
+
+/** 不含密码的凭据摘要。 */
+export type CredentialSummary = {
+  id: string;
+  kind: CredentialKind;
+  name: string;
+  username: string;
+  domain?: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 /** SSH 出站代理模式。 */
 export type SshProxyMode = "direct" | "system" | "manual";
 
@@ -36,6 +53,7 @@ export type EngineErrorView = {
 export type HostProfile = {
   id: string;
   name: string;
+  credentialId?: string | null;
   iconKey?: string | null;
   host: string;
   port: number;
@@ -362,6 +380,7 @@ export type RdpPerformanceFlags = {
 export type RdpProfile = {
   id: string;
   name: string;
+  credentialId?: string | null;
   host: string;
   port: number;
   username: string;

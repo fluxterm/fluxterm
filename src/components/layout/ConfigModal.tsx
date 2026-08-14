@@ -50,6 +50,13 @@ import {
   MIN_BACKGROUND_IMAGE_SURFACE_ALPHA,
 } from "@/hooks/useAppSettings";
 import type { ThemeId } from "@/types";
+import type {
+  CredentialKind,
+  CredentialReuseMode,
+  CredentialSummary,
+} from "@/types";
+import CredentialManagerSection from "@/features/credential/components/CredentialManagerSection";
+import type { CredentialSaveInput } from "@/features/credential/core/commands";
 import type { TranslationKey } from "@/i18n";
 import {
   BUILTIN_WALLPAPERS,
@@ -121,6 +128,10 @@ type ConfigModalProps = {
   securityStatus?: SecurityStatus;
   securityLoaded?: boolean;
   securityBusy?: boolean;
+  sshCredentials?: CredentialSummary[];
+  rdpCredentials?: CredentialSummary[];
+  credentialsBusy?: boolean;
+  credentialReuseDefault?: CredentialReuseMode;
   webLinksEnabled?: boolean;
   commandAutocompleteEnabled?: boolean;
   selectionAutoCopyEnabled?: boolean;
@@ -180,6 +191,12 @@ type ConfigModalProps = {
   onAiProviderRemove?: (providerId: string) => void;
   onAiProviderTest?: (providerId: string) => Promise<void> | void;
   onSecurityUnlock?: (password: string) => Promise<void> | void;
+  onCredentialSave?: (input: CredentialSaveInput) => Promise<CredentialSummary>;
+  onCredentialDelete?: (
+    credentialId: string,
+    kind: CredentialKind,
+  ) => Promise<void>;
+  onCredentialReuseDefaultChange?: (value: CredentialReuseMode) => void;
   onSecurityLock?: () => Promise<void> | void;
   onSecurityEnableStrongProtection?: (password: string) => Promise<void> | void;
   onSecurityChangePassword?: (
@@ -282,6 +299,10 @@ export default function ConfigModal({
   },
   securityLoaded = false,
   securityBusy = false,
+  sshCredentials = [],
+  rdpCredentials = [],
+  credentialsBusy = false,
+  credentialReuseDefault = "reference",
   webLinksEnabled = true,
   commandAutocompleteEnabled = true,
   selectionAutoCopyEnabled = false,
@@ -323,6 +344,9 @@ export default function ConfigModal({
   onAiProviderRemove,
   onAiProviderTest,
   onSecurityUnlock,
+  onCredentialSave,
+  onCredentialDelete,
+  onCredentialReuseDefaultChange,
   onSecurityLock,
   onSecurityEnableStrongProtection,
   onSecurityChangePassword,
@@ -945,6 +969,7 @@ export default function ConfigModal({
       activeSection === "language" ||
       activeSection === "personalization" ||
       activeSection === "security" ||
+      activeSection === "credentials" ||
       activeSection === "app-directory"
     ) {
       return renderSaveStatus(appSaveState, appSaveError, onAppSaveRetry);
@@ -1776,6 +1801,23 @@ export default function ConfigModal({
             </div>
           ) : null}
         </div>
+      );
+    }
+    if (activeSection === "credentials") {
+      return (
+        <CredentialManagerSection
+          sshCredentials={sshCredentials}
+          rdpCredentials={rdpCredentials}
+          busy={credentialsBusy}
+          locked={securityStatus.locked}
+          defaultReuseMode={credentialReuseDefault}
+          onDefaultReuseModeChange={(value) =>
+            onCredentialReuseDefaultChange?.(value)
+          }
+          onSave={onCredentialSave}
+          onDelete={onCredentialDelete}
+          t={t}
+        />
       );
     }
     if (activeSection === "ai-settings") {

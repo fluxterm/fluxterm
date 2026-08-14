@@ -1,9 +1,12 @@
 //! 主机配置相关命令。
-use engine::{EngineError, HostProfile};
+use engine::{AuthType, EngineError, HostProfile};
 use tauri::AppHandle;
 use tauri::State;
 use uuid::Uuid;
 
+use crate::commands::credential::resolve_runtime_credential;
+use crate::credential_store::CredentialKind;
+use crate::credential_store::read_credentials;
 use crate::profile_secrets::{decrypt_profile_secrets, encrypt_profile_secrets};
 use crate::security::{CryptoService, SecretStore};
 use crate::security_store::read_security_config;
@@ -67,6 +70,7 @@ pub fn profile_list(
     security: State<'_, SecurityState>,
 ) -> Result<Vec<HostProfile>, EngineError> {
     let store = read_ssh_profiles(&app)?;
+    let credentials = read_credentials(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
@@ -74,8 +78,17 @@ pub fn profile_list(
     store
         .profiles
         .into_iter()
-        .map(
-            |profile| match decrypt_profile_secrets(profile.clone(), &secret_store) {
+        .map(|profile| {
+            let credential_username = profile.credential_id.as_deref().and_then(|id| {
+                credentials
+                    .credentials
+                    .iter()
+                    .find(|credential| {
+                        credential.id == id && credential.kind == CredentialKind::Ssh
+                    })
+                    .map(|credential| credential.username.clone())
+            });
+            let result = match decrypt_profile_secrets(profile.clone(), &secret_store) {
                 Ok(decrypted) => Ok(decrypted),
                 Err(err)
                     if err.code == "security_locked"
@@ -85,8 +98,14 @@ pub fn profile_list(
                     Ok(redact_profile_secrets(profile))
                 }
                 Err(err) => Err(err),
-            },
-        )
+            };
+            result.map(|mut profile| {
+                if let Some(username) = credential_username {
+                    profile.username = username;
+                }
+                profile
+            })
+        })
         .collect()
 }
 
@@ -127,6 +146,17 @@ pub fn profile_save(
     }
     if profile.port == 0 {
         profile.port = 22;
+    }
+    profile.credential_id = profile
+        .credential_id
+        .take()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(credential_id) = profile.credential_id.as_deref() {
+        resolve_runtime_credential(&app, &security, credential_id, CredentialKind::Ssh)?;
+        profile.auth_type = AuthType::Password;
+        profile.username.clear();
+        profile.password_ref = None;
     }
     let encrypted_profile = encrypt_profile_secrets(profile.clone(), &secret_store)?;
     let existing = store.profiles.iter_mut().find(|item| item.id == profile.id);

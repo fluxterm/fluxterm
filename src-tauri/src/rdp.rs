@@ -99,6 +99,8 @@ impl Default for RdpPerformanceFlags {
 pub struct RdpProfile {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub credential_id: Option<String>,
     pub host: String,
     pub port: u16,
     pub username: String,

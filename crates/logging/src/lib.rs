@@ -212,13 +212,19 @@ fn is_sensitive_key(key: &str) -> bool {
     matches!(
         normalized_key(key).as_str(),
         "password"
+            | "passwordref"
             | "passphrase"
             | "privatekey"
+            | "privatekeypassphraseref"
             | "apikey"
             | "token"
             | "cookie"
             | "authorization"
             | "secret"
+            | "ciphertext"
+            | "user"
+            | "username"
+            | "domain"
             | "path"
             | "localpath"
             | "remotepath"
@@ -392,7 +398,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preserves_connection_fields_and_operation_id() {
+    fn removes_connection_identity_and_preserves_safe_fields() {
         let record = build_record(
             "ssh.session.connect.succeeded",
             "engine",
@@ -400,12 +406,19 @@ mod tests {
             json!({
                 "host": "10.0.0.8",
                 "user": "root",
+                "username": "root",
+                "domain": "example",
+                "passwordRef": "enc:v1:ciphertext",
                 "sessionId": "session-1"
             }),
         );
         assert_eq!(record["operationId"], "operation-1");
         assert_eq!(record["host"], "10.0.0.8");
-        assert_eq!(record["user"], "root");
+        assert_eq!(record["sessionId"], "session-1");
+        assert!(record.get("user").is_none());
+        assert!(record.get("username").is_none());
+        assert!(record.get("domain").is_none());
+        assert!(record.get("passwordRef").is_none());
     }
 
     #[test]

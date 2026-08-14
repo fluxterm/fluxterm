@@ -3,6 +3,7 @@ pub mod ai;
 pub mod ai_settings;
 pub mod commands;
 pub mod config_paths;
+pub mod credential_store;
 pub mod events;
 pub mod local_fs;
 pub mod local_shell;
@@ -41,6 +42,9 @@ use crate::commands::ai::{
 };
 use crate::commands::configuration::{
     background_delete, background_import, background_read, config_read_text, config_write_text,
+};
+use crate::commands::credential::{
+    credential_delete, credential_list, credential_resolve_for_copy, credential_save,
 };
 use crate::commands::file::file_open;
 use crate::commands::local::{local_home, local_list, local_ssh_keys};
@@ -219,6 +223,10 @@ pub fn run() {
             profile_groups_save,
             profile_save,
             profile_remove,
+            credential_list,
+            credential_save,
+            credential_resolve_for_copy,
+            credential_delete,
             ssh_import_openssh_config,
             ai_session_chat,
             ai_session_chat_stream_start,
