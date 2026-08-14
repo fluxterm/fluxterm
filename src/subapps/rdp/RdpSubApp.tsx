@@ -18,6 +18,7 @@ import {
   logWarn,
   type LogError,
 } from "@/shared/logging";
+import { translateAppError } from "@/shared/errors/appError";
 import type {
   RdpDisplayStrategy,
   RdpInputEvent,
@@ -1479,7 +1480,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         setSessions((prev) => [...prev, newTab]);
         setActiveSessionId(connected.sessionId);
       } catch (error) {
-        setGlobalError(error instanceof Error ? error.message : String(error));
+        setGlobalError(translateAppError(error, t));
       }
     },
     [t],
@@ -1649,7 +1650,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       }
       removeSessionTab(sessionId);
     } catch (error) {
-      setGlobalError(error instanceof Error ? error.message : String(error));
+      setGlobalError(translateAppError(error, t));
     }
   }
 
@@ -1787,7 +1788,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         session: next,
       }));
     } catch (error) {
-      setGlobalError(error instanceof Error ? error.message : String(error));
+      setGlobalError(translateAppError(error, t));
     }
   }
 

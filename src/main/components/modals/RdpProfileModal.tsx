@@ -201,18 +201,6 @@ function validateDraftProfile(
       section: "connection",
     };
   }
-  if (!profile.host.trim()) {
-    return {
-      message: t("rdp.error.hostRequired"),
-      section: "connection",
-    };
-  }
-  if (!profile.username.trim() && !profile.credentialId) {
-    return {
-      message: t("rdp.error.usernameRequired"),
-      section: "connection",
-    };
-  }
   if (
     profile.resolutionMode === "fixed" &&
     (!(profile.width && profile.width > 0) ||

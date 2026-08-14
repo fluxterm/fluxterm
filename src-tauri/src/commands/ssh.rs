@@ -160,7 +160,11 @@ pub(crate) async fn resolve_ssh_connect_plan(
     requested_profile: &HostProfile,
 ) -> Result<SshConnectPlan, EngineError> {
     let resolved_profile = resolve_connect_profile(app, security, requested_profile)?;
+    validate_ssh_connect_profile(&resolved_profile)?;
     let jump_profiles = resolve_jump_profiles(app, security, &resolved_profile)?;
+    for jump_profile in &jump_profiles {
+        validate_ssh_connect_profile(jump_profile)?;
+    }
     let mut jump_spec = JumpHostSpec::default();
     for jump_profile in jump_profiles {
         let expected_host_key = enforce_host_key_policy(app, &jump_profile, &jump_spec).await?;
@@ -175,6 +179,57 @@ pub(crate) async fn resolve_ssh_connect_plan(
         expected_host_key,
         jump_spec,
     })
+}
+
+/// 校验 SSH 连接所需的运行时字段，必须在 Host Key 探测前调用。
+fn validate_ssh_connect_profile(profile: &HostProfile) -> Result<(), EngineError> {
+    validate_ssh_connect_fields(
+        &profile.host,
+        &profile.username,
+        &profile.auth_type,
+        profile.password_ref.as_deref(),
+        profile.private_key_path.as_deref(),
+    )
+}
+
+/// 按认证方式校验 SSH 连接字段。
+fn validate_ssh_connect_fields(
+    host: &str,
+    username: &str,
+    auth_type: &AuthType,
+    password: Option<&str>,
+    private_key_path: Option<&str>,
+) -> Result<(), EngineError> {
+    if host.trim().is_empty() {
+        return Err(EngineError::localized(
+            "ssh_profile_host_required",
+            "SSH host is required",
+            "error.ssh.profile.hostRequired",
+        ));
+    }
+    if username.trim().is_empty() {
+        return Err(EngineError::localized(
+            "ssh_profile_username_required",
+            "SSH username is required",
+            "error.ssh.profile.usernameRequired",
+        ));
+    }
+
+    match auth_type {
+        AuthType::Password if password.is_none_or(str::is_empty) => Err(EngineError::localized(
+            "ssh_profile_password_required",
+            "SSH password is required",
+            "error.ssh.auth.missingPassword",
+        )),
+        AuthType::PrivateKey if private_key_path.is_none_or(|value| value.trim().is_empty()) => {
+            Err(EngineError::localized(
+                "ssh_profile_private_key_required",
+                "SSH private key file is required",
+                "error.ssh.auth.missingPrivateKey",
+            ))
+        }
+        AuthType::Password | AuthType::PrivateKey | AuthType::Agent => Ok(()),
+    }
 }
 
 async fn enforce_host_key_policy(
@@ -356,4 +411,61 @@ fn resolve_profile_credential(
         profile.password_ref = Some(credential.password);
     }
     Ok(profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_ssh_connect_fields;
+    use engine::AuthType;
+
+    #[test]
+    fn password_auth_requires_host_username_and_password() {
+        assert_eq!(
+            validate_ssh_connect_fields(" ", "user", &AuthType::Password, Some("secret"), None)
+                .unwrap_err()
+                .code,
+            "ssh_profile_host_required"
+        );
+        assert_eq!(
+            validate_ssh_connect_fields("host", " ", &AuthType::Password, Some("secret"), None)
+                .unwrap_err()
+                .code,
+            "ssh_profile_username_required"
+        );
+        assert_eq!(
+            validate_ssh_connect_fields("host", "user", &AuthType::Password, Some(""), None)
+                .unwrap_err()
+                .code,
+            "ssh_profile_password_required"
+        );
+        assert!(
+            validate_ssh_connect_fields("host", "user", &AuthType::Password, Some(" "), None)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn private_key_auth_requires_key_path_but_not_password() {
+        assert_eq!(
+            validate_ssh_connect_fields("host", "user", &AuthType::PrivateKey, None, Some(" "))
+                .unwrap_err()
+                .code,
+            "ssh_profile_private_key_required"
+        );
+        assert!(
+            validate_ssh_connect_fields(
+                "host",
+                "user",
+                &AuthType::PrivateKey,
+                None,
+                Some("id_ed25519"),
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn agent_auth_only_requires_host_and_username() {
+        assert!(validate_ssh_connect_fields("host", "user", &AuthType::Agent, None, None).is_ok());
+    }
 }

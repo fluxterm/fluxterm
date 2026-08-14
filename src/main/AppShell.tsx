@@ -112,6 +112,11 @@ import {
   type FloatingEventsSnapshot,
 } from "@/features/session/core/widgetEventsSync";
 import {
+  getMissingRdpConnectionFields,
+  getMissingSshConnectionFields,
+  type ConnectionRequiredField,
+} from "@/features/session/core/connectionValidation";
+import {
   WIDGET_BROADCAST_CHANNEL,
   type FloatingBroadcastMessage,
   type FloatingBroadcastSnapshot,
@@ -589,6 +594,28 @@ export default function AppShell() {
     () => (key, vars) =>
       formatMessage(getTranslationMessage(locale, key), vars),
     [locale],
+  );
+  const openIncompleteConnectionDialog = useCallback(
+    (fields: ConnectionRequiredField[]) => {
+      const fieldKeys: Record<ConnectionRequiredField, TranslationKey> = {
+        host: "profile.form.host",
+        username: "profile.form.username",
+        password: "profile.form.password",
+        privateKeyPath: "profile.form.privateKeyPath",
+      };
+      const labels = fields.map((field) => t(fieldKeys[field]));
+      const fieldList = new Intl.ListFormat(locale, {
+        style: "short",
+        type: "conjunction",
+      }).format(labels);
+      openDialog({
+        title: t("dialog.connectionInfoIncompleteTitle"),
+        message: t("dialog.connectionInfoIncompleteBody", {
+          fields: fieldList,
+        }),
+      });
+    },
+    [locale, openDialog, t],
   );
   const appUpdater = useAppUpdater({
     onToast: ({ level, message }) => {
@@ -2190,11 +2217,16 @@ export default function AppShell() {
 
   const handleConnectProfile = useCallback(
     async (profileInput: HostProfile) => {
-      if (
-        !profileInput.host ||
-        (!profileInput.username && !profileInput.credentialId)
-      ) {
-        sessionActions.setBusyMessage(t("messages.missingHostUser"));
+      if (securityStatus.locked) {
+        openDialog({
+          title: t("dialog.sshErrorTitle"),
+          message: t("error.securityLocked"),
+        });
+        return;
+      }
+      const missingFields = getMissingSshConnectionFields(profileInput);
+      if (missingFields.length > 0) {
+        openIncompleteConnectionDialog(missingFields);
         return;
       }
       const profileId = profileInput.id;
@@ -2248,15 +2280,42 @@ export default function AppShell() {
         }
       }
     },
-    [pickProfile, saveProfile, sessionActions, setSshConnectingState, t],
+    [
+      openDialog,
+      openIncompleteConnectionDialog,
+      pickProfile,
+      saveProfile,
+      securityStatus.locked,
+      sessionActions,
+      setSshConnectingState,
+      t,
+    ],
   );
 
   const handleConnectRdpProfile = useCallback(
     async (profile: RdpProfile) => {
+      if (securityStatus.locked) {
+        openDialog({
+          title: t("dialog.sshErrorTitle"),
+          message: t("error.securityLocked"),
+        });
+        return;
+      }
+      const missingFields = getMissingRdpConnectionFields(profile);
+      if (missingFields.length > 0) {
+        openIncompleteConnectionDialog(missingFields);
+        return;
+      }
       setActiveRdpProfileId(profile.id);
       await connectRdpProfile(profile.id);
     },
-    [connectRdpProfile],
+    [
+      connectRdpProfile,
+      openDialog,
+      openIncompleteConnectionDialog,
+      securityStatus.locked,
+      t,
+    ],
   );
 
   const handleCancelConnectProfile = useCallback(

@@ -115,12 +115,6 @@ pub fn rdp_profile_save(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     profile.tags = normalize_profile_tags(profile.tags)?;
-    if profile.host.is_empty() || (profile.username.is_empty() && profile.credential_id.is_none()) {
-        return Err(EngineError::new(
-            "rdp_profile_required",
-            "RDP host and username are required",
-        ));
-    }
     if profile.id.is_empty() {
         profile.id = Uuid::new_v4().to_string();
     }
@@ -291,7 +285,47 @@ fn load_profile(
         profile.username = credential.username;
         profile.password_ref = Some(credential.password);
     }
+    validate_rdp_connect_profile(&profile)?;
     Ok(profile)
+}
+
+/// 校验 RDP 创建运行时会话所需的字段。
+fn validate_rdp_connect_profile(profile: &RdpProfile) -> Result<(), EngineError> {
+    validate_rdp_connect_fields(
+        &profile.host,
+        &profile.username,
+        profile.password_ref.as_deref(),
+    )
+}
+
+/// 校验 RDP 连接字段，密码仅区分空值并保留空格语义。
+fn validate_rdp_connect_fields(
+    host: &str,
+    username: &str,
+    password: Option<&str>,
+) -> Result<(), EngineError> {
+    if host.trim().is_empty() {
+        return Err(EngineError::localized(
+            "rdp_profile_host_required",
+            "RDP host is required",
+            "rdp.error.hostRequired",
+        ));
+    }
+    if username.trim().is_empty() {
+        return Err(EngineError::localized(
+            "rdp_profile_username_required",
+            "RDP username is required",
+            "rdp.error.usernameRequired",
+        ));
+    }
+    if password.is_none_or(str::is_empty) {
+        return Err(EngineError::localized(
+            "rdp_profile_password_required",
+            "RDP password is required",
+            "rdp.error.passwordRequired",
+        ));
+    }
+    Ok(())
 }
 
 fn now_epoch() -> u64 {
@@ -299,4 +333,32 @@ fn now_epoch() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_rdp_connect_fields;
+
+    #[test]
+    fn connection_requires_host_username_and_password() {
+        assert_eq!(
+            validate_rdp_connect_fields(" ", "user", Some("secret"))
+                .unwrap_err()
+                .code,
+            "rdp_profile_host_required"
+        );
+        assert_eq!(
+            validate_rdp_connect_fields("host", " ", Some("secret"))
+                .unwrap_err()
+                .code,
+            "rdp_profile_username_required"
+        );
+        assert_eq!(
+            validate_rdp_connect_fields("host", "user", None)
+                .unwrap_err()
+                .code,
+            "rdp_profile_password_required"
+        );
+        assert!(validate_rdp_connect_fields("host", "user", Some(" ")).is_ok());
+    }
 }

@@ -139,6 +139,8 @@ export const enUsTranslations = {
   "error.ssh.auth.rejected":
     "Authentication was rejected by the server. Check the username, password, or target host login policy, such as root login permission.",
   "error.ssh.auth.missingPrivateKey": "Private key path is required",
+  "error.ssh.profile.hostRequired": "SSH host is missing",
+  "error.ssh.profile.usernameRequired": "SSH username is missing",
   "error.ssh.auth.publicKeyFailed": "Key authentication failed",
   "error.ssh.auth.publicKeyUnsupported":
     "The target does not support private key authentication",
@@ -630,8 +632,9 @@ export const enUsTranslations = {
   "rdp.displayStrategy.cover": "Cover",
   "rdp.displayStrategy.stretch": "Stretch",
   "rdp.error.nameRequired": "Enter a name",
-  "rdp.error.hostRequired": "Enter a host",
-  "rdp.error.usernameRequired": "Enter a username",
+  "rdp.error.hostRequired": "RDP host is missing",
+  "rdp.error.usernameRequired": "RDP username is missing",
+  "rdp.error.passwordRequired": "RDP password is missing",
   "rdp.error.fixedResolutionRequired": "Enter a valid width and height",
   "rdp.error.viewportUnavailable":
     "Unable to resolve the current viewport size for window-sync RDP.",
@@ -967,6 +970,9 @@ export const enUsTranslations = {
   "dialog.sshErrorTitle": "Connection failed",
   "dialog.sshErrorBody":
     "Unable to establish SSH connection. Check authentication and network.",
+  "dialog.connectionInfoIncompleteTitle": "Incomplete connection details",
+  "dialog.connectionInfoIncompleteBody":
+    "Complete the following required fields: {fields}",
   "dialog.sshHostKeyUnknownTitle": "Confirm Host Identity",
   "dialog.sshHostKeyLabelHost": "Host",
   "dialog.sshHostKeyLabelAlgorithm": "Algorithm",
