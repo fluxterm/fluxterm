@@ -666,10 +666,19 @@ export default function useSftpState({
       });
       return;
     }
-    // 初始化只由会话/连接状态驱动；避免函数 identity 变化导致重复触发。
+    // 切回已加载目录的会话时复用其文件视图，避免标签切换把联动目录重置为 home。
+    // 非 connected 状态仍继续走初始化链路，由 loadHomePath 清空失效视图；
+    // 这样首次连接与断线重连后仍会重新加载 home。
+    if (
+      (activeSessionIsLocal || activeSessionState === "connected") &&
+      activeFileView?.path
+    ) {
+      return;
+    }
     loadHomePathRef.current(activeSessionId).catch(() => {});
   }, [
     active,
+    activeFileView?.path,
     activeSessionId,
     activeSessionIsLocal,
     activeSessionState,
