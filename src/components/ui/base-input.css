@@ -7,7 +7,7 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
       [type="file"]
     ),
-  textarea
+  textarea:not(.xterm-helper-textarea)
 ) {
   width: 100%;
   border-radius: 10px;
@@ -38,7 +38,7 @@
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
         [type="file"]
       ),
-    textarea
+    textarea:not(.xterm-helper-textarea)
   ) {
   text-shadow: none;
   backdrop-filter: none;
@@ -49,7 +49,7 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
       [type="file"]
     ),
-  textarea
+  textarea:not(.xterm-helper-textarea)
 )::placeholder {
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
 }
@@ -58,7 +58,7 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
       [type="file"]
     ),
-  textarea
+  textarea:not(.xterm-helper-textarea)
 ):hover {
   border-color: var(--ui-input-border-hover);
   background:
@@ -75,7 +75,7 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
       [type="file"]
     ),
-  textarea
+  textarea:not(.xterm-helper-textarea)
 ):focus-visible {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 74%, #ffffff 10%);
@@ -90,7 +90,7 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
       [type="file"]
     ),
-  textarea
+  textarea:not(.xterm-helper-textarea)
 ):disabled {
   opacity: 0.55;
   filter: saturate(0.72);
@@ -98,7 +98,7 @@
   transform: none;
 }
 
-textarea {
+textarea:not(.xterm-helper-textarea) {
   min-height: 96px;
   resize: vertical;
   line-height: 1.45;
