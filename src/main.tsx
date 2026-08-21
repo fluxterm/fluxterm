@@ -11,7 +11,8 @@ if (import.meta.env.DEV) {
 /**
  * 子应用与悬浮窗口需要在 React 挂载前就打上 pending 标记，
  * 避免启动时先提交主窗口默认底色导致闪屏。
- * 这里放在运行时入口而不是 index.html，确保主窗口不会被模板层的全局判断误伤。
+ * 这里放在运行时入口而不是 index.html，
+ * 以便根据当前窗口的运行时标识决定是否应用该状态。
  */
 const detachedWindowHash = window.location.hash || "";
 if (/(?:widget|subapp)=/i.test(detachedWindowHash)) {
