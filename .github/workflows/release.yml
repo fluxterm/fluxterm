@@ -1,6 +1,6 @@
-name: Private Release
+name: Release
 
-run-name: "Private Version ${{ inputs.tag_name }}"
+run-name: "Version ${{ inputs.tag_name }}"
 
 on:
   workflow_dispatch:
