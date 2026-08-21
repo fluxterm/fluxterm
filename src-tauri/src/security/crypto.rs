@@ -1,6 +1,5 @@
 //! 统一 Crypto 门面。
 
-const CRYPTO_PROVIDER_INVALID_CODE: &str = "crypto_provider_invalid";
 const SECRET_FORMAT_INVALID_CODE: &str = "secret_format_invalid";
 
 use std::sync::Arc;
@@ -10,8 +9,14 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use fluxterm_engine::EngineError;
 use rand::random;
+use sha2::{Digest, Sha256};
+use tauri::AppHandle;
 use uuid::Uuid;
 
+use crate::config_key_store::{
+    CONFIG_KEY_MISMATCH_CODE, CONFIG_KEY_MISSING_CODE, ConfigKey, create_config_key,
+    read_config_key,
+};
 use crate::security::provider::EncryptionProvider;
 use crate::security::providers::{EmbeddedProvider, UserPasswordProvider};
 use crate::security::types::{
@@ -21,20 +26,40 @@ use crate::security::types::{
 use crate::security_store::SecretConfig;
 use crate::state::UnlockedSecretSession;
 
+use super::CRYPTO_PROVIDER_INVALID_CODE;
+
 /// 统一的加密服务入口。
 pub struct CryptoService {
     provider_kind: EncryptionProviderKind,
     key_id: String,
     provider: Option<Arc<dyn EncryptionProvider>>,
+    legacy_embedded_provider: Option<Arc<dyn EncryptionProvider>>,
     locked: bool,
 }
 
 const SECRET_TOKEN_PREFIX: &str = "enc:v1:";
 const EMBEDDED_KEY_ID: &str = "embedded-v1";
+const LEGACY_EMBEDDED_KEY_MATERIAL: &[u8] = b"fluxterm::embedded-weak-protection::v1";
 const USER_PASSWORD_SALT_LEN: usize = 16;
 const USER_PASSWORD_DERIVED_LEN: usize = 64;
 
 impl CryptoService {
+    /// 根据当前配置目录和 secret 配置选择 Provider。
+    pub fn load(
+        app: &AppHandle,
+        config: Option<&SecretConfig>,
+        session: Option<&UnlockedSecretSession>,
+    ) -> Result<Self, EngineError> {
+        let provider_name = config
+            .map(|item| item.provider.trim().to_ascii_lowercase())
+            .unwrap_or_else(|| "embedded".to_string());
+        if provider_name == "embedded" || provider_name.is_empty() {
+            let config_key = load_or_create_config_key(app, config)?;
+            return Ok(Self::from_config_key(config_key, true));
+        }
+        Self::new(config, session)
+    }
+
     /// 根据当前 secret 配置选择 provider。
     pub fn new(
         config: Option<&SecretConfig>,
@@ -44,15 +69,10 @@ impl CryptoService {
             .map(|item| item.provider.trim().to_ascii_lowercase())
             .unwrap_or_else(|| "embedded".to_string());
         match provider_name.as_str() {
-            "embedded" | "" => {
-                let provider = Arc::new(EmbeddedProvider::new());
-                Ok(Self {
-                    provider_kind: EncryptionProviderKind::Embedded,
-                    key_id: provider.key_id().to_string(),
-                    provider: Some(provider),
-                    locked: false,
-                })
-            }
+            "embedded" | "" => Err(EngineError::new(
+                CRYPTO_PROVIDER_INVALID_CODE,
+                "Embedded protection must be loaded from the configuration directory",
+            )),
             "user_password" => {
                 let key_id = config
                     .and_then(|item| item.active_key_id.clone())
@@ -68,6 +88,7 @@ impl CryptoService {
                         provider_kind: EncryptionProviderKind::UserPassword,
                         key_id,
                         provider: None,
+                        legacy_embedded_provider: None,
                         locked: true,
                     });
                 };
@@ -78,6 +99,7 @@ impl CryptoService {
                         key_id,
                         session.encryption_key,
                     ))),
+                    legacy_embedded_provider: None,
                     locked: false,
                 })
             }
@@ -89,22 +111,23 @@ impl CryptoService {
     }
 
     /// 构造默认弱保护模式服务。
-    pub fn embedded() -> Self {
-        let provider = Arc::new(EmbeddedProvider::new());
-        Self {
-            provider_kind: EncryptionProviderKind::Embedded,
-            key_id: provider.key_id().to_string(),
-            provider: Some(provider),
-            locked: false,
-        }
+    #[cfg(test)]
+    pub fn embedded_for_test() -> Self {
+        Self::from_config_key(
+            ConfigKey {
+                key_id: format!("config-{}", Uuid::new_v4()),
+                key_material: random(),
+            },
+            false,
+        )
     }
 
     /// 构造默认弱保护模式配置。
-    pub fn build_embedded_config() -> SecretConfig {
+    pub fn build_embedded_config(key_id: &str) -> SecretConfig {
         SecretConfig {
             version: 1,
             provider: "embedded".to_string(),
-            active_key_id: Some(EMBEDDED_KEY_ID.to_string()),
+            active_key_id: Some(key_id.to_string()),
             kdf_salt: None,
             verify_hash: None,
         }
@@ -226,7 +249,6 @@ impl CryptoService {
 
     /// 对结构化密文字符串执行解密。
     pub fn decrypt_string(&self, serialized: &str) -> Result<String, EngineError> {
-        let provider = self.require_provider_for_decryption()?;
         let payload_token = serialized
             .strip_prefix(SECRET_TOKEN_PREFIX)
             .ok_or_else(|| {
@@ -255,7 +277,8 @@ impl CryptoService {
                 "Unsupported encryption algorithm",
             ));
         }
-        if payload.provider != provider.kind() || payload.key_id != provider.key_id() {
+        let provider = self.provider_for_payload(&payload)?;
+        if payload.provider != provider.kind() {
             return Err(EngineError::new(
                 "secret_provider_mismatch",
                 "The current security mode cannot decrypt this secret",
@@ -311,6 +334,30 @@ impl CryptoService {
         &self.key_id
     }
 
+    /// 从结构化密文中读取 key 标识，供启动迁移校验使用。
+    pub(crate) fn encrypted_payload_key_id(
+        serialized: &str,
+    ) -> Result<Option<String>, EngineError> {
+        let Some(payload_token) = serialized.strip_prefix(SECRET_TOKEN_PREFIX) else {
+            return Ok(None);
+        };
+        let payload_bytes = BASE64.decode(payload_token).map_err(|err| {
+            EngineError::with_detail(
+                SECRET_FORMAT_INVALID_CODE,
+                "Invalid secret format: enc:v1 payload is not valid Base64",
+                err.to_string(),
+            )
+        })?;
+        let payload: EncryptedPayload = serde_json::from_slice(&payload_bytes).map_err(|err| {
+            EngineError::with_detail(
+                SECRET_FORMAT_INVALID_CODE,
+                "Invalid secret format: enc:v1 payload is not valid JSON",
+                err.to_string(),
+            )
+        })?;
+        Ok(Some(payload.key_id))
+    }
+
     fn require_provider_for_encryption(&self) -> Result<&Arc<dyn EncryptionProvider>, EngineError> {
         self.provider.as_ref().ok_or_else(|| {
             EngineError::new(
@@ -330,6 +377,84 @@ impl CryptoService {
             .with_message_key("error.securityLocked")
         })
     }
+
+    fn provider_for_payload(
+        &self,
+        payload: &EncryptedPayload,
+    ) -> Result<&Arc<dyn EncryptionProvider>, EngineError> {
+        if let Some(provider) = self
+            .provider
+            .as_ref()
+            .filter(|provider| provider.key_id() == payload.key_id)
+        {
+            return Ok(provider);
+        }
+        if let Some(provider) = self
+            .legacy_embedded_provider
+            .as_ref()
+            .filter(|provider| provider.key_id() == payload.key_id)
+        {
+            return Ok(provider);
+        }
+        if self.locked {
+            return self.require_provider_for_decryption();
+        }
+        Err(EngineError::new(
+            "secret_provider_mismatch",
+            "The current security mode cannot decrypt this secret",
+        ))
+    }
+
+    fn from_config_key(config_key: ConfigKey, include_legacy: bool) -> Self {
+        let provider = Arc::new(EmbeddedProvider::new(
+            config_key.key_id.clone(),
+            config_key.key_material,
+        ));
+        Self {
+            provider_kind: EncryptionProviderKind::Embedded,
+            key_id: config_key.key_id,
+            provider: Some(provider),
+            legacy_embedded_provider: include_legacy.then(legacy_embedded_provider),
+            locked: false,
+        }
+    }
+}
+
+fn load_or_create_config_key(
+    app: &AppHandle,
+    config: Option<&SecretConfig>,
+) -> Result<ConfigKey, EngineError> {
+    let stored = read_config_key(app)?;
+    let configured_key_id = config
+        .and_then(|item| item.active_key_id.as_deref())
+        .map(str::trim)
+        .filter(|value| value.starts_with("config-"));
+    match (stored, configured_key_id) {
+        (Some(stored), Some(configured)) if stored.key_id != configured => Err(EngineError::new(
+            CONFIG_KEY_MISMATCH_CODE,
+            "The configuration key does not match the active key id",
+        )),
+        (Some(stored), _) => Ok(stored),
+        (None, Some(_)) => Err(EngineError::new(
+            CONFIG_KEY_MISSING_CODE,
+            "The configuration key file is missing",
+        )),
+        (None, None) => create_config_key(app),
+    }
+}
+
+/// 构造旧闭源版本固定密钥的只读迁移 Provider。
+///
+/// TODO(security): `0.10.0` 完成旧数据迁移后，在 `0.11.0` 删除固定密钥、
+/// `embedded-v1` 解密分支及对应测试。
+fn legacy_embedded_provider() -> Arc<dyn EncryptionProvider> {
+    let digest = Sha256::digest(LEGACY_EMBEDDED_KEY_MATERIAL);
+    let mut encryption_key = [0_u8; 32];
+    encryption_key.copy_from_slice(&digest[..32]);
+    Arc::new(EmbeddedProvider::new(
+        EMBEDDED_KEY_ID.to_string(),
+        encryption_key,
+    ))
 }
 
 fn derive_password_material(
@@ -365,12 +490,13 @@ fn derive_password_material(
 
 #[cfg(test)]
 mod tests {
-    use super::{CryptoService, SECRET_TOKEN_PREFIX};
+    use super::{CryptoService, EMBEDDED_KEY_ID, SECRET_TOKEN_PREFIX, legacy_embedded_provider};
+    use crate::security::EncryptionProviderKind;
     use crate::security_store::SecretConfig;
 
     #[test]
     fn embedded_mode_encrypts_and_decrypts_roundtrip() {
-        let crypto = CryptoService::embedded();
+        let crypto = CryptoService::embedded_for_test();
         let encrypted = crypto.encrypt_string("secret-value").expect("encrypt");
         assert_ne!(encrypted, "secret-value");
         let decrypted = crypto.decrypt_string(&encrypted).expect("decrypt");
@@ -378,6 +504,39 @@ mod tests {
         assert_eq!(
             crypto.provider_kind(),
             crate::security::EncryptionProviderKind::Embedded
+        );
+    }
+
+    #[test]
+    fn configuration_key_provider_can_decrypt_legacy_embedded_payload() {
+        let legacy_provider = legacy_embedded_provider();
+        let legacy_crypto = CryptoService {
+            provider_kind: EncryptionProviderKind::Embedded,
+            key_id: EMBEDDED_KEY_ID.to_string(),
+            provider: Some(legacy_provider),
+            legacy_embedded_provider: None,
+            locked: false,
+        };
+        let legacy_payload = legacy_crypto
+            .encrypt_string("legacy-secret")
+            .expect("encrypt legacy payload for migration test");
+
+        let mut current_crypto = CryptoService::embedded_for_test();
+        current_crypto.legacy_embedded_provider = Some(legacy_embedded_provider());
+        assert_eq!(
+            current_crypto
+                .decrypt_string(&legacy_payload)
+                .expect("decrypt legacy payload"),
+            "legacy-secret"
+        );
+        let current_payload = current_crypto
+            .encrypt_string("current-secret")
+            .expect("encrypt current payload");
+        assert_ne!(
+            CryptoService::encrypted_payload_key_id(&current_payload)
+                .expect("read current key id")
+                .as_deref(),
+            Some(EMBEDDED_KEY_ID)
         );
     }
 

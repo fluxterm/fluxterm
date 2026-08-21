@@ -75,7 +75,7 @@ pub fn profile_list(
     let credentials = read_credentials(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(&app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     store
         .profiles
@@ -138,7 +138,7 @@ pub fn profile_save(
     let mut store = read_ssh_profiles(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(&app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     profile.name = validate_profile_name(profile.name)?;
     profile.icon_key = normalize_profile_icon_key(profile.icon_key)?;

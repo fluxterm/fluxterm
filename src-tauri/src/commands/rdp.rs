@@ -53,7 +53,7 @@ pub fn rdp_profile_list(
     let credentials = read_credentials(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(&app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
 
     store
@@ -103,7 +103,7 @@ pub fn rdp_profile_save(
     let mut store = read_rdp_profiles(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(&app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
 
     profile.name = validate_profile_name(profile.name)?;
@@ -272,7 +272,7 @@ fn load_profile(
     let store = read_rdp_profiles(app)?;
     let security_config = read_security_config(app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     let profile = store
         .profiles

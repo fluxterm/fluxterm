@@ -5,6 +5,7 @@
 //! 外部业务只通过统一入口读取和写入敏感字段。
 
 pub(crate) const CRYPTO_INIT_FAILED_CODE: &str = "crypto_init_failed";
+pub(crate) const CRYPTO_PROVIDER_INVALID_CODE: &str = "crypto_provider_invalid";
 pub(crate) const SECRET_DECRYPT_FAILED_CODE: &str = "secret_decrypt_failed";
 pub(crate) const SECRET_ENCRYPT_FAILED_CODE: &str = "secret_encrypt_failed";
 pub(crate) const SECRET_FORMAT_UNSUPPORTED_CODE: &str = "secret_format_unsupported";

@@ -585,6 +585,11 @@ pub fn resolve_security_config_path(app: &AppHandle) -> Result<PathBuf, EngineEr
     Ok(resolve_global_config_dir(app)?.join("security.json"))
 }
 
+/// 解析配置目录级弱保护密钥文件路径。
+pub fn resolve_config_key_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
+    Ok(resolve_global_config_dir(app)?.join("config-key.json"))
+}
+
 /// 解析应用锁屏配置文件路径。
 pub fn resolve_lock_screen_config_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
     Ok(resolve_global_config_dir(app)?.join("lock-screen.json"))

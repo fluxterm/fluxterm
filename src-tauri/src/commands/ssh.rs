@@ -347,7 +347,7 @@ fn resolve_connect_profile(
         .ok_or_else(|| EngineError::new(PROFILE_NOT_FOUND_CODE, "Profile not found"))?;
     let security_config = read_security_config(app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     resolve_profile_credential(
         app,
@@ -383,7 +383,7 @@ fn resolve_jump_profiles(
     let store = read_ssh_profiles(app)?;
     let security_config = read_security_config(app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(app, security_config.as_ref(), session.as_ref())?;
     let secret_store = SecretStore::new(&crypto);
     ids.into_iter()
         .map(|id| {

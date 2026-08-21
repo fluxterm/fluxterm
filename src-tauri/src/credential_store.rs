@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn credential_password_round_trips_with_shared_secret_store() {
-        let crypto = CryptoService::embedded();
+        let crypto = CryptoService::embedded_for_test();
         let secret_store = SecretStore::new(&crypto);
         let encrypted =
             encrypt_credentials(vec![sample_credential(CredentialKind::Ssh)], &secret_store)

@@ -302,7 +302,7 @@ fn crypto_service(
 ) -> Result<CryptoService, EngineError> {
     let config = read_security_config(app)?;
     let session = security.current_session();
-    CryptoService::new(config.as_ref(), session.as_ref())
+    CryptoService::load(app, config.as_ref(), session.as_ref())
 }
 
 fn required_trimmed(value: String, code: &str, message: &str) -> Result<String, EngineError> {

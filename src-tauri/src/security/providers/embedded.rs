@@ -1,29 +1,26 @@
-//! 应用内置弱保护 Provider。
+//! 配置目录级弱保护 Provider。
 
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use fluxterm_engine::EngineError;
 use rand::random;
-use sha2::{Digest, Sha256};
 
 use crate::security::provider::EncryptionProvider;
 use crate::security::types::{EncryptionAlgorithm, EncryptionProviderKind, ProviderCiphertext};
 
-const EMBEDDED_KEY_ID: &str = "embedded-v1";
-const EMBEDDED_KEY_MATERIAL: &[u8] = b"fluxterm::embedded-weak-protection::v1";
-
-/// 基于应用内置密钥的 AES-256-GCM Provider。
+/// 基于配置目录密钥的 AES-256-GCM 弱保护 Provider。
 pub struct EmbeddedProvider {
+    key_id: String,
     encryption_key: [u8; 32],
 }
 
 impl EmbeddedProvider {
-    /// 使用内置弱保护密钥创建 Provider。
-    pub fn new() -> Self {
-        let digest = Sha256::digest(EMBEDDED_KEY_MATERIAL);
-        let mut encryption_key = [0_u8; 32];
-        encryption_key.copy_from_slice(&digest[..32]);
-        Self { encryption_key }
+    /// 使用配置目录级弱保护密钥创建 Provider。
+    pub fn new(key_id: String, encryption_key: [u8; 32]) -> Self {
+        Self {
+            key_id,
+            encryption_key,
+        }
     }
 
     fn cipher(&self) -> Result<Aes256Gcm, EngineError> {
@@ -37,19 +34,13 @@ impl EmbeddedProvider {
     }
 }
 
-impl Default for EmbeddedProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl EncryptionProvider for EmbeddedProvider {
     fn kind(&self) -> EncryptionProviderKind {
         EncryptionProviderKind::Embedded
     }
 
     fn key_id(&self) -> &str {
-        EMBEDDED_KEY_ID
+        &self.key_id
     }
 
     fn is_locked(&self) -> bool {

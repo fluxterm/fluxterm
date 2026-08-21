@@ -44,7 +44,7 @@ pub fn security_status(
 ) -> Result<SecurityStatus, EngineError> {
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
-    let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+    let crypto = CryptoService::load(&app, security_config.as_ref(), session.as_ref())?;
     Ok(crypto.status())
 }
 
@@ -109,7 +109,8 @@ pub fn security_enable_strong_protection(
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
-    let current_crypto = CryptoService::new(current_config.as_ref(), current_session.as_ref())?;
+    let current_crypto =
+        CryptoService::load(&app, current_config.as_ref(), current_session.as_ref())?;
     if current_crypto.provider_kind() != crate::security::EncryptionProviderKind::Embedded {
         return Err(EngineError::new(
             SECURITY_ENABLE_UNAVAILABLE_CODE,
@@ -166,7 +167,8 @@ pub fn security_change_password(
     }
 
     let current_session = CryptoService::unlock_user_password(config, &input.current_password)?;
-    let current_crypto = CryptoService::new(current_config.as_ref(), Some(&current_session))?;
+    let current_crypto =
+        CryptoService::load(&app, current_config.as_ref(), Some(&current_session))?;
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
     let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
     let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
@@ -190,7 +192,7 @@ pub fn security_change_password(
     security_status(app, security)
 }
 
-/// 从强保护模式切换回弱保护模式，并使用内置密钥重新加密敏感字段。
+/// 从强保护模式切换回弱保护模式，并使用配置目录密钥重新加密敏感字段。
 #[tauri::command]
 pub fn security_enable_weak_protection(
     app: AppHandle,
@@ -201,7 +203,8 @@ pub fn security_enable_weak_protection(
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
-    let current_crypto = CryptoService::new(current_config.as_ref(), current_session.as_ref())?;
+    let current_crypto =
+        CryptoService::load(&app, current_config.as_ref(), current_session.as_ref())?;
     if current_crypto.provider_kind() == crate::security::EncryptionProviderKind::UserPassword
         && current_session.is_none()
     {
@@ -223,8 +226,8 @@ pub fn security_enable_weak_protection(
     let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
     let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
-    let weak_config = CryptoService::build_embedded_config();
-    let weak_crypto = CryptoService::embedded();
+    let weak_crypto = CryptoService::load(&app, None, None)?;
+    let weak_config = CryptoService::build_embedded_config(weak_crypto.key_id());
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &weak_crypto)?;
     ssh_store.updated_at = now_epoch();

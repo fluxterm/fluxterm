@@ -148,7 +148,7 @@ fn resolve_provider_api_key(
         let security_config = read_security_config(app)?;
         let security = app.state::<SecurityState>();
         let session = security.current_session();
-        let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
+        let crypto = CryptoService::load(app, security_config.as_ref(), session.as_ref())?;
         let secret_store = SecretStore::new(&crypto);
         return secret_store
             .reveal_optional_string(Some(token.clone()))

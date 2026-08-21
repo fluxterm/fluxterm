@@ -2,6 +2,7 @@
 pub mod ai;
 pub mod ai_settings;
 pub mod commands;
+pub mod config_key_store;
 pub mod config_paths;
 pub mod credential_store;
 pub mod events;
@@ -15,6 +16,7 @@ pub mod rdp_profile_store;
 pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;
+pub mod security_migration;
 pub mod security_store;
 pub mod serial_profile_store;
 pub mod session_settings;
@@ -143,7 +145,16 @@ pub fn run() {
         Target::new(TargetKind::Stdout),
         Target::new(TargetKind::LogDir { file_name: None }),
     ];
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    let builder = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -152,6 +163,7 @@ pub fn run() {
         let config_directory_state =
             crate::config_paths::initialize_config_directory_state(app.handle())?;
         app.manage(config_directory_state);
+        crate::security_migration::initialize_security_storage(app.handle())?;
         #[cfg(feature = "performance-telemetry")]
         {
             let service = match load_config(app.handle()) {

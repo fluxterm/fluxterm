@@ -423,7 +423,7 @@ fn load_ai_crypto(app: &AppHandle) -> Result<CryptoService, EngineError> {
     let security_config = read_security_config(app)?;
     let security = app.state::<SecurityState>();
     let session = security.current_session();
-    CryptoService::new(security_config.as_ref(), session.as_ref())
+    CryptoService::load(app, security_config.as_ref(), session.as_ref())
 }
 
 #[cfg(test)]

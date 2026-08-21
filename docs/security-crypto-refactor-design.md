@@ -6,7 +6,7 @@ FluxTerm 使用统一的安全数据保护模型管理 SSH/RDP 密码、分类�
 
 当前实现基于两种加密 Provider：
 
-- `embedded`：应用内置弱保护模式
+- `embedded`：配置目录密钥弱保护模式
 - `user_password`：用户密码强保护模式
 
 两种模式都会将敏感数据保存为 `enc:v1:` 结构化密文。
@@ -17,6 +17,8 @@ FluxTerm 使用统一的安全数据保护模型管理 SSH/RDP 密码、分类�
 
 - `HostProfile.password_ref`
 - `HostProfile.private_key_passphrase_ref`
+- `HostProfile.proxy_config.password_ref`
+- `RdpProfile.password_ref`
 - `Credential.password_ref`
 - AI Provider 的 `api_key_ref`
 
@@ -26,7 +28,7 @@ FluxTerm 使用统一的安全数据保护模型管理 SSH/RDP 密码、分类�
 
 ### 弱保护
 
-敏感字段使用应用内置密钥进行加密保存。该模式不需要用户输入安全密码，运行期始终可读。
+敏感字段使用配置目录中的随机密钥进行加密保存。该模式不需要用户输入安全密码，运行期始终可读。
 
 ### 强保护
 
@@ -57,6 +59,8 @@ src-tauri/src/security
 
 相关模块：
 
+- `src-tauri/src/config_key_store.rs`
+  负责配置目录级弱保护密钥的生成、校验与持久化
 - `src-tauri/src/profile_secrets.rs`
   负责 `HostProfile` 敏感字段的保护与解保护
 - `src-tauri/src/credential_store.rs`
@@ -84,6 +88,7 @@ Provider 负责原始字节级别的加解密能力。
 `CryptoService` 是统一安全服务入口，负责：
 
 - 根据配置选择当前 Provider
+- 从当前配置目录加载弱保护密钥
 - 基于安全密码派生会话密钥
 - 生成与解析结构化密文
 - 输出当前安全状态
@@ -105,9 +110,10 @@ Provider 负责原始字节级别的加解密能力。
 
 弱保护模式下：
 
-- `profiles.json` 中的 `secret.provider` 为 `embedded`
+- `global/security.json` 中的 `provider` 为 `embedded`
 - 敏感字段写盘时统一保存为 `enc:v1:` 密文
-- 加密密钥由应用内置常量派生
+- 首次使用配置目录时生成独立的 32 字节随机密钥
+- 密钥保存在配置目录的 `global/config-key.json` 中
 - 运行期始终可读，不存在锁定状态
 
 示例：
@@ -116,19 +122,29 @@ Provider 负责原始字节级别的加解密能力。
 {
   "version": 1,
   "provider": "embedded",
-  "active_key_id": "embedded-v1",
+  "active_key_id": "config-uuid",
   "kdf_salt": null,
   "verify_hash": null
 }
 ```
 
-该模式用于提供默认可用的基础保护能力。
+配置密钥文件结构如下：
+
+```json
+{
+  "version": 1,
+  "keyId": "config-uuid",
+  "keyMaterial": "base64..."
+}
+```
+
+该模式用于提供默认可用的基础保护能力。配置密钥与密文保存在同一配置目录，因此完整复制配置目录后可以直接使用；获取完整配置目录的主体也能够恢复其中的敏感数据。
 
 ### 强保护模式（`user_password`）
 
 启用后：
 
-- `profiles.json` 中的 `secret.provider` 为 `user_password`
+- `global/security.json` 中的 `provider` 为 `user_password`
 - 敏感字段写盘时统一保存为 `enc:v1:` 密文
 - 加密密钥由用户安全密码派生
 - 应用重启后默认进入已锁定状态
@@ -176,7 +192,7 @@ enc:v1:<base64(payload-bytes)>
 }
 ```
 
-当 Provider 为弱保护模式时，`provider` 字段对应为 `embedded`，`keyId` 为 `embedded-v1`。
+当 Provider 为弱保护模式时，`provider` 字段对应为 `embedded`，`keyId` 为当前配置目录的 `config-uuid`。
 
 ## 运行时行为
 
@@ -222,7 +238,7 @@ enc:v1:<base64(payload-bytes)>
 关闭强保护后：
 
 1. 当前敏感字段重新加密为 `embedded` 模式密文
-2. `profiles.json` 中的安全模式切换回 `embedded`
+2. `global/security.json` 中的安全模式切换回 `embedded`
 3. 后续不再要求输入安全密码
 
 ## SSH、RDP、密码管理器与 AI 的读取规则
@@ -284,33 +300,26 @@ AI 使用 Provider Key 时统一通过 `SecretStore` 读取：
 - `security_status`
 - `security_unlock`
 - `security_lock`
-- `security_enable_with_password`
+- `security_enable_strong_protection`
 - `security_change_password`
-- `security_disable_encryption`
+- `security_enable_weak_protection`
 
 这些命令统一返回 `SecurityStatus`，供前端更新状态展示与交互。
 
 其中：
 
-- `security_enable_with_password`：从弱保护切换到强保护
-- `security_disable_encryption`：从强保护切换回弱保护
+- `security_enable_strong_protection`：从弱保护切换到强保护
+- `security_enable_weak_protection`：从强保护切换回弱保护
 
 ## 约束
 
 - 默认模式为 `embedded` 弱保护模式
+- 每个配置目录使用独立的随机弱保护密钥
+- `global/config-key.json` 必须与其他配置文件一同保留和复制
+- 配置密钥缺失、损坏或与密文 `keyId` 不一致时，禁止读取和覆盖受保护数据
 - 敏感字段始终保存为 `enc:v1:` 密文
 - 敏感字段仅接受 `enc:v1:` 结构化密文格式
 - 强保护未解锁时，不允许读取受保护字段
 - SSH 与 AI 共享同一套安全状态
 - 安全密码最少为 4 个字符
 - 安全密码仅保存在内存中，不写入磁盘
-
-## 用户可见结果
-
-从产品行为上看，安全功能提供以下体验：
-
-- 默认具备基础保护能力，无需额外设置即可使用
-- 启用强保护后，本次运行立即可用
-- 应用重启后需要重新输入安全密码
-- 锁定后，AI 与 SSH 的强保护数据立即不可用
-- 切换回弱保护后，仍保持加密存储，但不再要求输入安全密码
