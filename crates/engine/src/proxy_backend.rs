@@ -9,7 +9,9 @@ use tokio::time::{Duration, Instant, sleep};
 
 use crate::error::EngineError;
 use crate::proxy::{ProxyHandle, close_proxy, open_proxy};
-use crate::proxy_error_codes::{PROXY_BIND_CONFLICT, PROXY_NOT_FOUND, PROXY_SHUTDOWN_TIMEOUT};
+use crate::proxy_error_codes::{
+    PROXY_BIND_CONFLICT_CODE, PROXY_NOT_FOUND_CODE, PROXY_SHUTDOWN_TIMEOUT_CODE,
+};
 use crate::types::{EventCallback, ProxyRuntime, ProxySpec, ProxyStatus};
 use fluxterm_logging::{LogLevel, log_event};
 
@@ -117,7 +119,7 @@ impl ProxyBackend for BuiltinProxyBackend {
                     operation_id,
                     json!({
                         "error": {
-                            "code": PROXY_BIND_CONFLICT,
+                            "code": PROXY_BIND_CONFLICT_CODE,
                             "message": "Proxy listener address already exists",
                             "detail": request_key.clone(),
                         },
@@ -127,7 +129,7 @@ impl ProxyBackend for BuiltinProxyBackend {
                     }),
                 );
                 return Err(EngineError::with_detail(
-                    PROXY_BIND_CONFLICT,
+                    PROXY_BIND_CONFLICT_CODE,
                     "Proxy listener address already exists",
                     request_key,
                 ));
@@ -155,7 +157,7 @@ impl ProxyBackend for BuiltinProxyBackend {
                         "error": {
                             "code": error.code.clone(),
                             "message": "Proxy creation failed",
-                            "detail": error.detail.clone().unwrap_or(error.message.clone()),
+                            "detail": error.details.clone().unwrap_or(error.message.clone()),
                         },
                     }),
                 );
@@ -195,7 +197,7 @@ impl ProxyBackend for BuiltinProxyBackend {
         let handle = match self.proxies.lock().unwrap().remove(proxy_id) {
             Some(handle) => handle,
             None => {
-                let error = EngineError::new(PROXY_NOT_FOUND, "Proxy instance not found");
+                let error = EngineError::new(PROXY_NOT_FOUND_CODE, "Proxy instance not found");
                 log_event!(
                     LogLevel::Warn,
                     "proxy.close.failed",
@@ -215,8 +217,10 @@ impl ProxyBackend for BuiltinProxyBackend {
         };
         close_proxy(&handle);
         if !self.wait_stopped(&handle) {
-            let error =
-                EngineError::new(PROXY_SHUTDOWN_TIMEOUT, "Proxy instance shutdown timed out");
+            let error = EngineError::new(
+                PROXY_SHUTDOWN_TIMEOUT_CODE,
+                "Proxy instance shutdown timed out",
+            );
             log_event!(
                 LogLevel::Warn,
                 "proxy.close.failed",
@@ -279,7 +283,7 @@ impl ProxyBackend for BuiltinProxyBackend {
         let all_stopped = handles.values().all(|handle| self.wait_stopped(handle));
         if !all_stopped {
             let error = EngineError::new(
-                PROXY_SHUTDOWN_TIMEOUT,
+                PROXY_SHUTDOWN_TIMEOUT_CODE,
                 "Timed out while closing proxy instances",
             );
             log_event!(

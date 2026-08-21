@@ -3,13 +3,17 @@
 //! 串口会话保持原始字节边界，并通过独立事件交给前端决定终端解码和
 //! 结构化监视器展示方式。
 
+const SERIAL_CONNECT_TASK_FAILED_CODE: &str = "serial_connect_task_failed";
+const SERIAL_STATE_UNAVAILABLE_CODE: &str = "serial_state_unavailable";
+const SERIAL_EXTERNAL_PORT_IN_USE_KEY: &str = "error.serial.externalPortInUse";
+const SERIAL_OPEN_FAILED_KEY: &str = "error.serial.openFailed";
+
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use encoding_rs::Encoding;
-use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::runtime::Runtime;
 use tokio::sync::{Notify, mpsc, oneshot};
@@ -301,7 +305,7 @@ impl SerialManager {
             let _ = start_tx.send(());
             let open_result = open_rx.await.unwrap_or_else(|_| {
                 Err(EngineError::localized(
-                    "serial_connect_task_failed",
+                    SERIAL_CONNECT_TASK_FAILED_CODE,
                     "The serial connection task ended unexpectedly",
                     "error.serial.connectTaskFailed",
                 ))
@@ -342,7 +346,7 @@ impl SerialManager {
                 .lock()
                 .map_err(|_| {
                     EngineError::localized(
-                        "serial_state_unavailable",
+                        SERIAL_STATE_UNAVAILABLE_CODE,
                         "Serial session state is unavailable",
                         "error.serial.stateUnavailable",
                     )
@@ -459,7 +463,7 @@ impl SerialManager {
             biased;
             result = ready_rx => result.map_err(|_| {
                 EngineError::localized(
-                    "serial_connect_task_failed",
+                    SERIAL_CONNECT_TASK_FAILED_CODE,
                     "The serial connection task ended unexpectedly",
                     "error.serial.connectTaskFailed",
                 )
@@ -650,7 +654,10 @@ fn serial_port_in_use_error(port_name: &str) -> EngineError {
         format!("Serial port {port_name} is already connected in a session"),
         "error.serial.portInUse",
     )
-    .with_message_vars(json!({ "portName": port_name }))
+    .with_message_vars(crate::error::MessageVars::from([(
+        "portName".to_string(),
+        crate::error::MessageVar::from(port_name),
+    )]))
 }
 
 /// 校验串口配置中的必填字段和波特率。
@@ -705,17 +712,17 @@ fn map_open_error(error: tokio_serial::Error) -> EngineError {
     } else {
         "serial_open_failed"
     };
-    EngineError::with_detail(code, "Failed to open the target serial port", detail)
-        .with_message_key(if code == "serial_port_in_use" {
-            "error.serial.externalPortInUse"
-        } else {
-            "error.serial.openFailed"
-        })
+    let error = EngineError::with_detail(code, "Failed to open the target serial port", detail);
+    if code == "serial_port_in_use" {
+        error.with_message_key(SERIAL_EXTERNAL_PORT_IN_USE_KEY)
+    } else {
+        error.with_message_key(SERIAL_OPEN_FAILED_KEY)
+    }
 }
 
 fn serial_state_unavailable_error() -> EngineError {
     EngineError::localized(
-        "serial_state_unavailable",
+        SERIAL_STATE_UNAVAILABLE_CODE,
         "Serial session state is unavailable",
         "error.serial.stateUnavailable",
     )
@@ -1090,7 +1097,7 @@ mod tests {
             assert_eq!(
                 second_error
                     .message_vars
-                    .as_deref()
+                    .as_ref()
                     .and_then(|vars| vars.get("portName"))
                     .and_then(|value| value.as_str()),
                 Some("COM1")

@@ -29,7 +29,7 @@ impl EmbeddedProvider {
     fn cipher(&self) -> Result<Aes256Gcm, EngineError> {
         Aes256Gcm::new_from_slice(&self.encryption_key).map_err(|err| {
             EngineError::with_detail(
-                "crypto_init_failed",
+                crate::security::CRYPTO_INIT_FAILED_CODE,
                 "Failed to initialize the cipher",
                 err.to_string(),
             )
@@ -62,7 +62,10 @@ impl EncryptionProvider for EmbeddedProvider {
         let ciphertext = cipher
             .encrypt(Nonce::from_slice(&nonce), plaintext)
             .map_err(|_| {
-                EngineError::new("secret_encrypt_failed", "Failed to encrypt the credential")
+                EngineError::new(
+                    crate::security::SECRET_ENCRYPT_FAILED_CODE,
+                    "Failed to encrypt the credential",
+                )
             })?;
         Ok(ProviderCiphertext {
             algorithm: EncryptionAlgorithm::Aes256Gcm,
@@ -79,7 +82,10 @@ impl EncryptionProvider for EmbeddedProvider {
                 payload.ciphertext.as_ref(),
             )
             .map_err(|_| {
-                EngineError::new("secret_decrypt_failed", "Failed to decrypt the credential")
+                EngineError::new(
+                    crate::security::SECRET_DECRYPT_FAILED_CODE,
+                    "Failed to decrypt the credential",
+                )
             })
     }
 }

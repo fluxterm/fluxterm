@@ -1,5 +1,10 @@
 //! 应用锁屏命令与进程内状态。
 
+const LOCK_SCREEN_CONFIG_PARSE_FAILED_CODE: &str = "lock_screen_config_parse_failed";
+const LOCK_SCREEN_PASSWORD_HASH_FAILED_CODE: &str = "lock_screen_password_hash_failed";
+const LOCK_SCREEN_PASSWORD_INVALID_CODE: &str = "lock_screen_password_invalid";
+const LOCK_SCREEN_STATE_UNAVAILABLE_CODE: &str = "lock_screen_state_unavailable";
+
 use std::fs;
 use std::sync::Mutex;
 
@@ -34,7 +39,7 @@ impl LockScreenState {
             .map(|runtime| runtime.status())
             .map_err(|_| {
                 EngineError::new(
-                    "lock_screen_state_unavailable",
+                    LOCK_SCREEN_STATE_UNAVAILABLE_CODE,
                     "Lock screen state is unavailable",
                 )
             })
@@ -43,7 +48,7 @@ impl LockScreenState {
     fn set_locked(&self, locked: bool) -> Result<LockScreenStatus, EngineError> {
         let mut runtime = self.runtime.lock().map_err(|_| {
             EngineError::new(
-                "lock_screen_state_unavailable",
+                LOCK_SCREEN_STATE_UNAVAILABLE_CODE,
                 "Lock screen state is unavailable",
             )
         })?;
@@ -112,7 +117,7 @@ fn read_config(app: &AppHandle) -> Result<LockScreenConfig, EngineError> {
     })?;
     serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
-            "lock_screen_config_parse_failed",
+            LOCK_SCREEN_CONFIG_PARSE_FAILED_CODE,
             "Failed to parse the lock screen settings",
             err.to_string(),
         )
@@ -141,7 +146,7 @@ fn hash_password(password: &str) -> Result<Option<String>, EngineError> {
     }
     let salt = SaltString::encode_b64(Uuid::new_v4().as_bytes()).map_err(|err| {
         EngineError::with_detail(
-            "lock_screen_password_hash_failed",
+            LOCK_SCREEN_PASSWORD_HASH_FAILED_CODE,
             "Failed to generate the lock screen password salt",
             err.to_string(),
         )
@@ -151,7 +156,7 @@ fn hash_password(password: &str) -> Result<Option<String>, EngineError> {
         .map(|hash| Some(hash.to_string()))
         .map_err(|err| {
             EngineError::with_detail(
-                "lock_screen_password_hash_failed",
+                LOCK_SCREEN_PASSWORD_HASH_FAILED_CODE,
                 "Failed to hash the lock screen password",
                 err.to_string(),
             )
@@ -164,14 +169,14 @@ fn verify_password(config: &LockScreenConfig, password: &str) -> Result<(), Engi
             Ok(())
         } else {
             Err(EngineError::new(
-                "lock_screen_password_invalid",
+                LOCK_SCREEN_PASSWORD_INVALID_CODE,
                 "Lock screen password is invalid",
             ))
         };
     };
     let hash = PasswordHash::new(encoded).map_err(|err| {
         EngineError::with_detail(
-            "lock_screen_config_parse_failed",
+            LOCK_SCREEN_CONFIG_PARSE_FAILED_CODE,
             "Failed to parse the lock screen password hash",
             err.to_string(),
         )
@@ -180,7 +185,7 @@ fn verify_password(config: &LockScreenConfig, password: &str) -> Result<(), Engi
         .verify_password(password.as_bytes(), &hash)
         .map_err(|_| {
             EngineError::new(
-                "lock_screen_password_invalid",
+                LOCK_SCREEN_PASSWORD_INVALID_CODE,
                 "Lock screen password is invalid",
             )
         })

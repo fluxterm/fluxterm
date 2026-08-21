@@ -2,6 +2,10 @@
 //!
 //! 本模块提供跨业务逻辑复用的底层工具函数，如原子级文件写入等。
 
+pub(crate) const FILE_OPEN_FAILED_CODE: &str = "file_open_failed";
+pub(crate) const FILE_WRITE_FAILED_CODE: &str = "file_write_failed";
+pub(crate) const LOCAL_HOME_FAILED_CODE: &str = "local_home_failed";
+
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -21,7 +25,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     let path = path.as_ref();
     let parent = path.parent().ok_or_else(|| {
         EngineError::new(
-            "file_write_failed",
+            FILE_WRITE_FAILED_CODE,
             "Failed to resolve the parent directory",
         )
     })?;
@@ -29,7 +33,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     if !parent.exists() {
         fs::create_dir_all(parent).map_err(|err| {
             EngineError::with_detail(
-                "file_write_failed",
+                FILE_WRITE_FAILED_CODE,
                 "Failed to create the configuration directory",
                 err.to_string(),
             )
@@ -45,7 +49,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     let temp_path = path.with_extension("tmp");
     let mut temp_file = fs::File::create(&temp_path).map_err(|err| {
         EngineError::with_detail(
-            "file_write_failed",
+            FILE_WRITE_FAILED_CODE,
             "Failed to create the temporary file",
             err.to_string(),
         )
@@ -53,7 +57,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
 
     temp_file.write_all(content.as_bytes()).map_err(|err| {
         EngineError::with_detail(
-            "file_write_failed",
+            FILE_WRITE_FAILED_CODE,
             "Failed to write the temporary file",
             err.to_string(),
         )
@@ -62,7 +66,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     // 显式同步以确保数据真正刷入磁盘。
     temp_file.sync_all().map_err(|err| {
         EngineError::with_detail(
-            "file_write_failed",
+            FILE_WRITE_FAILED_CODE,
             "Failed to synchronize temporary file data",
             err.to_string(),
         )
@@ -72,7 +76,7 @@ pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), Engine
     fs::rename(&temp_path, path).map_err(|err| {
         let _ = fs::remove_file(&temp_path);
         EngineError::with_detail(
-            "file_write_failed",
+            FILE_WRITE_FAILED_CODE,
             "Failed to replace the target file",
             err.to_string(),
         )

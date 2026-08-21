@@ -3,7 +3,7 @@
  * 负责加载主机列表与分组、维护当前选中的主机条目，并封装主机与分组的持久化操作。
  */
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import {
   importOpenSshConfig as importOpenSshConfigCommand,
   type OpensshImportSummary,
@@ -111,14 +111,16 @@ export default function useProfiles(): UseProfilesResult {
   /** 持久化分组列表，并先同步本地状态让 UI 立即响应。 */
   function persistGroups(nextGroups: string[]) {
     setSshGroups(nextGroups);
-    return invoke<string[]>("profile_groups_save", { groups: nextGroups });
+    return invokeTauriCommand<string[]>("profile_groups_save", {
+      groups: nextGroups,
+    });
   }
 
   /** 加载主机配置与分组列表，并统一修正旧版本认证类型字段。 */
   async function loadProfiles() {
     const [list, persistedGroups] = await Promise.all([
-      invoke<HostProfile[]>("profile_list"),
-      invoke<string[]>("profile_groups_list"),
+      invokeTauriCommand<HostProfile[]>("profile_list"),
+      invokeTauriCommand<string[]>("profile_groups_list"),
     ]);
     const normalized: HostProfile[] = list.map((profile) => {
       const rawAuth = profile.authType as string;
@@ -170,7 +172,9 @@ export default function useProfiles(): UseProfilesResult {
 
   /** 保存主机配置，并在保存成功后同步当前选中与编辑态。 */
   async function saveProfile(profile: HostProfile) {
-    const saved = await invoke<HostProfile>("profile_save", { profile });
+    const saved = await invokeTauriCommand<HostProfile>("profile_save", {
+      profile,
+    });
     const groupName = normalizeGroupName(saved.tags?.[0] ?? "");
     if (groupName) {
       const nextGroups = dedupeGroups([...sshGroups, groupName]);
@@ -198,7 +202,7 @@ export default function useProfiles(): UseProfilesResult {
 
   /** 删除主机配置；如果删除的是当前选中项，则回退到列表中的下一项。 */
   async function removeProfile(profileId: string) {
-    await invoke("profile_remove", { profileId });
+    await invokeTauriCommand("profile_remove", { profileId });
     const next = profiles.filter((item) => item.id !== profileId);
     setProfiles(next);
     if (activeProfileId === profileId) {
@@ -249,7 +253,7 @@ export default function useProfiles(): UseProfilesResult {
     try {
       const savedProfiles = await Promise.all(
         affected.map((item) =>
-          invoke<HostProfile>("profile_save", {
+          invokeTauriCommand<HostProfile>("profile_save", {
             profile: { ...item, tags: [target] },
           }),
         ),
@@ -296,7 +300,7 @@ export default function useProfiles(): UseProfilesResult {
     try {
       const savedProfiles = await Promise.all(
         affected.map((item) =>
-          invoke<HostProfile>("profile_save", {
+          invokeTauriCommand<HostProfile>("profile_save", {
             profile: { ...item, tags: null },
           }),
         ),
@@ -330,7 +334,7 @@ export default function useProfiles(): UseProfilesResult {
       tags: nextGroup ? [nextGroup] : null,
     };
     try {
-      const saved = await invoke<HostProfile>("profile_save", {
+      const saved = await invokeTauriCommand<HostProfile>("profile_save", {
         profile: payload,
       });
       if (nextGroup) {

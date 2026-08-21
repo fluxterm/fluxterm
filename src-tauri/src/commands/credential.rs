@@ -1,5 +1,7 @@
 //! 分类型密码管理器命令。
 
+const CREDENTIAL_NOT_FOUND_CODE: &str = "credential_not_found";
+
 use engine::EngineError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
@@ -108,7 +110,7 @@ pub fn credential_save(
             .protect_optional_string(Some(password))?
             .ok_or_else(|| {
                 EngineError::new(
-                    "credential_password_required",
+                    crate::credential_store::CREDENTIAL_PASSWORD_REQUIRED_CODE,
                     "Credential password is required",
                 )
             })?;
@@ -128,14 +130,14 @@ pub fn credential_save(
             .iter()
             .find(|credential| credential.id == input.id)
             .cloned()
-            .ok_or_else(|| EngineError::new("credential_not_found", "Credential not found"))?;
+            .ok_or_else(|| EngineError::new(CREDENTIAL_NOT_FOUND_CODE, "Credential not found"))?;
         ensure_kind(existing.kind, input.kind)?;
         let password_ref = match input.password {
             Some(password) => secret_store
                 .protect_optional_string(Some(required_password(Some(password))?))?
                 .ok_or_else(|| {
                     EngineError::new(
-                        "credential_password_required",
+                        crate::credential_store::CREDENTIAL_PASSWORD_REQUIRED_CODE,
                         "Credential password is required",
                     )
                 })?,
@@ -197,7 +199,7 @@ pub fn credential_delete(
         .iter()
         .find(|credential| credential.id == input.credential_id)
         .cloned()
-        .ok_or_else(|| EngineError::new("credential_not_found", "Credential not found"))?;
+        .ok_or_else(|| EngineError::new(CREDENTIAL_NOT_FOUND_CODE, "Credential not found"))?;
     match credential.kind {
         CredentialKind::Ssh => {
             let mut profiles = read_ssh_profiles(&app)?;
@@ -291,7 +293,7 @@ fn find_credential(app: &AppHandle, credential_id: &str) -> Result<Credential, E
         .credentials
         .into_iter()
         .find(|credential| credential.id == credential_id)
-        .ok_or_else(|| EngineError::new("credential_not_found", "Credential not found"))
+        .ok_or_else(|| EngineError::new(CREDENTIAL_NOT_FOUND_CODE, "Credential not found"))
 }
 
 fn crypto_service(
@@ -316,7 +318,7 @@ fn required_password(value: Option<String>) -> Result<String, EngineError> {
         .filter(|password| !password.is_empty())
         .ok_or_else(|| {
             EngineError::new(
-                "credential_password_required",
+                crate::credential_store::CREDENTIAL_PASSWORD_REQUIRED_CODE,
                 "Credential password is required",
             )
         })

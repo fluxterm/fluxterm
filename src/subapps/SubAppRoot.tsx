@@ -34,7 +34,7 @@ import RdpSubApp from "@/subapps/rdp/RdpSubApp";
 import "@/subapps/SubAppShell.css";
 import "@/subapps/proxy/ProxySubApp.css";
 import "@/subapps/rdp/RdpSubApp.css";
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { resolveBackgroundAssetUrl } from "@/features/backgrounds/core/assetResolver";
 import useLockScreen from "@/hooks/useLockScreen";
 import LockScreen from "@/features/lock-screen/components/LockScreen";
@@ -154,7 +154,7 @@ export default function SubAppRoot() {
         return;
       }
       if (payload.type === "subapp:devtools-open") {
-        callTauri("open_devtools").catch(() => {});
+        invokeTauriCommand("open_devtools").catch(() => {});
       }
     };
     return () => {

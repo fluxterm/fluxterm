@@ -1,5 +1,7 @@
 //! 前端配置文档与背景资源的受限存储命令。
 
+const BACKGROUND_WRITE_FAILED_CODE: &str = "background_write_failed";
+
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -183,14 +185,14 @@ fn valid_background_file_name(file_name: &std::ffi::OsStr) -> bool {
 fn write_binary_atomic(path: &Path, bytes: &[u8]) -> Result<(), EngineError> {
     let parent = path.parent().ok_or_else(|| {
         EngineError::new(
-            "background_write_failed",
+            BACKGROUND_WRITE_FAILED_CODE,
             "Failed to resolve the background media directory",
         )
     })?;
     let temporary = parent.join(format!(".background-{}.tmp", Uuid::new_v4()));
     fs::write(&temporary, bytes).map_err(|error| {
         EngineError::with_detail(
-            "background_write_failed",
+            BACKGROUND_WRITE_FAILED_CODE,
             "Failed to write the background media",
             error.to_string(),
         )
@@ -198,7 +200,7 @@ fn write_binary_atomic(path: &Path, bytes: &[u8]) -> Result<(), EngineError> {
     fs::rename(&temporary, path).map_err(|error| {
         let _ = fs::remove_file(&temporary);
         EngineError::with_detail(
-            "background_write_failed",
+            BACKGROUND_WRITE_FAILED_CODE,
             "Failed to commit the background media",
             error.to_string(),
         )

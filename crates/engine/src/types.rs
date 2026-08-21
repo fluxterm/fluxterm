@@ -104,7 +104,7 @@ pub enum SessionKind {
 }
 
 /// 会话元数据。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub session_id: String,
@@ -315,7 +315,7 @@ pub struct SshTunnelSpec {
 }
 
 /// SSH 隧道运行时快照。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshTunnelRuntime {
     pub tunnel_id: String,
@@ -372,7 +372,7 @@ pub struct ProxySpec {
 }
 
 /// 代理实例运行时快照。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProxyRuntime {
     pub proxy_id: String,

@@ -35,7 +35,7 @@ impl<'a> SecretStore<'a> {
         match value {
             Some(raw) if raw.trim().is_empty() => Ok(None),
             Some(raw) if !raw.starts_with("enc:v1:") => Err(EngineError::new(
-                "secret_format_unsupported",
+                crate::security::SECRET_FORMAT_UNSUPPORTED_CODE,
                 "Invalid credential format; only enc:v1 ciphertext is supported",
             )),
             Some(raw) => self.crypto.decrypt_string(&raw).map(Some),

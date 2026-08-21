@@ -156,7 +156,7 @@ import {
   cloneSerialProfile,
   createDefaultSerialProfile,
 } from "@/features/serial/core/defaults";
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import {
   extractErrorMessage,
   translateAppError,
@@ -1347,7 +1347,7 @@ export default function AppShell() {
   });
   const openCurrentDevtools = useMemo(
     () => () => {
-      callTauri("open_devtools").catch(() => {});
+      invokeTauriCommand("open_devtools").catch(() => {});
     },
     [],
   );

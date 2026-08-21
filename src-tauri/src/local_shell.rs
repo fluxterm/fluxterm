@@ -13,6 +13,11 @@
 //! - Windows 当前不注入 `chcp`，避免在 shell 启动阶段引入额外输出或续行副作用。
 //!
 //! UI 可能按 profile 类型隐藏部分字段，但隐藏仅限展示层；底层启动参数模型仍保留这些字段。
+const LOCAL_SHELL_FAILED_CODE: &str = "local_shell_failed";
+const LOCAL_SHELL_LOCK_FAILED_CODE: &str = "local_shell_lock_failed";
+const LOCAL_SHELL_MISSING_CODE: &str = "local_shell_missing";
+const LOCAL_SHELL_WRITE_FAILED_CODE: &str = "local_shell_write_failed";
+
 use std::collections::HashMap;
 use std::env;
 use std::io::{Read, Write};
@@ -394,7 +399,7 @@ fn resolve_shell_profile(shell_id: Option<String>) -> Result<LocalShellProfile, 
     let shells = collect_shells();
     if shells.is_empty() {
         return Err(EngineError::new(
-            "local_shell_missing",
+            LOCAL_SHELL_MISSING_CODE,
             "No available shell was found",
         ));
     }
@@ -403,12 +408,13 @@ fn resolve_shell_profile(shell_id: Option<String>) -> Result<LocalShellProfile, 
     {
         return Ok(shell.clone());
     }
-    let fallback = default_shell_id(&shells)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "No available shell was found"))?;
+    let fallback = default_shell_id(&shells).ok_or_else(|| {
+        EngineError::new(LOCAL_SHELL_MISSING_CODE, "No available shell was found")
+    })?;
     shells
         .into_iter()
         .find(|shell| shell.id == fallback)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "No available shell was found"))
+        .ok_or_else(|| EngineError::new(LOCAL_SHELL_MISSING_CODE, "No available shell was found"))
 }
 
 fn normalize_terminal_type(value: &str) -> Option<&'static str> {
@@ -456,7 +462,7 @@ pub fn start_local_shell(
     });
     let pair = pty_pair.map_err(|err| {
         EngineError::with_detail(
-            "local_shell_failed",
+            LOCAL_SHELL_FAILED_CODE,
             "Failed to create the local terminal",
             err.to_string(),
         )
@@ -507,7 +513,7 @@ pub fn start_local_shell(
     }
     let mut child = pair.slave.spawn_command(command).map_err(|err| {
         EngineError::with_detail(
-            "local_shell_failed",
+            LOCAL_SHELL_FAILED_CODE,
             "Failed to start the local shell",
             err.to_string(),
         )
@@ -516,14 +522,14 @@ pub fn start_local_shell(
 
     let mut reader = pair.master.try_clone_reader().map_err(|err| {
         EngineError::with_detail(
-            "local_shell_failed",
+            LOCAL_SHELL_FAILED_CODE,
             "Failed to read local terminal output",
             err.to_string(),
         )
     })?;
     let writer = pair.master.take_writer().map_err(|err| {
         EngineError::with_detail(
-            "local_shell_failed",
+            LOCAL_SHELL_FAILED_CODE,
             "Failed to write to the local terminal",
             err.to_string(),
         )
@@ -613,7 +619,7 @@ pub fn start_local_shell(
 
     let mut sessions = state.sessions.lock().map_err(|_| {
         EngineError::new(
-            "local_shell_lock_failed",
+            LOCAL_SHELL_LOCK_FAILED_CODE,
             "Local shell state is unavailable",
         )
     })?;
@@ -637,23 +643,23 @@ pub fn write_local_shell(
 ) -> Result<(), EngineError> {
     let mut sessions = state.sessions.lock().map_err(|_| {
         EngineError::new(
-            "local_shell_lock_failed",
+            LOCAL_SHELL_LOCK_FAILED_CODE,
             "Local shell state is unavailable",
         )
     })?;
-    let handle = sessions
-        .get_mut(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
+    let handle = sessions.get_mut(session_id).ok_or_else(|| {
+        EngineError::new(LOCAL_SHELL_MISSING_CODE, "Local shell session not found")
+    })?;
     handle.writer.write_all(data).map_err(|err| {
         EngineError::with_detail(
-            "local_shell_write_failed",
+            LOCAL_SHELL_WRITE_FAILED_CODE,
             "Failed to write to the local shell",
             err.to_string(),
         )
     })?;
     handle.writer.flush().map_err(|err| {
         EngineError::with_detail(
-            "local_shell_write_failed",
+            LOCAL_SHELL_WRITE_FAILED_CODE,
             "Failed to flush the local shell",
             err.to_string(),
         )
@@ -670,13 +676,13 @@ pub fn resize_local_shell(
 ) -> Result<(), EngineError> {
     let mut sessions = state.sessions.lock().map_err(|_| {
         EngineError::new(
-            "local_shell_lock_failed",
+            LOCAL_SHELL_LOCK_FAILED_CODE,
             "Local shell state is unavailable",
         )
     })?;
-    let handle = sessions
-        .get_mut(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
+    let handle = sessions.get_mut(session_id).ok_or_else(|| {
+        EngineError::new(LOCAL_SHELL_MISSING_CODE, "Local shell session not found")
+    })?;
     handle
         .master
         .resize(PtySize {
@@ -699,13 +705,13 @@ pub fn resize_local_shell(
 pub fn stop_local_shell(state: &LocalShellState, session_id: &str) -> Result<(), EngineError> {
     let mut sessions = state.sessions.lock().map_err(|_| {
         EngineError::new(
-            "local_shell_lock_failed",
+            LOCAL_SHELL_LOCK_FAILED_CODE,
             "Local shell state is unavailable",
         )
     })?;
-    let mut handle = sessions
-        .remove(session_id)
-        .ok_or_else(|| EngineError::new("local_shell_missing", "Local shell session not found"))?;
+    let mut handle = sessions.remove(session_id).ok_or_else(|| {
+        EngineError::new(LOCAL_SHELL_MISSING_CODE, "Local shell session not found")
+    })?;
     let _ = handle.killer.kill();
     Ok(())
 }

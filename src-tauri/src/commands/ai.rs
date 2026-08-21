@@ -1,5 +1,8 @@
 //! AI 能力命令。
 
+const AI_EVENT_EMIT_FAILED_CODE: &str = "ai_event_emit_failed";
+const AI_REQUEST_FAILED_CODE: &str = "ai_request_failed";
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -130,7 +133,7 @@ pub async fn ai_session_chat_stream_start(
         )
         .map_err(|err| {
             EngineError::with_detail(
-                "ai_event_emit_failed",
+                AI_EVENT_EMIT_FAILED_CODE,
                 "Failed to emit the AI streaming event",
                 err.to_string(),
             )
@@ -144,7 +147,7 @@ pub async fn ai_session_chat_stream_start(
         )
         .map_err(|err| {
             EngineError::with_detail(
-                "ai_event_emit_failed",
+                AI_EVENT_EMIT_FAILED_CODE,
                 "Failed to emit the AI streaming event",
                 err.to_string(),
             )
@@ -248,8 +251,8 @@ fn map_openai_error(error: openai::OpenAiError) -> EngineError {
         openai::OpenAiError::ResponseInvalid(message) => {
             EngineError::new("ai_response_invalid", message)
         }
-        openai::OpenAiError::Request(message) => EngineError::new("ai_request_failed", message),
-        openai::OpenAiError::Http(_, message) => EngineError::new("ai_request_failed", message),
+        openai::OpenAiError::Request(message) => EngineError::new(AI_REQUEST_FAILED_CODE, message),
+        openai::OpenAiError::Http(_, message) => EngineError::new(AI_REQUEST_FAILED_CODE, message),
     }
 }
 
@@ -258,7 +261,7 @@ struct OpenAiToEngineError(EngineError);
 impl OpenAiToEngineError {
     fn from_emit(error: tauri::Error) -> Self {
         Self(EngineError::with_detail(
-            "ai_event_emit_failed",
+            AI_EVENT_EMIT_FAILED_CODE,
             "Failed to emit the AI streaming event",
             error.to_string(),
         ))

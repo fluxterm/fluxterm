@@ -11,7 +11,7 @@ use crate::ai::{
 };
 use crate::remote_edit::RemoteEditState;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SessionStatusPayload {
     session_id: String,

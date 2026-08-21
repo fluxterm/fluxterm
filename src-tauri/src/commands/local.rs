@@ -11,7 +11,7 @@ use crate::local_fs::local_list_entries;
 pub fn local_home(app: AppHandle) -> Result<String, EngineError> {
     let path = app.path().home_dir().map_err(|err| {
         EngineError::with_detail(
-            "local_home_failed",
+            crate::utils::LOCAL_HOME_FAILED_CODE,
             "Failed to resolve the local home directory",
             err.to_string(),
         )
@@ -30,7 +30,7 @@ pub fn local_list(path: String) -> Result<Vec<engine::SftpEntry>, EngineError> {
 pub fn local_ssh_keys(app: AppHandle) -> Result<Vec<String>, EngineError> {
     let home = app.path().home_dir().map_err(|err| {
         EngineError::with_detail(
-            "local_home_failed",
+            crate::utils::LOCAL_HOME_FAILED_CODE,
             "Failed to resolve the local home directory",
             err.to_string(),
         )

@@ -2,6 +2,14 @@
 //!
 //! 本模块只负责把目标 SSH 握手需要的字节流准备好。Profile 存储、凭据解密和
 //! Host Key 信任策略仍由调用方负责，避免 engine 反向依赖 Tauri 存储层。
+const SSH_JUMP_MISSING_CODE: &str = "ssh_jump_missing";
+pub const SSH_CONNECT_FAILED_CODE: &str = "ssh_connect_failed";
+pub const SSH_JUMP_DEPTH_EXCEEDED_CODE: &str = "ssh_jump_depth_exceeded";
+const SSH_PROXY_AUTH_FAILED_CODE: &str = "ssh_proxy_auth_failed";
+const SSH_PROXY_DNS_FAILED_CODE: &str = "ssh_proxy_dns_failed";
+const SSH_PROXY_HTTP_FAILED_CODE: &str = "ssh_proxy_http_failed";
+const SSH_PROXY_SOCKS5_FAILED_CODE: &str = "ssh_proxy_socks5_failed";
+
 use std::net::IpAddr;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::process::Command;
@@ -105,7 +113,7 @@ pub async fn connect_ssh_client(
 ) -> Result<SshClientConnection, EngineError> {
     if jump_spec.hosts.len() > SSH_JUMP_MAX_DEPTH {
         return Err(EngineError::with_detail(
-            "ssh_jump_depth_exceeded",
+            SSH_JUMP_DEPTH_EXCEEDED_CODE,
             "Jump chain exceeds the maximum depth",
             format!(
                 "maxDepth={SSH_JUMP_MAX_DEPTH} actual={}",
@@ -123,7 +131,7 @@ pub async fn connect_ssh_client(
         } else {
             let stream = open_direct_stream(
                 jump_handles.last().ok_or_else(|| {
-                    EngineError::new("ssh_jump_missing", "Jump chain state is missing")
+                    EngineError::new(SSH_JUMP_MISSING_CODE, "Jump chain state is missing")
                 })?,
                 &jump.profile,
             )
@@ -162,7 +170,7 @@ where
 {
     if jump_spec.hosts.len() > SSH_JUMP_MAX_DEPTH {
         return Err(EngineError::with_detail(
-            "ssh_jump_depth_exceeded",
+            SSH_JUMP_DEPTH_EXCEEDED_CODE,
             "Jump chain exceeds the maximum depth",
             format!(
                 "maxDepth={SSH_JUMP_MAX_DEPTH} actual={}",
@@ -179,7 +187,7 @@ where
         } else {
             let stream = open_direct_stream(
                 jump_handles.last().ok_or_else(|| {
-                    EngineError::new("ssh_jump_missing", "Jump chain state is missing")
+                    EngineError::new(SSH_JUMP_MISSING_CODE, "Jump chain state is missing")
                 })?,
                 &jump.profile,
             )
@@ -216,7 +224,7 @@ where
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "ssh_connect_failed",
+                SSH_CONNECT_FAILED_CODE,
                 "Failed to connect to target host",
                 err.to_string(),
             )
@@ -266,7 +274,7 @@ async fn connect_direct(profile: &HostProfile) -> Result<SshTransportStream, Eng
         .map(SshTransportStream::Tcp)
         .map_err(|err| {
             EngineError::with_detail(
-                "ssh_connect_failed",
+                SSH_CONNECT_FAILED_CODE,
                 "Failed to connect to target host",
                 err.to_string(),
             )
@@ -308,14 +316,14 @@ async fn resolve_proxy_target(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "ssh_proxy_dns_failed",
+                SSH_PROXY_DNS_FAILED_CODE,
                 "Local DNS failed to resolve target host",
                 err.to_string(),
             )
         })?;
     let addr = addrs.next().ok_or_else(|| {
         EngineError::new(
-            "ssh_proxy_dns_failed",
+            SSH_PROXY_DNS_FAILED_CODE,
             "Local DNS did not return a usable target address",
         )
     })?;
@@ -353,7 +361,7 @@ async fn http_connect(
     request.push_str("\r\n");
     stream.write_all(request.as_bytes()).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_proxy_http_failed",
+            SSH_PROXY_HTTP_FAILED_CODE,
             "HTTP proxy handshake failed",
             err.to_string(),
         )
@@ -364,7 +372,7 @@ async fn http_connect(
     while response.len() < 8192 {
         let n = stream.read(&mut buf).await.map_err(|err| {
             EngineError::with_detail(
-                "ssh_proxy_http_failed",
+                SSH_PROXY_HTTP_FAILED_CODE,
                 "HTTP proxy handshake failed",
                 err.to_string(),
             )
@@ -387,11 +395,11 @@ async fn http_connect(
     match status {
         200 => Ok(()),
         407 => Err(EngineError::new(
-            "ssh_proxy_auth_failed",
+            SSH_PROXY_AUTH_FAILED_CODE,
             "HTTP proxy authentication failed",
         )),
         _ => Err(EngineError::with_detail(
-            "ssh_proxy_http_failed",
+            SSH_PROXY_HTTP_FAILED_CODE,
             "HTTP proxy rejected the connection",
             text.lines().next().unwrap_or("").to_string(),
         )),
@@ -420,13 +428,13 @@ async fn socks5_connect(
         .map_err(socks_io_error)?;
     if selected[0] != 0x05 {
         return Err(EngineError::new(
-            "ssh_proxy_socks5_failed",
+            SSH_PROXY_SOCKS5_FAILED_CODE,
             "Invalid SOCKS5 proxy response",
         ));
     }
     if selected[1] == 0xff {
         return Err(EngineError::new(
-            "ssh_proxy_auth_failed",
+            SSH_PROXY_AUTH_FAILED_CODE,
             "SOCKS5 proxy does not accept the authentication method",
         ));
     }
@@ -441,7 +449,7 @@ async fn socks5_connect(
             let host_bytes = host.as_bytes();
             if host_bytes.len() > u8::MAX as usize {
                 return Err(EngineError::new(
-                    "ssh_proxy_socks5_failed",
+                    SSH_PROXY_SOCKS5_FAILED_CODE,
                     "SOCKS5 target host name is too long",
                 ));
             }
@@ -465,13 +473,13 @@ async fn socks5_connect(
     stream.read_exact(&mut head).await.map_err(socks_io_error)?;
     if head[0] != 0x05 {
         return Err(EngineError::new(
-            "ssh_proxy_socks5_failed",
+            SSH_PROXY_SOCKS5_FAILED_CODE,
             "Invalid SOCKS5 proxy response",
         ));
     }
     if head[1] != 0x00 {
         return Err(EngineError::with_detail(
-            "ssh_proxy_socks5_failed",
+            SSH_PROXY_SOCKS5_FAILED_CODE,
             "SOCKS5 proxy failed to connect to target",
             format!("reply={}", head[1]),
         ));
@@ -485,7 +493,7 @@ async fn socks5_auth(stream: &mut TcpStream, proxy: &SshProxyConfig) -> Result<(
     let password = proxy.password_ref.as_deref().unwrap_or("");
     if username.len() > u8::MAX as usize || password.len() > u8::MAX as usize {
         return Err(EngineError::new(
-            "ssh_proxy_auth_failed",
+            SSH_PROXY_AUTH_FAILED_CODE,
             "SOCKS5 proxy credentials are too long",
         ));
     }
@@ -501,7 +509,7 @@ async fn socks5_auth(stream: &mut TcpStream, proxy: &SshProxyConfig) -> Result<(
         .map_err(socks_io_error)?;
     if response != [0x01, 0x00] {
         return Err(EngineError::new(
-            "ssh_proxy_auth_failed",
+            SSH_PROXY_AUTH_FAILED_CODE,
             "SOCKS5 proxy authentication failed",
         ));
     }
@@ -526,7 +534,7 @@ async fn read_socks5_bound_addr(stream: &mut TcpStream, atyp: u8) -> Result<(), 
         }
         _ => {
             return Err(EngineError::new(
-                "ssh_proxy_socks5_failed",
+                SSH_PROXY_SOCKS5_FAILED_CODE,
                 "Invalid SOCKS5 address type",
             ));
         }
@@ -536,7 +544,7 @@ async fn read_socks5_bound_addr(stream: &mut TcpStream, atyp: u8) -> Result<(), 
 
 fn socks_io_error(err: std::io::Error) -> EngineError {
     EngineError::with_detail(
-        "ssh_proxy_socks5_failed",
+        SSH_PROXY_SOCKS5_FAILED_CODE,
         "SOCKS5 proxy handshake failed",
         err.to_string(),
     )

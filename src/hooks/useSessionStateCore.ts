@@ -12,7 +12,6 @@ import type { Translate } from "@/i18n";
 import type {
   AppEvent,
   DisconnectReason,
-  EngineErrorView,
   HostProfile,
   LocalShellConfig,
   LocalSessionMeta,
@@ -32,7 +31,7 @@ import {
 import { useNotices } from "@/hooks/useNotices";
 import { inferDisconnectReason } from "@/features/session/core/disconnectReason";
 import type { HostKeyVerificationRequiredPayload } from "@/features/session/core/listeners";
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { registerSessionListeners } from "@/features/session/core/listeners";
 import { replaceSessionConnectionState } from "@/features/session/core/lifecycle";
 import {
@@ -47,7 +46,10 @@ import {
   disconnectSessionCommand,
   reconnectLocalShellCommand,
 } from "@/features/session/core/commands";
-import { translateAppError } from "@/shared/errors/appError";
+import {
+  translateAppError,
+  type BackendErrorPayload,
+} from "@/shared/errors/appError";
 
 const appEventStorageKey = "fluxterm.appEvents";
 const maxAppEvents = 10;
@@ -291,7 +293,7 @@ export default function useSessionState({
     handleSessionStatus: (payload: {
       sessionId: string;
       state: SessionStateUi;
-      error?: EngineErrorView;
+      error?: BackendErrorPayload;
     }) => void;
     handleHostKeyVerificationRequired: (
       payload: HostKeyVerificationRequiredPayload,
@@ -492,7 +494,7 @@ export default function useSessionState({
 
   async function createSshSession(profile: HostProfile) {
     const { cols, rows } = getTerminalSize();
-    return await callTauri<Session>("ssh_connect", {
+    return await invokeTauriCommand<Session>("ssh_connect", {
       profile,
       size: { cols, rows },
       operationId: createOperationId(),
@@ -513,7 +515,7 @@ export default function useSessionState({
       if (launchConfig) {
         payload.launchConfig = launchConfig;
       }
-      return await callTauri<Session>("local_shell_connect", payload);
+      return await invokeTauriCommand<Session>("local_shell_connect", payload);
     },
     [getTerminalSize, shellId],
   );
@@ -561,7 +563,7 @@ export default function useSessionState({
     const previousInput = sessionInputQueueRef.current[sessionId];
     const queuedInput = (previousInput ?? Promise.resolve()).then(async () => {
       try {
-        const result = await callTauri<unknown>(command, payload);
+        const result = await invokeTauriCommand<unknown>(command, payload);
         if (kind === "serial") {
           const bytes =
             input.kind === "binary"
@@ -608,7 +610,7 @@ export default function useSessionState({
   function resizeSession(sessionId: string, cols: number, rows: number) {
     const kind = getSessionKind(sessionId);
     if (kind === "serial" || !kind) return Promise.resolve();
-    return callTauri(
+    return invokeTauriCommand(
       kind === "localShell" ? "local_shell_resize" : "ssh_resize",
       {
         sessionId,
@@ -844,7 +846,7 @@ export default function useSessionState({
               pendingHostKeyReconnectSessionByProfileRef.current[
                 payload.profileId
               ] ?? null;
-            callTauri("ssh_host_key_confirm", {
+            invokeTauriCommand("ssh_host_key_confirm", {
               host: payload.host,
               port: payload.port,
               keyAlgorithm: payload.keyAlgorithm,
@@ -978,12 +980,12 @@ export default function useSessionState({
       options: { operationId: string; isCancelled?: () => boolean },
     ) => {
       try {
-        const session = await callTauri<Session>("serial_connect", {
+        const session = await invokeTauriCommand<Session>("serial_connect", {
           operationId: options.operationId,
           profile,
         });
         if (options?.isCancelled?.()) {
-          await callTauri("serial_disconnect", {
+          await invokeTauriCommand("serial_disconnect", {
             sessionId: session.sessionId,
           }).catch(() => {});
           setSessionStates((current) => {
@@ -1034,7 +1036,9 @@ export default function useSessionState({
 
   /** 取消尚未完成的串口连接任务。 */
   const cancelSerialConnect = useCallback((operationId: string) => {
-    return callTauri<boolean>("serial_cancel_connect", { operationId });
+    return invokeTauriCommand<boolean>("serial_cancel_connect", {
+      operationId,
+    });
   }, []);
 
   async function disconnectSession(sessionId: string) {
@@ -1051,7 +1055,7 @@ export default function useSessionState({
           localShell: "local_shell_disconnect",
           serial: "serial_disconnect",
         };
-        return callTauri(command[nextKind], { sessionId: id });
+        return invokeTauriCommand(command[nextKind], { sessionId: id });
       },
       detachSessionFromWorkspace: sessionWorkspace.detachSession,
       localSessionIdsRef,
@@ -1078,7 +1082,7 @@ export default function useSessionState({
       await disconnectSession(sessionId);
       return;
     }
-    await callTauri("ssh_disconnect", { sessionId }).catch(() => {});
+    await invokeTauriCommand("ssh_disconnect", { sessionId }).catch(() => {});
   }
 
   async function reconnectSession(sessionId: string) {
@@ -1094,10 +1098,13 @@ export default function useSessionState({
         [sessionId]: "reconnecting",
       }));
       try {
-        const nextSession = await callTauri<Session>("serial_connect", {
-          operationId: createOperationId(),
-          profile,
-        });
+        const nextSession = await invokeTauriCommand<Session>(
+          "serial_connect",
+          {
+            operationId: createOperationId(),
+            profile,
+          },
+        );
         replaceSessionConnection(sessionId, nextSession, "connected");
         setSerialSessionProfiles((current) => {
           const next = { ...current };

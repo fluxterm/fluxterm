@@ -1,5 +1,8 @@
 //! 终端 AI 助手配置读取与持久化。
 
+const AI_SETTINGS_INVALID_CODE: &str = "ai_settings_invalid";
+const AI_SETTINGS_PARSE_FAILED_CODE: &str = "ai_settings_parse_failed";
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
@@ -176,7 +179,7 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
     })?;
     let raw_value: serde_json::Value = serde_json::from_str(&content).map_err(|err| {
         EngineError::with_detail(
-            "ai_settings_parse_failed",
+            AI_SETTINGS_PARSE_FAILED_CODE,
             "Failed to parse the terminal AI settings file",
             err.to_string(),
         )
@@ -189,7 +192,7 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
         1 => {
             let settings: AiSettings = serde_json::from_value(raw_value).map_err(|err| {
                 EngineError::with_detail(
-                    "ai_settings_parse_failed",
+                    AI_SETTINGS_PARSE_FAILED_CODE,
                     "Failed to parse the terminal AI settings file",
                     err.to_string(),
                 )
@@ -197,7 +200,7 @@ pub fn read_ai_settings(app: &AppHandle) -> Result<AiSettings, EngineError> {
             validate_ai_settings(settings)
         }
         _ => Err(EngineError::new(
-            "ai_settings_parse_failed",
+            AI_SETTINGS_PARSE_FAILED_CODE,
             "The terminal AI settings file version is unsupported",
         )),
     }
@@ -281,7 +284,7 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
     settings.version = CURRENT_AI_SETTINGS_VERSION;
     if settings.selection_max_chars == 0 {
         return Err(EngineError::new(
-            "ai_settings_invalid",
+            AI_SETTINGS_INVALID_CODE,
             "selectionMaxChars in the terminal AI settings must be greater than zero",
         ));
     }
@@ -293,7 +296,7 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
         || settings.request_timeout_ms == 0
     {
         return Err(EngineError::new(
-            "ai_settings_invalid",
+            AI_SETTINGS_INVALID_CODE,
             "Context budgets, cache TTL, and request timeout in the terminal AI settings must be greater than zero",
         ));
     }
@@ -311,13 +314,13 @@ fn validate_ai_settings(mut settings: AiSettings) -> Result<AiSettings, EngineEr
             .filter(|value| !value.is_empty());
         if provider.id.is_empty() {
             return Err(EngineError::new(
-                "ai_settings_invalid",
+                AI_SETTINGS_INVALID_CODE,
                 "AI provider configuration id is required",
             ));
         }
         if !seen_ids.insert(provider.id.clone()) {
             return Err(EngineError::new(
-                "ai_settings_invalid",
+                AI_SETTINGS_INVALID_CODE,
                 "AI provider configuration ids must be unique",
             ));
         }

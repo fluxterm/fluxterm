@@ -19,7 +19,7 @@ pub fn file_open(
     let started_at = Instant::now();
     if !Path::new(&file_path).is_file() {
         return Err(EngineError::new(
-            "file_open_failed",
+            crate::utils::FILE_OPEN_FAILED_CODE,
             "The target file does not exist or is inaccessible",
         ));
     }
@@ -90,7 +90,7 @@ pub fn file_open(
         }
         Err(error) => {
             let error = EngineError::with_detail(
-                "file_open_failed",
+                crate::utils::FILE_OPEN_FAILED_CODE,
                 "Failed to open the file",
                 error.to_string(),
             );
@@ -104,7 +104,7 @@ pub fn file_open(
                     "error": {
                         "code": &error.code,
                         "message": &error.message,
-                        "detail": &error.detail,
+                        "detail": &error.details,
                     }
                 }),
             );

@@ -24,6 +24,15 @@
 //! 上传与下载日志仅记录会话、耗时和最终字节数，不记录路径或文件名。
 //! `elapsed_ms`、`transferred_bytes` 与 `total_bytes`。成功事件额外记录平均速率，
 //! 失败事件额外记录 `error_code`、`error_message` 与 `error_detail`。
+const SFTP_DOWNLOAD_FAILED_CODE: &str = "sftp_download_failed";
+const SFTP_INIT_FAILED_CODE: &str = "sftp_init_failed";
+const SFTP_LIST_FAILED_CODE: &str = "sftp_list_failed";
+const SFTP_MKDIR_FAILED_CODE: &str = "sftp_mkdir_failed";
+const SFTP_REMOVE_FAILED_CODE: &str = "sftp_remove_failed";
+const SFTP_STAT_FAILED_CODE: &str = "sftp_stat_failed";
+const SFTP_TRANSFER_FAILED_CODE: &str = "sftp_transfer_failed";
+const SFTP_UPLOAD_FAILED_CODE: &str = "sftp_upload_failed";
+
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use russh::client;
 use russh_sftp::client::error::Error as SftpClientError;
@@ -688,7 +697,7 @@ pub async fn sftp_list(
     let sftp = open_sftp(session).await?;
     let entries = sftp.read_dir(path.to_string()).await.map_err(|err| {
         let err = EngineError::with_detail(
-            "sftp_list_failed",
+            SFTP_LIST_FAILED_CODE,
             "Failed to read the directory",
             err.to_string(),
         );
@@ -776,9 +785,10 @@ pub async fn sftp_stat(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
             EngineError::new(
-                "sftp_stat_failed",
+                SFTP_STAT_FAILED_CODE,
                 "Unable to determine the remote path name",
             )
+            .with_message_key("sftp.remoteEdit.remoteMissing")
         })?;
     let entries = sftp_list(session, &parent).await?;
     entries
@@ -786,9 +796,10 @@ pub async fn sftp_stat(
         .find(|entry| entry.path == normalized || entry.name == file_name)
         .ok_or_else(|| {
             EngineError::new(
-                "sftp_stat_failed",
+                SFTP_STAT_FAILED_CODE,
                 "The remote file does not exist or is inaccessible",
             )
+            .with_message_key("sftp.remoteEdit.remoteMissing")
         })
 }
 
@@ -812,7 +823,7 @@ pub(crate) async fn sftp_upload(
     let (sftp, limits) = open_raw_sftp(session).await?;
     let mut local = tokio::fs::File::open(local_path).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to read the local file",
             err.to_string(),
         )
@@ -855,7 +866,7 @@ pub(crate) async fn sftp_upload(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Failed to create the remote file",
                 err.to_string(),
             )
@@ -894,7 +905,7 @@ pub(crate) async fn sftp_upload(
         }
         let n = local.read(&mut buf).await.map_err(|err| {
             EngineError::with_detail(
-                "sftp_transfer_failed",
+                SFTP_TRANSFER_FAILED_CODE,
                 "Failed to read file data",
                 err.to_string(),
             )
@@ -948,7 +959,7 @@ pub(crate) async fn sftp_upload(
                             performance.requests_discarded(in_flight.len() + 1);
                         }
                         let err = EngineError::with_detail(
-                            "sftp_transfer_failed",
+                            SFTP_TRANSFER_FAILED_CODE,
                             "Failed to write file data",
                             err.to_string(),
                         );
@@ -996,7 +1007,7 @@ pub(crate) async fn sftp_upload(
                 })
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_transfer_failed",
+                        SFTP_TRANSFER_FAILED_CODE,
                         "Failed to write file data",
                         err.to_string(),
                     )
@@ -1069,7 +1080,7 @@ pub(crate) async fn sftp_upload(
                     performance.requests_discarded(in_flight.len() + 1);
                 }
                 let err = EngineError::with_detail(
-                    "sftp_transfer_failed",
+                    SFTP_TRANSFER_FAILED_CODE,
                     "Failed to write file data",
                     err.to_string(),
                 );
@@ -1097,7 +1108,7 @@ pub(crate) async fn sftp_upload(
 
     sftp.close(handle_id).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to close the remote file",
             err.to_string(),
         )
@@ -1134,14 +1145,14 @@ fn classify_upload_roots(roots: &[PathBuf]) -> Result<UploadJobKind, EngineError
     for root in roots {
         let metadata = fs::symlink_metadata(root).map_err(|err| {
             EngineError::with_detail(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Failed to read local upload path metadata",
                 err.to_string(),
             )
         })?;
         if metadata.file_type().is_symlink() {
             return Err(EngineError::new(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Uploading symbolic links is not supported",
             ));
         }
@@ -1151,7 +1162,7 @@ fn classify_upload_roots(roots: &[PathBuf]) -> Result<UploadJobKind, EngineError
             UploadJobKind::Directory
         } else {
             return Err(EngineError::new(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Uploading this entry type is not supported",
             ));
         };
@@ -1162,7 +1173,7 @@ fn classify_upload_roots(roots: &[PathBuf]) -> Result<UploadJobKind, EngineError
     } else {
         single_kind.ok_or_else(|| {
             EngineError::new(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "No local paths were provided for upload",
             )
         })
@@ -1191,7 +1202,7 @@ pub(crate) async fn sftp_upload_paths(
         .collect();
     if local_roots.is_empty() {
         return Err(EngineError::new(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "No local paths were provided for upload",
         ));
     }
@@ -1283,7 +1294,7 @@ pub(crate) async fn sftp_upload_paths(
                     "error": {
                         "code": err.code,
                         "message": err.message,
-                        "detail": err.detail,
+                        "detail": err.details,
                     }
                 }),
             );
@@ -1316,7 +1327,7 @@ pub(crate) async fn sftp_upload_paths(
                         "error": {
                             "code": err.code,
                             "message": err.message,
-                            "detail": err.detail,
+                            "detail": err.details,
                         }
                     }),
                 );
@@ -1372,7 +1383,7 @@ pub(crate) async fn sftp_upload_paths(
             Ok(())
         }
         _ => {
-            let err = EngineError::new("sftp_upload_failed", "Upload paths task failed");
+            let err = EngineError::new(SFTP_UPLOAD_FAILED_CODE, "Upload paths task failed");
             log_sftp_failure(
                 SftpLogEvent::UploadPathsFailed,
                 &TransferLogContext {
@@ -1399,7 +1410,7 @@ async fn upload_local_file_to_remote(
 ) -> Result<u64, EngineError> {
     let mut local = tokio::fs::File::open(local_path).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to read the local file",
             err.to_string(),
         )
@@ -1413,7 +1424,7 @@ async fn upload_local_file_to_remote(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Failed to create the remote file",
                 err.to_string(),
             )
@@ -1436,7 +1447,7 @@ async fn upload_local_file_to_remote(
         }
         let n = local.read(&mut buf).await.map_err(|err| {
             EngineError::with_detail(
-                "sftp_transfer_failed",
+                SFTP_TRANSFER_FAILED_CODE,
                 "Failed to read file data",
                 err.to_string(),
             )
@@ -1468,7 +1479,7 @@ async fn upload_local_file_to_remote(
                     in_flight.abort_all();
                     let _ = sftp.close(handle_id.clone()).await;
                     return Err(EngineError::with_detail(
-                        "sftp_transfer_failed",
+                        SFTP_TRANSFER_FAILED_CODE,
                         "Failed to write file data",
                         err.to_string(),
                     ));
@@ -1498,7 +1509,7 @@ async fn upload_local_file_to_remote(
                 })
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_transfer_failed",
+                        SFTP_TRANSFER_FAILED_CODE,
                         "Failed to write file data",
                         err.to_string(),
                     )
@@ -1540,7 +1551,7 @@ async fn upload_local_file_to_remote(
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(EngineError::with_detail(
-                    "sftp_transfer_failed",
+                    SFTP_TRANSFER_FAILED_CODE,
                     "Failed to write file data",
                     err.to_string(),
                 ));
@@ -1550,7 +1561,7 @@ async fn upload_local_file_to_remote(
 
     sftp.close(handle_id).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to close the remote file",
             err.to_string(),
         )
@@ -1573,7 +1584,7 @@ async fn ensure_remote_dir_exists_raw(
                 Ok(())
             } else {
                 Err(EngineError::with_detail(
-                    "sftp_mkdir_failed",
+                    SFTP_MKDIR_FAILED_CODE,
                     "Failed to create the directory",
                     err.to_string(),
                 ))
@@ -1640,7 +1651,7 @@ fn stream_local_upload_tasks(
 ) -> Result<(), EngineError> {
     let metadata = fs::symlink_metadata(root).map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to read local file metadata",
             err.to_string(),
         )
@@ -1648,7 +1659,7 @@ fn stream_local_upload_tasks(
     if metadata.file_type().is_symlink() {
         pipeline_discover_failed_item(state, emit_context);
         return Err(EngineError::new(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Uploading symbolic links is not supported",
         ));
     }
@@ -1659,7 +1670,7 @@ fn stream_local_upload_tasks(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
             EngineError::new(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Unable to determine the upload root name",
             )
         })?
@@ -1675,7 +1686,7 @@ fn stream_local_upload_tasks(
         })
         .map_err(|err| {
             EngineError::with_detail(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Failed to schedule the upload task",
                 err.to_string(),
             )
@@ -1686,7 +1697,7 @@ fn stream_local_upload_tasks(
     if !metadata.is_dir() {
         pipeline_discover_failed_item(state, emit_context);
         return Err(EngineError::new(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Uploading this entry type is not supported",
         ));
     }
@@ -1698,7 +1709,7 @@ fn stream_local_upload_tasks(
     })
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_upload_failed",
+            SFTP_UPLOAD_FAILED_CODE,
             "Failed to schedule the directory creation task",
             err.to_string(),
         )
@@ -1711,14 +1722,14 @@ fn stream_local_upload_tasks(
         }
         for entry in fs::read_dir(&current_dir).map_err(|err| {
             EngineError::with_detail(
-                "sftp_upload_failed",
+                SFTP_UPLOAD_FAILED_CODE,
                 "Failed to read the local directory",
                 err.to_string(),
             )
         })? {
             let entry = entry.map_err(|err| {
                 EngineError::with_detail(
-                    "sftp_upload_failed",
+                    SFTP_UPLOAD_FAILED_CODE,
                     "Failed to read a local directory entry",
                     err.to_string(),
                 )
@@ -1726,7 +1737,7 @@ fn stream_local_upload_tasks(
             let path = entry.path();
             let meta = fs::symlink_metadata(&path).map_err(|err| {
                 EngineError::with_detail(
-                    "sftp_upload_failed",
+                    SFTP_UPLOAD_FAILED_CODE,
                     "Failed to read local file metadata",
                     err.to_string(),
                 )
@@ -1735,7 +1746,7 @@ fn stream_local_upload_tasks(
                 .strip_prefix(root)
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_upload_failed",
+                        SFTP_UPLOAD_FAILED_CODE,
                         "Failed to calculate the local relative path",
                         err.to_string(),
                     )
@@ -1755,7 +1766,7 @@ fn stream_local_upload_tasks(
                 })
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_upload_failed",
+                        SFTP_UPLOAD_FAILED_CODE,
                         "Failed to schedule the directory creation task",
                         err.to_string(),
                     )
@@ -1771,7 +1782,7 @@ fn stream_local_upload_tasks(
                 })
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_upload_failed",
+                        SFTP_UPLOAD_FAILED_CODE,
                         "Failed to schedule the upload task",
                         err.to_string(),
                     )
@@ -1803,7 +1814,7 @@ async fn stream_remote_download_tasks(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "sftp_list_failed",
+                SFTP_LIST_FAILED_CODE,
                 "Failed to read the directory",
                 err.to_string(),
             )
@@ -1830,7 +1841,7 @@ async fn stream_remote_download_tasks(
                     })
                     .map_err(|err| {
                         EngineError::with_detail(
-                            "sftp_download_failed",
+                            SFTP_DOWNLOAD_FAILED_CODE,
                             "Failed to schedule the directory creation task",
                             err.to_string(),
                         )
@@ -1847,7 +1858,7 @@ async fn stream_remote_download_tasks(
                     })
                     .map_err(|err| {
                         EngineError::with_detail(
-                            "sftp_download_failed",
+                            SFTP_DOWNLOAD_FAILED_CODE,
                             "Failed to schedule the download task",
                             err.to_string(),
                         )
@@ -1898,7 +1909,7 @@ async fn upload_pipeline_worker(
                             "error": {
                                 "code": err.code,
                                 "message": err.message,
-                                "detail": err.detail,
+                                "detail": err.details,
                             }
                         }),
                     );
@@ -1922,7 +1933,7 @@ async fn upload_pipeline_worker(
                             "error": {
                                 "code": err.code,
                                 "message": err.message,
-                                "detail": err.detail,
+                                "detail": err.details,
                             }
                         }),
                     );
@@ -1961,7 +1972,7 @@ async fn upload_pipeline_worker(
                                 "error": {
                                     "code": err.code,
                                     "message": err.message,
-                                    "detail": err.detail,
+                                    "detail": err.details,
                                 }
                             }),
                         );
@@ -2060,7 +2071,7 @@ async fn download_pipeline_worker(
                                 "error": {
                                     "code": err.code,
                                     "message": err.message,
-                                    "detail": err.detail,
+                                    "detail": err.details,
                                 }
                             }),
                         );
@@ -2079,7 +2090,7 @@ async fn remove_remote_path_recursive(sftp: &SftpSession, path: &str) -> Result<
     }
     let entries = sftp.read_dir(path.to_string()).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_remove_failed",
+            SFTP_REMOVE_FAILED_CODE,
             "Failed to remove the remote entry",
             err.to_string(),
         )
@@ -2097,7 +2108,7 @@ async fn remove_remote_path_recursive(sftp: &SftpSession, path: &str) -> Result<
             _ => {
                 sftp.remove_file(child_path).await.map_err(|err| {
                     EngineError::with_detail(
-                        "sftp_remove_failed",
+                        SFTP_REMOVE_FAILED_CODE,
                         "Failed to remove the remote entry",
                         err.to_string(),
                     )
@@ -2107,7 +2118,7 @@ async fn remove_remote_path_recursive(sftp: &SftpSession, path: &str) -> Result<
     }
     sftp.remove_dir(path.to_string()).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_remove_failed",
+            SFTP_REMOVE_FAILED_CODE,
             "Failed to remove the remote entry",
             err.to_string(),
         )
@@ -2403,7 +2414,7 @@ pub(crate) async fn sftp_download_dir(
         local_path: root_path.clone(),
     }) {
         return Err(EngineError::with_detail(
-            "sftp_download_failed",
+            SFTP_DOWNLOAD_FAILED_CODE,
             "Failed to schedule local directory creation",
             err.to_string(),
         ));
@@ -2429,7 +2440,7 @@ pub(crate) async fn sftp_download_dir(
                 "error": {
                     "code": err.code,
                     "message": err.message,
-                    "detail": err.detail,
+                    "detail": err.details,
                 }
             }),
         );
@@ -2461,7 +2472,7 @@ pub(crate) async fn sftp_download_dir(
                         "error": {
                             "code": err.code,
                             "message": err.message,
-                            "detail": err.detail,
+                            "detail": err.details,
                         }
                     }),
                 );
@@ -2506,7 +2517,7 @@ pub(crate) async fn sftp_download_dir(
             Ok(())
         }
         _ => {
-            let err = EngineError::new("sftp_download_failed", "Directory download failed");
+            let err = EngineError::new(SFTP_DOWNLOAD_FAILED_CODE, "Directory download failed");
             log_sftp_failure(
                 SftpLogEvent::DownloadDirectoryFailed,
                 &TransferLogContext {
@@ -2595,7 +2606,7 @@ pub async fn sftp_mkdir(
     let sftp = open_sftp(session).await?;
     sftp.create_dir(path.to_string()).await.map_err(|err| {
         let err = EngineError::with_detail(
-            "sftp_mkdir_failed",
+            SFTP_MKDIR_FAILED_CODE,
             "Failed to create the directory",
             err.to_string(),
         );
@@ -2639,7 +2650,7 @@ pub async fn sftp_home(
                 "error": {
                     "code": err.code.clone(),
                     "message": err.message.clone(),
-                    "detail": err.detail.clone(),
+                    "detail": err.details.clone(),
                 }
             }),
         );
@@ -2714,7 +2725,7 @@ async fn download_remote_file_to_local_pipelined(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "sftp_download_failed",
+                SFTP_DOWNLOAD_FAILED_CODE,
                 "Failed to open the remote file",
                 err.to_string(),
             )
@@ -2727,7 +2738,7 @@ async fn download_remote_file_to_local_pipelined(
         .and_then(|attrs| attrs.attrs.size);
     let mut local = tokio::fs::File::create(local_path).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_download_failed",
+            SFTP_DOWNLOAD_FAILED_CODE,
             "Failed to create the local file",
             err.to_string(),
         )
@@ -2763,7 +2774,7 @@ async fn download_remote_file_to_local_pipelined(
                     })
                 }
                 Err(err) => Err(EngineError::with_detail(
-                    "sftp_transfer_failed",
+                    SFTP_TRANSFER_FAILED_CODE,
                     "Unable to read file data",
                     err.to_string(),
                 )),
@@ -2841,7 +2852,7 @@ async fn download_remote_file_to_local_pipelined(
                 in_flight.abort_all();
                 let _ = sftp.close(handle_id.clone()).await;
                 return Err(EngineError::with_detail(
-                    "sftp_transfer_failed",
+                    SFTP_TRANSFER_FAILED_CODE,
                     "Unable to read file data",
                     err.to_string(),
                 ));
@@ -2869,7 +2880,7 @@ async fn download_remote_file_to_local_pipelined(
         for chunk in chunks {
             local.write_all(&chunk).await.map_err(|err| {
                 EngineError::with_detail(
-                    "sftp_transfer_failed",
+                    SFTP_TRANSFER_FAILED_CODE,
                     "Unable to write file data",
                     err.to_string(),
                 )
@@ -2887,7 +2898,7 @@ async fn download_remote_file_to_local_pipelined(
         let _ = sftp.close(handle_id.clone()).await;
         let _ = tokio::fs::remove_file(local_path).await;
         return Err(EngineError::with_detail(
-            "sftp_transfer_failed",
+            SFTP_TRANSFER_FAILED_CODE,
             "Downloaded file contains non-contiguous data chunks",
             format!(
                 "expected_offset={expected_write_offset}, pending_offsets={:?}",
@@ -2901,7 +2912,7 @@ async fn download_remote_file_to_local_pipelined(
         let _ = sftp.close(handle_id.clone()).await;
         let _ = tokio::fs::remove_file(local_path).await;
         return Err(EngineError::with_detail(
-            "sftp_transfer_failed",
+            SFTP_TRANSFER_FAILED_CODE,
             "Downloaded file size does not match the remote file size",
             format!("expected_size={size}, transferred={transferred}"),
         ));
@@ -2909,7 +2920,7 @@ async fn download_remote_file_to_local_pipelined(
 
     sftp.close(handle_id).await.map_err(|err| {
         EngineError::with_detail(
-            "sftp_download_failed",
+            SFTP_DOWNLOAD_FAILED_CODE,
             "Failed to close the remote file",
             err.to_string(),
         )
@@ -3270,7 +3281,7 @@ async fn resolve_available_local_path(path: &Path) -> Result<PathBuf, EngineErro
     }
 
     Err(EngineError::new(
-        "sftp_download_failed",
+        SFTP_DOWNLOAD_FAILED_CODE,
         "Failed to generate an available local destination path",
     ))
 }
@@ -3304,7 +3315,7 @@ fn log_sftp_failure(event: SftpLogEvent, context: &TransferLogContext<'_>, err: 
         "error": {
             "code": err.code,
             "message": err.message,
-            "detail": err.detail,
+            "detail": err.details,
         }
     }));
 }
@@ -3316,7 +3327,7 @@ fn log_sftp_path_failure(event: SftpLogEvent, elapsed_ms: u128, err: &EngineErro
         "error": {
             "code": err.code,
             "message": err.message,
-            "detail": err.detail,
+            "detail": err.details,
         }
     }));
 }
@@ -3328,7 +3339,7 @@ fn log_sftp_pair_failure(event: SftpLogEvent, elapsed_ms: u128, err: &EngineErro
         "error": {
             "code": err.code,
             "message": err.message,
-            "detail": err.detail,
+            "detail": err.details,
         }
     }));
 }
@@ -3363,7 +3374,7 @@ async fn open_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("channel_open_session", "session");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while opening the SFTP channel",
             format!(
                 "stage=channel_open_session timeout={}ms",
@@ -3373,7 +3384,7 @@ async fn open_sftp(
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to open the SFTP channel",
             err.to_string(),
         )
@@ -3386,7 +3397,7 @@ async fn open_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("request_subsystem", "session");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while requesting the SFTP subsystem",
             format!(
                 "stage=request_subsystem timeout={}ms",
@@ -3396,7 +3407,7 @@ async fn open_sftp(
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to request the SFTP subsystem",
             err.to_string(),
         )
@@ -3410,7 +3421,7 @@ async fn open_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("sftp_session_new", "session");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while initializing SFTP",
             format!(
                 "stage=sftp_session_new timeout={}ms",
@@ -3420,7 +3431,7 @@ async fn open_sftp(
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to initialize SFTP",
             err.to_string(),
         )
@@ -3439,7 +3450,7 @@ async fn open_raw_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("channel_open_session", "raw");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while opening the SFTP channel",
             format!(
                 "stage=channel_open_session timeout={}ms",
@@ -3449,7 +3460,7 @@ async fn open_raw_sftp(
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to open the SFTP channel",
             err.to_string(),
         )
@@ -3462,7 +3473,7 @@ async fn open_raw_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("request_subsystem", "raw");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while requesting the SFTP subsystem",
             format!(
                 "stage=request_subsystem timeout={}ms",
@@ -3472,7 +3483,7 @@ async fn open_raw_sftp(
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to request the SFTP subsystem",
             err.to_string(),
         )
@@ -3487,14 +3498,14 @@ async fn open_raw_sftp(
     .map_err(|_| {
         log_sftp_init_timeout("raw_init", "raw");
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Timed out while initializing SFTP",
             format!("stage=raw_init timeout={}ms", SFTP_INIT_STAGE_TIMEOUT_MS),
         )
     })?
     .map_err(|err| {
         EngineError::with_detail(
-            "sftp_init_failed",
+            SFTP_INIT_FAILED_CODE,
             "Failed to initialize SFTP",
             err.to_string(),
         )
@@ -3507,7 +3518,7 @@ async fn open_raw_sftp(
     {
         let limits = raw.limits().await.map_err(|err| {
             EngineError::with_detail(
-                "sftp_init_failed",
+                SFTP_INIT_FAILED_CODE,
                 "Failed to get SFTP limits",
                 err.to_string(),
             )

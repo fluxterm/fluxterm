@@ -1,4 +1,6 @@
 //! 主机配置相关命令。
+const GROUP_NAME_TOO_LONG_CODE: &str = "group_name_too_long";
+
 use engine::{AuthType, EngineError, HostProfile};
 use tauri::AppHandle;
 use tauri::State;
@@ -234,7 +236,7 @@ pub(crate) fn validate_and_dedupe_groups(values: Vec<String>) -> Result<Vec<Stri
         }
         if trimmed.chars().count() > GROUP_NAME_MAX_LENGTH {
             return Err(EngineError::new(
-                "group_name_too_long",
+                GROUP_NAME_TOO_LONG_CODE,
                 "Group name cannot exceed 12 characters",
             ));
         }
@@ -257,7 +259,7 @@ pub(crate) fn normalize_profile_tags(
     }
     if normalized.chars().count() > GROUP_NAME_MAX_LENGTH {
         return Err(EngineError::new(
-            "group_name_too_long",
+            GROUP_NAME_TOO_LONG_CODE,
             "Group name cannot exceed 12 characters",
         ));
     }

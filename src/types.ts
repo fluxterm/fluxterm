@@ -1,4 +1,5 @@
 import type { TranslationKey } from "./i18n";
+import type { BackendErrorPayload } from "./shared/errors/appError";
 
 /** 认证方式。 */
 export type AuthType = "password" | "privateKey" | "agent";
@@ -38,16 +39,6 @@ export type SshProxyConfig = {
 
 /** 终端 Bell 响应模式。 */
 export type TerminalBellMode = "silent" | "sound";
-
-/** 后端标准错误视图。 */
-export type EngineErrorView = {
-  code: string;
-  message: string;
-  messageKey?: string | null;
-  messageVars?: Record<string, string | number> | null;
-  detail?: string | null;
-  details?: string | null;
-};
 
 /** 主机配置数据。 */
 export type HostProfile = {
@@ -92,7 +83,7 @@ export type Session = {
   kind: SessionKind;
   state: "connecting" | "connected" | "disconnected" | "error";
   createdAt: number;
-  lastError?: EngineErrorView | null;
+  lastError?: BackendErrorPayload | null;
 };
 
 /** 串口数据位。 */
@@ -306,7 +297,7 @@ export type SshTunnelRuntime = {
   bytesIn: number;
   bytesOut: number;
   activeConnections: number;
-  lastError?: EngineErrorView | null;
+  lastError?: BackendErrorPayload | null;
 };
 
 /** 代理协议类型。 */
@@ -346,7 +337,7 @@ export type ProxyRuntime = {
   bytesIn: number;
   bytesOut: number;
   activeConnections: number;
-  lastError?: EngineErrorView | null;
+  lastError?: BackendErrorPayload | null;
 };
 
 /** RDP 分辨率模式。 */
@@ -434,7 +425,7 @@ export type RdpSessionSnapshot = {
   audioEnabled: boolean;
   audioMuted: boolean;
   audioState: RdpSessionAudioState;
-  lastError?: EngineErrorView | null;
+  lastError?: BackendErrorPayload | null;
   certificatePrompt?: RdpCertificatePrompt | null;
   /** 匿名性能数据流 ID；未启用遥测时为空。 */
   performanceStreamId?: string | null;

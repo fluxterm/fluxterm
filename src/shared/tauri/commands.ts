@@ -14,7 +14,7 @@ export type SystemInfo = {
 };
 
 /** 统一的 Tauri 命令调用入口。 */
-export async function callTauri<T>(
+export async function invokeTauriCommand<T>(
   command: string,
   payload?: Record<string, unknown>,
 ) {
@@ -22,9 +22,9 @@ export async function callTauri<T>(
     return await invoke<T>(command, payload ?? {});
   } catch (error) {
     throw normalizeToAppError(error, {
-      code: "TAURI_INVOKE_ERROR",
+      code: "tauri_invoke_error",
       source: "tauri",
-      details: {
+      diagnostic: {
         command,
         payloadKeys: Object.keys(payload ?? {}),
       },
@@ -34,5 +34,5 @@ export async function callTauri<T>(
 
 /** 读取后端系统信息。 */
 export function getSystemInfo() {
-  return callTauri<SystemInfo>("get_system_info");
+  return invokeTauriCommand<SystemInfo>("get_system_info");
 }

@@ -5,6 +5,12 @@
 //! - 本地工作副本快照与变更检测
 //! - 远端编辑运行时状态与事件广播
 //! - 后台轮询任务生命周期
+const REMOTE_EDIT_CACHE_FAILED_CODE: &str = "remote_edit_cache_failed";
+const REMOTE_EDIT_CLEANUP_FAILED_CODE: &str = "remote_edit_cleanup_failed";
+const REMOTE_EDIT_INDEX_FAILED_CODE: &str = "remote_edit_index_failed";
+const REMOTE_EDIT_SNAPSHOT_FAILED_CODE: &str = "remote_edit_snapshot_failed";
+const REMOTE_EDIT_WORKSPACE_INVALID_CODE: &str = "remote_edit_workspace_invalid";
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -290,7 +296,7 @@ fn collect_expired_cache_paths(
 ) -> Result<(), EngineError> {
     let entries = fs::read_dir(path).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_cleanup_failed",
+            REMOTE_EDIT_CLEANUP_FAILED_CODE,
             "Failed to traverse the cache directory",
             err.to_string(),
         )
@@ -298,7 +304,7 @@ fn collect_expired_cache_paths(
     for entry in entries {
         let entry = entry.map_err(|err| {
             EngineError::with_detail(
-                "remote_edit_cleanup_failed",
+                REMOTE_EDIT_CLEANUP_FAILED_CODE,
                 "Failed to read a cache directory entry",
                 err.to_string(),
             )
@@ -317,7 +323,7 @@ fn collect_expired_cache_paths(
         }
         let metadata = fs::metadata(&entry_path).map_err(|err| {
             EngineError::with_detail(
-                "remote_edit_cleanup_failed",
+                REMOTE_EDIT_CLEANUP_FAILED_CODE,
                 "Failed to read cache metadata",
                 err.to_string(),
             )
@@ -347,7 +353,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
     let marker_path = get_cleanup_marker_path(app)?;
     fs::create_dir_all(&root_dir).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_cache_failed",
+            REMOTE_EDIT_CACHE_FAILED_CODE,
             "Failed to create the remote edit cache directory",
             err.to_string(),
         )
@@ -377,7 +383,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
         &marker_path,
         serde_json::to_vec_pretty(&payload).map_err(|err| {
             EngineError::with_detail(
-                "remote_edit_cache_failed",
+                REMOTE_EDIT_CACHE_FAILED_CODE,
                 "Failed to write the cache cleanup marker",
                 err.to_string(),
             )
@@ -385,7 +391,7 @@ fn ensure_remote_file_cache_cleanup(app: &AppHandle) -> Result<(), EngineError> 
     )
     .map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_cache_failed",
+            REMOTE_EDIT_CACHE_FAILED_CODE,
             "Failed to write the cache cleanup marker",
             err.to_string(),
         )
@@ -484,17 +490,19 @@ fn is_remote_entry_editable_text(entry: &SftpEntry) -> bool {
 pub(crate) fn read_local_file_snapshot(path: &Path) -> Result<RemoteFileSnapshot, EngineError> {
     let metadata = fs::metadata(path).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_snapshot_failed",
+            REMOTE_EDIT_SNAPSHOT_FAILED_CODE,
             "Failed to read local file metadata",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.localReadFailed")
     })?;
     let bytes = fs::read(path).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_snapshot_failed",
+            REMOTE_EDIT_SNAPSHOT_FAILED_CODE,
             "Failed to read local file content",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.localReadFailed")
     })?;
     let content_hash = format!("{:x}", Sha256::digest(&bytes));
     let mtime_ms = metadata
@@ -526,17 +534,19 @@ fn load_remote_edit_index(app: &AppHandle) -> Result<RemoteEditIndexStore, Engin
     }
     let raw = fs::read(&path).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to read the remote edit index",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid")
     })?;
     let mut store = serde_json::from_slice::<RemoteEditIndexStore>(&raw).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to parse the remote edit index",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid")
     })?;
     if store.version == 0 {
         store.version = 1;
@@ -551,50 +561,56 @@ fn write_remote_edit_index(
     let root_dir = get_remote_files_cache_root_dir(app)?;
     fs::create_dir_all(&root_dir).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to create the remote edit index directory",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid")
     })?;
     let path = get_index_path(app)?;
     let tmp_path = get_index_tmp_path(app)?;
     let bytes = serde_json::to_vec_pretty(store).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to serialize the remote edit index",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid")
     })?;
     fs::write(&tmp_path, bytes).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to write the temporary remote edit index",
             err.to_string(),
         )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid")
     })?;
     fs::rename(&tmp_path, &path).or_else(|rename_err| {
         if path.is_file() {
             fs::remove_file(&path).map_err(|remove_err| {
                 EngineError::with_detail(
-                    "remote_edit_index_failed",
+                    REMOTE_EDIT_INDEX_FAILED_CODE,
                     "Failed to replace the remote edit index",
                     format!("{rename_err}; {remove_err}"),
                 )
+                .with_message_key("sftp.remoteEdit.workspaceInvalid")
             })?;
             fs::rename(&tmp_path, &path).map_err(|err| {
                 EngineError::with_detail(
-                    "remote_edit_index_failed",
+                    REMOTE_EDIT_INDEX_FAILED_CODE,
                     "Failed to replace the remote edit index",
                     err.to_string(),
                 )
+                .with_message_key("sftp.remoteEdit.workspaceInvalid")
             })?;
             return Ok(());
         }
         Err(EngineError::with_detail(
-            "remote_edit_index_failed",
+            REMOTE_EDIT_INDEX_FAILED_CODE,
             "Failed to replace the remote edit index",
             rename_err.to_string(),
-        ))
+        )
+        .with_message_key("sftp.remoteEdit.workspaceInvalid"))
     })
 }
 
@@ -698,7 +714,7 @@ pub(crate) fn open_local_file(
 ) -> Result<(), EngineError> {
     if !Path::new(file_path).is_file() {
         return Err(EngineError::new(
-            "file_open_failed",
+            crate::utils::FILE_OPEN_FAILED_CODE,
             "The target file does not exist or is inaccessible",
         ));
     }
@@ -721,7 +737,7 @@ pub(crate) fn open_local_file(
         .open_path(file_path, None::<&str>)
         .map_err(|error| {
             EngineError::with_detail(
-                "file_open_failed",
+                crate::utils::FILE_OPEN_FAILED_CODE,
                 "Failed to open the file",
                 error.to_string(),
             )
@@ -731,7 +747,7 @@ pub(crate) fn open_local_file(
 fn ensure_remote_workspace_parent(path: &Path) -> Result<(), EngineError> {
     fs::create_dir_all(path).map_err(|err| {
         EngineError::with_detail(
-            "remote_edit_cache_failed",
+            REMOTE_EDIT_CACHE_FAILED_CODE,
             "Failed to create the remote edit working copy directory",
             err.to_string(),
         )
@@ -755,7 +771,8 @@ fn should_reuse_local_workspace(
         return Err(EngineError::new(
             "remote_edit_local_dirty",
             "The local working copy contains unsynchronized changes",
-        ));
+        )
+        .with_message_key("sftp.remoteEdit.localDirty"));
     }
     Ok(remote_entry.mtime == index_entry.remote_mtime
         && remote_entry.size == index_entry.remote_size)
@@ -799,9 +816,10 @@ pub(crate) fn remote_edit_prepare_open(
     let (downloaded_at, baseline) = if local_exists {
         let existing_index_entry = index_entry.ok_or_else(|| {
             EngineError::new(
-                "remote_edit_workspace_invalid",
+                REMOTE_EDIT_WORKSPACE_INVALID_CODE,
                 "The local working copy index is missing or corrupted",
             )
+            .with_message_key("sftp.remoteEdit.workspaceInvalid")
         })?;
         if existing_index_entry.instance_id != instance_id
             || existing_index_entry.remote_path != remote_entry.path
@@ -810,9 +828,10 @@ pub(crate) fn remote_edit_prepare_open(
             || existing_index_entry.session_port != target.session_port
         {
             return Err(EngineError::new(
-                "remote_edit_workspace_invalid",
+                REMOTE_EDIT_WORKSPACE_INVALID_CODE,
                 "The local working copy index does not match the target file",
-            ));
+            )
+            .with_message_key("sftp.remoteEdit.workspaceInvalid"));
         }
         if should_reuse_local_workspace(&local_path, &remote_entry, &existing_index_entry)? {
             (
@@ -966,7 +985,7 @@ pub(crate) async fn spawn_remote_edit_monitor(
                                         "error": {
                                             "code": error.code,
                                             "message": "Remote edit monitor failed",
-                                            "detail": error.detail,
+                                            "detail": error.details,
                                         },
                                     }),
                                 );

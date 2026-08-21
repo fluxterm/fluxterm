@@ -53,7 +53,7 @@ pub async fn resource_monitor_start_ssh(
                     "error": {
                         "code": error.code.clone(),
                         "message": "Resource monitor SSH connection failed",
-                        "detail": error.detail.clone().unwrap_or(error.message.clone()),
+                        "detail": error.details.clone().unwrap_or(error.message.clone()),
                     }
                 }),
             );

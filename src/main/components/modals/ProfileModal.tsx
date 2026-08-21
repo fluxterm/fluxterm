@@ -10,7 +10,7 @@ import type {
 import type { CredentialSaveInput } from "@/features/credential/core/commands";
 import ProfileCredentialSelector from "@/features/credential/components/ProfileCredentialSelector";
 import { ROOT_PROFILE_GROUP_VALUE } from "@/constants/hostGroups";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import Modal from "@/components/ui/modal/Modal";
 import Button from "@/components/ui/button";
@@ -114,7 +114,7 @@ export default function ProfileModal({
     if (draft.privateKeyPath) return;
     if (autoFilledRef.current) return;
     autoFilledRef.current = true;
-    invoke<string[]>("local_ssh_keys")
+    invokeTauriCommand<string[]>("local_ssh_keys")
       .then((keys) => {
         if (!keys.length) return;
         onDraftChange({ ...draft, privateKeyPath: keys[0] });

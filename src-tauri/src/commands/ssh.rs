@@ -1,4 +1,8 @@
 //! SSH 会话相关命令。
+const PROFILE_NOT_FOUND_CODE: &str = "profile_not_found";
+const SSH_HOST_KEY_MISMATCH_CODE: &str = "ssh_host_key_mismatch";
+const SSH_HOST_KEY_UNKNOWN_CODE: &str = "ssh_host_key_unknown";
+
 use std::collections::HashSet;
 use std::time::Instant;
 
@@ -80,7 +84,7 @@ pub async fn ssh_connect(
                     "error": {
                         "code": &error.code,
                         "message": &error.message,
-                        "detail": &error.detail,
+                        "detail": &error.details,
                     }
                 }),
             );
@@ -260,17 +264,17 @@ async fn enforce_host_key_policy(
             fingerprint_sha256: probe.fingerprint_sha256,
         })),
         (HostKeyPolicy::Strict, HostKeyMatchStatus::Unknown) => Err(EngineError::new(
-            "ssh_host_key_unknown",
+            SSH_HOST_KEY_UNKNOWN_CODE,
             "Target host is not trusted and the current host key policy blocks the connection",
         )),
         (HostKeyPolicy::Strict, HostKeyMatchStatus::Mismatch) => Err(EngineError::new(
-            "ssh_host_key_mismatch",
+            SSH_HOST_KEY_MISMATCH_CODE,
             "Target host fingerprint does not match the local record; connection blocked",
         )),
         (HostKeyPolicy::Ask, HostKeyMatchStatus::Unknown) => {
             emit_host_key_required(app, profile, &probe, None, "ask")?;
             Err(EngineError::new(
-                "ssh_host_key_unknown",
+                SSH_HOST_KEY_UNKNOWN_CODE,
                 "First connection to this host; waiting for host key confirmation",
             ))
         }
@@ -283,7 +287,7 @@ async fn enforce_host_key_policy(
                 "ask",
             )?;
             Err(EngineError::new(
-                "ssh_host_key_mismatch",
+                SSH_HOST_KEY_MISMATCH_CODE,
                 "Target host fingerprint does not match the local record; waiting for confirmation",
             ))
         }
@@ -330,14 +334,17 @@ fn resolve_connect_profile(
     // 连接时必须回读磁盘中的 profile，再按当前安全状态解保护。
     // 这样在用户锁定后，即使前端仍保留旧的明文副本，也不能继续建立 SSH 连接。
     if requested_profile.id.trim().is_empty() {
-        return Err(EngineError::new("profile_not_found", "Profile not found"));
+        return Err(EngineError::new(
+            PROFILE_NOT_FOUND_CODE,
+            "Profile not found",
+        ));
     }
     let store = read_ssh_profiles(app)?;
     let encrypted_profile = store
         .profiles
         .into_iter()
         .find(|item| item.id == requested_profile.id)
-        .ok_or_else(|| EngineError::new("profile_not_found", "Profile not found"))?;
+        .ok_or_else(|| EngineError::new(PROFILE_NOT_FOUND_CODE, "Profile not found"))?;
     let security_config = read_security_config(app)?;
     let session = security.current_session();
     let crypto = CryptoService::new(security_config.as_ref(), session.as_ref())?;
@@ -357,7 +364,7 @@ fn resolve_jump_profiles(
     let ids = profile.jump_profile_ids.clone().unwrap_or_default();
     if ids.len() > 8 {
         return Err(EngineError::with_detail(
-            "ssh_jump_depth_exceeded",
+            engine::SSH_JUMP_DEPTH_EXCEEDED_CODE,
             "Jump chain exceeds the maximum depth",
             format!("maxDepth=8 actual={}", ids.len()),
         ));

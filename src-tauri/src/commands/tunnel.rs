@@ -22,7 +22,7 @@ pub async fn ssh_tunnel_open(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to create the SSH tunnel",
             err.to_string(),
         )
@@ -45,7 +45,7 @@ pub async fn ssh_tunnel_close(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to close the SSH tunnel",
             err.to_string(),
         )
@@ -66,7 +66,7 @@ pub async fn ssh_tunnel_list(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to list SSH tunnels",
             err.to_string(),
         )
@@ -87,7 +87,7 @@ pub async fn ssh_tunnel_close_all(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to close SSH tunnels",
             err.to_string(),
         )

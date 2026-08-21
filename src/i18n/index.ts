@@ -1,5 +1,5 @@
-import { enUsTranslations } from "@/i18n/en";
-import { zhCnTranslations } from "@/i18n/zh";
+import { enUsTranslations } from "./en.ts";
+import { zhCnTranslations } from "./zh.ts";
 
 /** 支持的语言标签，采用 BCP 47 标准。 */
 export type Locale = "zh-CN" | "en-US";

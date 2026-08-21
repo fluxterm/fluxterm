@@ -1,4 +1,4 @@
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import type {
   AiSettingsSaveInput,
   AiSettingsView,
@@ -13,32 +13,36 @@ import { subscribeTauri } from "@/shared/tauri/events";
 
 /** 读取终端域 AI 配置。 */
 export function aiSettingsGet() {
-  return callTauri<AiSettingsView>("ai_settings_get");
+  return invokeTauriCommand<AiSettingsView>("ai_settings_get");
 }
 
 /** 保存终端域 AI 配置。 */
 export function aiSettingsSave(settings: AiSettingsSaveInput) {
-  return callTauri<AiSettingsView>("ai_settings_save", { settings });
+  return invokeTauriCommand<AiSettingsView>("ai_settings_save", { settings });
 }
 
 /** 测试指定 AI 接入；未传入时测试当前激活接入。 */
 export function aiProviderTest(providerId?: string) {
-  return callTauri<void>("ai_provider_test", { providerId });
+  return invokeTauriCommand<void>("ai_provider_test", { providerId });
 }
 
 /** 发起会话上下文问答。 */
 export function aiSessionChat(request: AiSessionChatRequest) {
-  return callTauri<AiSessionChatResponse>("ai_session_chat", { request });
+  return invokeTauriCommand<AiSessionChatResponse>("ai_session_chat", {
+    request,
+  });
 }
 
 /** 启动流式会话上下文问答。 */
 export function aiSessionChatStreamStart(request: AiSessionChatStreamRequest) {
-  return callTauri<void>("ai_session_chat_stream_start", { request });
+  return invokeTauriCommand<void>("ai_session_chat_stream_start", { request });
 }
 
 /** 取消流式会话上下文问答。 */
 export function aiSessionChatStreamCancel(requestId: string) {
-  return callTauri<boolean>("ai_session_chat_stream_cancel", { requestId });
+  return invokeTauriCommand<boolean>("ai_session_chat_stream_cancel", {
+    requestId,
+  });
 }
 
 /** 订阅 AI 流式输出片段。 */

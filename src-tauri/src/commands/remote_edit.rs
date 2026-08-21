@@ -1,4 +1,6 @@
 //! 远端文件编辑命令。
+const REMOTE_EDIT_NOT_FOUND_CODE: &str = "remote_edit_not_found";
+
 use std::time::Instant;
 
 use engine::SftpEntry;
@@ -61,7 +63,7 @@ pub async fn remote_edit_open(
     let prepared = match prepared {
         Ok(result) => result,
         Err(error) => Err(engine::EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to open the remote edit session",
             error.to_string(),
         )),
@@ -79,7 +81,7 @@ pub async fn remote_edit_open(
                     "error": {
                         "code": &error.code,
                         "message": "Remote edit session could not be opened",
-                        "detail": &error.detail,
+                        "detail": &error.details,
                     },
                 }),
             );
@@ -125,9 +127,10 @@ pub async fn remote_edit_confirm_upload(
     let started_at = Instant::now();
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
-            "remote_edit_not_found",
+            REMOTE_EDIT_NOT_FOUND_CODE,
             "Remote edit session not found",
-        ));
+        )
+        .with_message_key("sftp.remoteEdit.instanceMissing"));
     };
     {
         let mut guard = instance.lock().await;
@@ -135,7 +138,8 @@ pub async fn remote_edit_confirm_upload(
             return Err(engine::EngineError::new(
                 "remote_edit_not_pending",
                 "The remote edit session has no pending changes",
-            ));
+            )
+            .with_message_key("sftp.remoteEdit.notPending"));
         }
         guard.snapshot.status = RemoteEditStatus::Uploading;
         guard.snapshot.last_error_code = None;
@@ -161,7 +165,8 @@ pub async fn remote_edit_confirm_upload(
             return Err(engine::EngineError::new(
                 "remote_edit_conflict",
                 "The remote file changed and local modifications were not uploaded",
-            ));
+            )
+            .with_message_key("sftp.remoteEdit.remoteChanged"));
         }
 
         engine.sftp_upload(&session_id, &local_path, &remote_path)?;
@@ -173,7 +178,7 @@ pub async fn remote_edit_confirm_upload(
     .await
     .map_err(|err| {
         engine::EngineError::with_detail(
-            "session_command_failed",
+            engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to upload the remote edit working copy",
             err.to_string(),
         )
@@ -231,7 +236,7 @@ pub async fn remote_edit_confirm_upload(
                         "error": {
                             "code": error.code,
                             "message": "Remote edit changes could not be uploaded",
-                            "detail": error.detail,
+                            "detail": error.details,
                         },
                     }),
                 );
@@ -253,9 +258,10 @@ pub async fn remote_edit_dismiss_pending(
 ) -> Result<RemoteEditSnapshot, engine::EngineError> {
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
         return Err(engine::EngineError::new(
-            "remote_edit_not_found",
+            REMOTE_EDIT_NOT_FOUND_CODE,
             "Remote edit session not found",
-        ));
+        )
+        .with_message_key("sftp.remoteEdit.instanceMissing"));
     };
     let snapshot = {
         let mut guard = instance.lock().await;

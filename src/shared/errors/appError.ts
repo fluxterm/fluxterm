@@ -1,8 +1,12 @@
 /**
  * 应用统一错误模型。
- * 职责：将未知异常归一化为可读、可记录、可扩展的标准错误结构。
+ * 职责：将后端错误载荷和未知异常归一化为可展示、可记录的应用错误。
  */
-import { translations, type Translate, type TranslationKey } from "@/i18n";
+import {
+  translations,
+  type Translate,
+  type TranslationKey,
+} from "../../i18n/index.ts";
 
 /** 应用错误来源。 */
 export type AppErrorSource = "tauri" | "frontend";
@@ -10,28 +14,45 @@ export type AppErrorSource = "tauri" | "frontend";
 /** 错误翻译变量。 */
 export type AppErrorMessageVars = Record<string, string | number>;
 
+const ERROR_CODE_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
+const MESSAGE_KEY_PATTERN = /^[a-z][A-Za-z0-9]*(?:\.[a-z][A-Za-z0-9]*)+$/;
+
+/** Rust 跨 Tauri 边界发送的标准错误载荷。 */
+export type BackendErrorPayload = {
+  code: string;
+  message: string;
+  messageKey?: string;
+  messageVars?: AppErrorMessageVars;
+  details?: string;
+};
+
 /** 应用标准错误结构。 */
 export class AppError extends Error {
   code: string;
   messageKey?: string;
   messageVars?: AppErrorMessageVars;
-  details?: unknown;
+  details?: string;
+  diagnostic?: unknown;
   source: AppErrorSource;
 
-  constructor(input: {
-    code: string;
-    message: string;
-    messageKey?: string;
-    messageVars?: AppErrorMessageVars;
-    details?: unknown;
-    source?: AppErrorSource;
-  }) {
+  constructor(
+    input: BackendErrorPayload & {
+      diagnostic?: unknown;
+      source?: AppErrorSource;
+    },
+  ) {
     super(input.message);
     this.name = "AppError";
-    this.code = input.code;
-    this.messageKey = input.messageKey;
+    this.code = ERROR_CODE_PATTERN.test(input.code)
+      ? input.code
+      : "unknown_error";
+    this.messageKey =
+      input.messageKey && MESSAGE_KEY_PATTERN.test(input.messageKey)
+        ? input.messageKey
+        : undefined;
     this.messageVars = input.messageVars;
     this.details = input.details;
+    this.diagnostic = input.diagnostic;
     this.source = input.source ?? "frontend";
   }
 }
@@ -53,8 +74,8 @@ export function extractErrorMessage(error: unknown): string {
       error.reason,
       error.kind,
       error.type,
-      error.detail,
       error.details,
+      error.detail,
     );
     if (messageCandidate) return messageCandidate;
     const nestedMessage = pickNestedMessage(error.error);
@@ -71,62 +92,43 @@ export function normalizeToAppError(
   defaults: {
     code: string;
     source: AppErrorSource;
-    details?: unknown;
+    diagnostic?: unknown;
   },
 ): AppError {
   if (error instanceof AppError) return error;
   const parsedRecord = parseJsonStringRecord(error);
-  if (parsedRecord) {
-    return normalizeRecordToAppError(parsedRecord, defaults);
-  }
-  const message = extractErrorMessage(error);
+  if (parsedRecord) return normalizeRecordToAppError(parsedRecord, defaults);
+
   if (error instanceof Error) {
     return new AppError({
       code: defaults.code,
-      message,
+      message: error.message,
       source: defaults.source,
-      details: mergeDetails(defaults.details, {
+      diagnostic: mergeDiagnostic(defaults.diagnostic, {
         name: error.name,
         stack: error.stack,
       }),
     });
   }
-  if (isRecord(error)) {
-    return normalizeRecordToAppError(error, defaults);
-  }
+  if (isRecord(error)) return normalizeRecordToAppError(error, defaults);
   return new AppError({
     code: defaults.code,
-    message,
+    message: extractErrorMessage(error),
     source: defaults.source,
-    details: defaults.details,
+    diagnostic: defaults.diagnostic,
   });
 }
 
-/** 使用 i18n 优先翻译标准错误码，翻译不到时回退原始消息。 */
+/** 优先按标准翻译键展示错误，无有效翻译键时回退英文消息。 */
 export function translateAppError(error: unknown, t: Translate): string {
   const normalized =
     error instanceof AppError
       ? error
       : normalizeToAppError(error, { code: "unknown_error", source: "tauri" });
-  const explicitMessageKey = resolveMessageKey(normalized);
-  const code = resolveErrorCode(error);
-  const key = code ? ERROR_CODE_TRANSLATIONS[code] : null;
-  if (explicitMessageKey && !explicitMessageKey.endsWith(".operationFailed")) {
-    return t(explicitMessageKey, normalized.messageVars);
-  }
-  if (key) return t(key);
-  if (explicitMessageKey) return t(explicitMessageKey, normalized.messageVars);
-  const message = normalized.message;
-  const messageKey = findTranslationKey(message);
-  if (messageKey) return t(messageKey);
-  return message;
-}
-
-/** 从后端错误文本中识别前端翻译键。 */
-function findTranslationKey(value: string): TranslationKey | null {
-  const trimmed = value.trim();
-  if (isTranslationKey(trimmed)) return trimmed;
-  return TRANSLATION_KEYS.find((key) => trimmed.includes(key)) ?? null;
+  const messageKey = resolveMessageKey(normalized);
+  return messageKey
+    ? t(messageKey, normalized.messageVars)
+    : normalized.message;
 }
 
 /** 判断文本是否为前端翻译键。 */
@@ -141,9 +143,7 @@ function pickNestedMessage(value: unknown): string | null {
 
 function pickString(...values: unknown[]) {
   for (const value of values) {
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
   return null;
 }
@@ -165,18 +165,50 @@ function normalizeRecordToAppError(
   defaults: {
     code: string;
     source: AppErrorSource;
-    details?: unknown;
+    diagnostic?: unknown;
   },
 ) {
-  const code = pickString(error.code, error.kind, error.type) ?? defaults.code;
+  const payload = normalizeBackendErrorPayload(error);
+  if (payload) {
+    return new AppError({
+      ...payload,
+      source: defaults.source,
+      diagnostic: mergeDiagnostic(defaults.diagnostic, error),
+    });
+  }
+  const candidateCode = pickString(error.code, error.kind, error.type);
   return new AppError({
-    code,
+    code:
+      candidateCode && ERROR_CODE_PATTERN.test(candidateCode)
+        ? candidateCode
+        : defaults.code,
     message: extractErrorMessage(error),
-    messageKey: pickString(error.messageKey, error.message_key) ?? undefined,
-    messageVars: normalizeMessageVars(error.messageVars ?? error.message_vars),
     source: defaults.source,
-    details: mergeDetails(defaults.details, error),
+    diagnostic: mergeDiagnostic(defaults.diagnostic, error),
   });
+}
+
+/** 校验并归一化标准后端错误载荷。 */
+function normalizeBackendErrorPayload(
+  value: Record<string, unknown>,
+): BackendErrorPayload | null {
+  const code = pickString(value.code);
+  const message = pickString(value.message);
+  if (!code || !message || !ERROR_CODE_PATTERN.test(code)) return null;
+  const rawMessageKey = pickString(value.messageKey);
+  const messageKey =
+    rawMessageKey && MESSAGE_KEY_PATTERN.test(rawMessageKey)
+      ? rawMessageKey
+      : undefined;
+  const messageVars = normalizeMessageVars(value.messageVars);
+  const details = pickString(value.details) ?? undefined;
+  return {
+    code,
+    message,
+    ...(messageKey ? { messageKey } : {}),
+    ...(messageVars ? { messageVars } : {}),
+    ...(details ? { details } : {}),
+  };
 }
 
 function parseJsonStringMessage(value: string): string | null {
@@ -186,50 +218,26 @@ function parseJsonStringMessage(value: string): string | null {
     parsed.message,
     parsed.error,
     parsed.reason,
-    parsed.detail,
     parsed.details,
+    parsed.detail,
   );
 }
 
 function parseJsonStringRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-    return null;
-  }
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
   try {
     const parsed: unknown = JSON.parse(trimmed);
-    if (!isRecord(parsed)) return null;
-    return parsed;
+    return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function mergeDetails(base: unknown, extra: unknown): unknown {
-  if (base === undefined) return extra;
-  if (isRecord(base) && isRecord(extra)) {
-    return {
-      ...base,
-      raw: extra,
-    };
-  }
-  return {
-    context: base,
-    raw: extra,
-  };
-}
-
-function resolveErrorCode(error: unknown): string | null {
-  if (error instanceof AppError) return error.code;
-  const parsedRecord = parseJsonStringRecord(error);
-  if (parsedRecord) {
-    return pickString(parsedRecord.code, parsedRecord.kind, parsedRecord.type);
-  }
-  if (isRecord(error)) {
-    return pickString(error.code, error.kind, error.type);
-  }
-  return null;
+function mergeDiagnostic(base: unknown, raw: unknown): unknown {
+  if (base === undefined) return raw;
+  return { context: base, raw };
 }
 
 function resolveMessageKey(error: AppError): TranslationKey | null {
@@ -241,33 +249,10 @@ function normalizeMessageVars(value: unknown): AppErrorMessageVars | undefined {
   if (!isRecord(value)) return undefined;
   const vars: AppErrorMessageVars = {};
   for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string" || typeof item === "number") {
-      vars[key] = item;
-    }
+    if (typeof item !== "string" && typeof item !== "number") return undefined;
+    vars[key] = item;
   }
   return Object.keys(vars).length > 0 ? vars : undefined;
 }
-
-const ERROR_CODE_TRANSLATIONS: Partial<Record<string, TranslationKey>> = {
-  security_locked: "error.securityLocked",
-  security_password_invalid: "error.securityPasswordInvalid",
-  security_password_too_short: "error.securityPasswordTooShort",
-  security_enable_unavailable: "error.securityEnableUnavailable",
-  security_change_unavailable: "error.securityChangeUnavailable",
-  security_unlock_unavailable: "error.securityUnlockUnavailable",
-  rdp_profile_name_required: "rdp.error.nameRequired",
-  rdp_profile_host_required: "rdp.error.hostRequired",
-  rdp_profile_username_required: "rdp.error.usernameRequired",
-  rdp_profile_required: "messages.missingHostUser",
-  rdp_fixed_resolution_required: "rdp.error.fixedResolutionRequired",
-  remote_edit_conflict: "sftp.remoteEdit.remoteChanged",
-  sftp_stat_failed: "sftp.remoteEdit.remoteMissing",
-  remote_edit_not_found: "sftp.remoteEdit.instanceMissing",
-  remote_edit_not_pending: "sftp.remoteEdit.notPending",
-  remote_edit_snapshot_failed: "sftp.remoteEdit.localReadFailed",
-  remote_edit_local_dirty: "sftp.remoteEdit.localDirty",
-  remote_edit_workspace_invalid: "sftp.remoteEdit.workspaceInvalid",
-  remote_edit_index_failed: "sftp.remoteEdit.workspaceInvalid",
-};
 
 const TRANSLATION_KEYS = Object.keys(translations["zh-CN"]) as TranslationKey[];

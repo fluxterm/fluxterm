@@ -1,5 +1,8 @@
 //! 统一 Crypto 门面。
 
+const CRYPTO_PROVIDER_INVALID_CODE: &str = "crypto_provider_invalid";
+const SECRET_FORMAT_INVALID_CODE: &str = "secret_format_invalid";
+
 use std::sync::Arc;
 
 use argon2::{Algorithm, Argon2, Params, Version};
@@ -56,7 +59,7 @@ impl CryptoService {
                     .filter(|value| !value.trim().is_empty())
                     .ok_or_else(|| {
                         EngineError::new(
-                            "crypto_provider_invalid",
+                            CRYPTO_PROVIDER_INVALID_CODE,
                             "Master password config is missing keyId",
                         )
                     })?;
@@ -79,7 +82,7 @@ impl CryptoService {
                 })
             }
             _ => Err(EngineError::new(
-                "crypto_provider_invalid",
+                CRYPTO_PROVIDER_INVALID_CODE,
                 "Secret config is invalid or from an unsupported legacy version",
             )),
         }
@@ -116,7 +119,8 @@ impl CryptoService {
             return Err(EngineError::new(
                 "security_password_too_short",
                 "Security password must be at least 4 characters",
-            ));
+            )
+            .with_message_key("error.securityPasswordTooShort"));
         }
         let salt: [u8; USER_PASSWORD_SALT_LEN] = random();
         let key_id = format!("master-{}", Uuid::new_v4());
@@ -150,25 +154,25 @@ impl CryptoService {
             .filter(|value| !value.trim().is_empty())
             .ok_or_else(|| {
                 EngineError::new(
-                    "crypto_provider_invalid",
+                    CRYPTO_PROVIDER_INVALID_CODE,
                     "Master password config is missing keyId",
                 )
             })?;
         let salt_b64 = config.kdf_salt.as_deref().ok_or_else(|| {
             EngineError::new(
-                "crypto_provider_invalid",
+                CRYPTO_PROVIDER_INVALID_CODE,
                 "Master password config is missing kdfSalt",
             )
         })?;
         let verify_hash = config.verify_hash.as_deref().ok_or_else(|| {
             EngineError::new(
-                "crypto_provider_invalid",
+                CRYPTO_PROVIDER_INVALID_CODE,
                 "Master password config is missing verifyHash",
             )
         })?;
         let salt = BASE64.decode(salt_b64).map_err(|err| {
             EngineError::with_detail(
-                "crypto_provider_invalid",
+                CRYPTO_PROVIDER_INVALID_CODE,
                 "Master password config is invalid",
                 err.to_string(),
             )
@@ -179,7 +183,8 @@ impl CryptoService {
             return Err(EngineError::new(
                 "security_password_invalid",
                 "Security password is incorrect",
-            ));
+            )
+            .with_message_key("error.securityPasswordInvalid"));
         }
         let mut encryption_key = [0_u8; 32];
         encryption_key.copy_from_slice(&derived[..32]);
@@ -226,20 +231,20 @@ impl CryptoService {
             .strip_prefix(SECRET_TOKEN_PREFIX)
             .ok_or_else(|| {
                 EngineError::new(
-                    "secret_format_unsupported",
+                    crate::security::SECRET_FORMAT_UNSUPPORTED_CODE,
                     "Unsupported secret format: only enc:v1 payloads are accepted",
                 )
             })?;
         let payload_bytes = BASE64.decode(payload_token).map_err(|err| {
             EngineError::with_detail(
-                "secret_format_invalid",
+                SECRET_FORMAT_INVALID_CODE,
                 "Invalid secret format: enc:v1 payload is not valid Base64",
                 err.to_string(),
             )
         })?;
         let payload: EncryptedPayload = serde_json::from_slice(&payload_bytes).map_err(|err| {
             EngineError::with_detail(
-                "secret_format_invalid",
+                SECRET_FORMAT_INVALID_CODE,
                 "Invalid secret format: enc:v1 payload is not valid JSON",
                 err.to_string(),
             )
@@ -258,14 +263,14 @@ impl CryptoService {
         }
         let nonce = BASE64.decode(payload.nonce).map_err(|err| {
             EngineError::with_detail(
-                "secret_format_invalid",
+                SECRET_FORMAT_INVALID_CODE,
                 "Invalid secret format",
                 err.to_string(),
             )
         })?;
         let ciphertext = BASE64.decode(payload.ciphertext).map_err(|err| {
             EngineError::with_detail(
-                "secret_format_invalid",
+                SECRET_FORMAT_INVALID_CODE,
                 "Invalid secret format",
                 err.to_string(),
             )
@@ -277,7 +282,7 @@ impl CryptoService {
         })?;
         String::from_utf8(plaintext).map_err(|err| {
             EngineError::with_detail(
-                "secret_decrypt_failed",
+                crate::security::SECRET_DECRYPT_FAILED_CODE,
                 "Decrypted secret is not valid UTF-8",
                 err.to_string(),
             )
@@ -309,18 +314,20 @@ impl CryptoService {
     fn require_provider_for_encryption(&self) -> Result<&Arc<dyn EncryptionProvider>, EngineError> {
         self.provider.as_ref().ok_or_else(|| {
             EngineError::new(
-                "security_locked",
+                crate::security::SECURITY_LOCKED_CODE,
                 "Security data is locked. Unlock it with the security password first.",
             )
+            .with_message_key("error.securityLocked")
         })
     }
 
     fn require_provider_for_decryption(&self) -> Result<&Arc<dyn EncryptionProvider>, EngineError> {
         self.provider.as_ref().ok_or_else(|| {
             EngineError::new(
-                "security_locked",
+                crate::security::SECURITY_LOCKED_CODE,
                 "Security data is locked. Unlock it with the security password first.",
             )
+            .with_message_key("error.securityLocked")
         })
     }
 }
@@ -337,7 +344,7 @@ fn derive_password_material(
     }
     let params = Params::new(64 * 1024, 3, 1, Some(USER_PASSWORD_DERIVED_LEN)).map_err(|err| {
         EngineError::with_detail(
-            "crypto_init_failed",
+            crate::security::CRYPTO_INIT_FAILED_CODE,
             "Failed to initialize password derivation parameters",
             err.to_string(),
         )
@@ -348,7 +355,7 @@ fn derive_password_material(
         .hash_password_into(password.as_bytes(), salt, &mut output)
         .map_err(|err| {
             EngineError::with_detail(
-                "crypto_init_failed",
+                crate::security::CRYPTO_INIT_FAILED_CODE,
                 "Failed to derive master password key material",
                 err.to_string(),
             )

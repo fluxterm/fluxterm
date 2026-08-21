@@ -1,5 +1,7 @@
 //! SSH Host Key 预检能力。
 
+const SSH_HOST_KEY_PROBE_FAILED_CODE: &str = "ssh_host_key_probe_failed";
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -22,9 +24,9 @@ pub struct HostKeyProbe {
 /// Host Key 预检的连接超时秒数。
 /// 目标不可达或端口未开放时，避免前端长时间无响应。
 const SSH_HOST_KEY_PROBE_TIMEOUT_SECS: u64 = 8;
-const SSH_HOST_KEY_PROBE_TIMEOUT: &str = "error.ssh.hostKey.probeTimeout";
-const SSH_HOST_KEY_PROBE_LOCK_FAILED: &str = "error.ssh.hostKey.probeLockFailed";
-const SSH_HOST_KEY_PROBE_FAILED: &str = "error.ssh.hostKey.probeFailed";
+const SSH_HOST_KEY_PROBE_TIMEOUT_KEY: &str = "error.ssh.hostKey.probeTimeout";
+const SSH_HOST_KEY_PROBE_LOCK_FAILED_KEY: &str = "error.ssh.hostKey.probeLockFailed";
+const SSH_HOST_KEY_PROBE_FAILED_KEY: &str = "error.ssh.hostKey.probeFailed";
 
 #[derive(Clone)]
 struct ProbeHandler {
@@ -67,23 +69,23 @@ pub async fn probe_host_key(
     .await
     .map_err(|_| {
         EngineError::with_detail(
-            "ssh_host_key_probe_failed",
+            SSH_HOST_KEY_PROBE_FAILED_CODE,
             "Unable to fetch the target host key before the connection timed out",
             format!(
                 "host={} port={} timeout={}s",
                 profile.host, profile.port, SSH_HOST_KEY_PROBE_TIMEOUT_SECS
             ),
         )
-        .with_message_key(SSH_HOST_KEY_PROBE_TIMEOUT)
+        .with_message_key(SSH_HOST_KEY_PROBE_TIMEOUT_KEY)
     })?;
 
     let captured = key
         .lock()
         .map_err(|_| {
             EngineError::localized(
-                "ssh_host_key_probe_failed",
+                SSH_HOST_KEY_PROBE_FAILED_CODE,
                 "Host key probe state is unavailable",
-                SSH_HOST_KEY_PROBE_LOCK_FAILED,
+                SSH_HOST_KEY_PROBE_LOCK_FAILED_KEY,
             )
         })?
         .clone();
@@ -98,16 +100,16 @@ pub async fn probe_host_key(
 
     connect_result.map_err(|err| {
         EngineError::with_detail(
-            "ssh_host_key_probe_failed",
+            SSH_HOST_KEY_PROBE_FAILED_CODE,
             "Unable to fetch the target host key",
             err.to_string(),
         )
-        .with_message_key(SSH_HOST_KEY_PROBE_FAILED)
+        .with_message_key(SSH_HOST_KEY_PROBE_FAILED_KEY)
     })?;
 
     Err(EngineError::localized(
-        "ssh_host_key_probe_failed",
+        SSH_HOST_KEY_PROBE_FAILED_CODE,
         "Unable to fetch the target host key",
-        SSH_HOST_KEY_PROBE_FAILED,
+        SSH_HOST_KEY_PROBE_FAILED_KEY,
     ))
 }

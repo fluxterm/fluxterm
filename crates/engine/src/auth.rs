@@ -13,17 +13,19 @@ use crate::error::EngineError;
 use crate::session::ClientHandler;
 use crate::types::{AuthType, HostProfile};
 
-const SSH_AUTH_MISSING_PASSWORD: &str = "error.ssh.auth.missingPassword";
-const SSH_AUTH_PASSWORD_FAILED: &str = "error.ssh.auth.passwordFailed";
-const SSH_AUTH_PASSWORD_UNSUPPORTED: &str = "error.ssh.auth.passwordUnsupported";
-const SSH_AUTH_REJECTED: &str = "error.ssh.auth.rejected";
+const SSH_AUTH_FAILED_CODE: &str = "ssh_auth_failed";
+
+const SSH_AUTH_MISSING_PASSWORD_KEY: &str = "error.ssh.auth.missingPassword";
+const SSH_AUTH_PASSWORD_FAILED_KEY: &str = "error.ssh.auth.passwordFailed";
+const SSH_AUTH_PASSWORD_UNSUPPORTED_KEY: &str = "error.ssh.auth.passwordUnsupported";
+const SSH_AUTH_REJECTED_KEY: &str = "error.ssh.auth.rejected";
 const SSH_AUTH_MISSING_PRIVATE_KEY: &str = "error.ssh.auth.missingPrivateKey";
-const SSH_AUTH_PUBLIC_KEY_FAILED: &str = "error.ssh.auth.publicKeyFailed";
-const SSH_AUTH_PUBLIC_KEY_UNSUPPORTED: &str = "error.ssh.auth.publicKeyUnsupported";
-const SSH_AUTH_PUBLIC_KEY_REJECTED: &str = "error.ssh.auth.publicKeyRejected";
-const SSH_AUTH_AGENT_UNSUPPORTED: &str = "error.ssh.auth.agentUnsupported";
-const SSH_AUTH_NOT_AUTHENTICATED: &str = "error.ssh.auth.notAuthenticated";
-const SSH_AUTH_KEY_READ_FAILED: &str = "error.ssh.auth.keyReadFailed";
+const SSH_AUTH_PUBLIC_KEY_FAILED_KEY: &str = "error.ssh.auth.publicKeyFailed";
+const SSH_AUTH_PUBLIC_KEY_UNSUPPORTED_KEY: &str = "error.ssh.auth.publicKeyUnsupported";
+const SSH_AUTH_PUBLIC_KEY_REJECTED_KEY: &str = "error.ssh.auth.publicKeyRejected";
+const SSH_AUTH_AGENT_UNSUPPORTED_KEY: &str = "error.ssh.auth.agentUnsupported";
+const SSH_AUTH_NOT_AUTHENTICATED_KEY: &str = "error.ssh.auth.notAuthenticated";
+const SSH_AUTH_KEY_READ_FAILED_KEY: &str = "error.ssh.auth.keyReadFailed";
 
 /// SSH 认证用途，用于区分会话连接与资源监控等链路。
 #[derive(Clone, Copy)]
@@ -66,9 +68,9 @@ pub async fn authenticate(
         AuthType::Password => {
             let password = profile.password_ref.clone().ok_or_else(|| {
                 EngineError::localized(
-                    "ssh_auth_failed",
+                    SSH_AUTH_FAILED_CODE,
                     "SSH password is missing",
-                    SSH_AUTH_MISSING_PASSWORD,
+                    SSH_AUTH_MISSING_PASSWORD_KEY,
                 )
             })?;
             let result = session
@@ -76,11 +78,11 @@ pub async fn authenticate(
                 .await
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "ssh_auth_failed",
+                        SSH_AUTH_FAILED_CODE,
                         "SSH password authentication failed",
                         err.to_string(),
                     )
-                    .with_message_key(SSH_AUTH_PASSWORD_FAILED)
+                    .with_message_key(SSH_AUTH_PASSWORD_FAILED_KEY)
                 })?;
             match result {
                 AuthResult::Success => result,
@@ -89,15 +91,15 @@ pub async fn authenticate(
                 } => {
                     if !remaining_methods.contains(&MethodKind::Password) {
                         return Err(EngineError::new(
-                            "ssh_auth_failed",
+                            SSH_AUTH_FAILED_CODE,
                             "The server does not support password authentication",
                         )
-                        .with_message_key(SSH_AUTH_PASSWORD_UNSUPPORTED));
+                        .with_message_key(SSH_AUTH_PASSWORD_UNSUPPORTED_KEY));
                     }
                     return Err(EngineError::localized(
-                        "ssh_auth_failed",
+                        SSH_AUTH_FAILED_CODE,
                         "SSH authentication was rejected by the server",
-                        SSH_AUTH_REJECTED,
+                        SSH_AUTH_REJECTED_KEY,
                     ));
                 }
             }
@@ -105,7 +107,7 @@ pub async fn authenticate(
         AuthType::PrivateKey => {
             let key_path = profile.private_key_path.clone().ok_or_else(|| {
                 EngineError::localized(
-                    "ssh_auth_failed",
+                    SSH_AUTH_FAILED_CODE,
                     "SSH private key path is missing",
                     SSH_AUTH_MISSING_PRIVATE_KEY,
                 )
@@ -117,11 +119,11 @@ pub async fn authenticate(
                 .await
                 .map_err(|err| {
                     EngineError::with_detail(
-                        "ssh_auth_failed",
+                        SSH_AUTH_FAILED_CODE,
                         "SSH public key authentication failed",
                         err.to_string(),
                     )
-                    .with_message_key(SSH_AUTH_PUBLIC_KEY_FAILED)
+                    .with_message_key(SSH_AUTH_PUBLIC_KEY_FAILED_KEY)
                 })?;
             match result {
                 AuthResult::Success => result,
@@ -130,24 +132,24 @@ pub async fn authenticate(
                 } => {
                     if !remaining_methods.contains(&MethodKind::PublicKey) {
                         return Err(EngineError::new(
-                            "ssh_auth_failed",
+                            SSH_AUTH_FAILED_CODE,
                             "The server does not support public key authentication",
                         )
-                        .with_message_key(SSH_AUTH_PUBLIC_KEY_UNSUPPORTED));
+                        .with_message_key(SSH_AUTH_PUBLIC_KEY_UNSUPPORTED_KEY));
                     }
                     return Err(EngineError::localized(
-                        "ssh_auth_failed",
+                        SSH_AUTH_FAILED_CODE,
                         "SSH public key authentication was rejected by the server",
-                        SSH_AUTH_PUBLIC_KEY_REJECTED,
+                        SSH_AUTH_PUBLIC_KEY_REJECTED_KEY,
                     ));
                 }
             }
         }
         AuthType::Agent => {
             return Err(EngineError::localized(
-                "ssh_auth_failed",
+                SSH_AUTH_FAILED_CODE,
                 "SSH agent authentication is not supported yet",
-                SSH_AUTH_AGENT_UNSUPPORTED,
+                SSH_AUTH_AGENT_UNSUPPORTED_KEY,
             ));
         }
     };
@@ -166,15 +168,15 @@ pub async fn authenticate(
                 "error": {
                     "code": "ssh_auth_failed",
                     "message": "SSH authentication did not complete",
-                    "messageKey": SSH_AUTH_NOT_AUTHENTICATED,
+                    "messageKey": SSH_AUTH_NOT_AUTHENTICATED_KEY,
                     "detail": Option::<String>::None,
                 }
             }),
         );
         return Err(EngineError::localized(
-            "ssh_auth_failed",
+            SSH_AUTH_FAILED_CODE,
             "SSH authentication did not complete",
-            SSH_AUTH_NOT_AUTHENTICATED,
+            SSH_AUTH_NOT_AUTHENTICATED_KEY,
         ));
     }
 
@@ -197,10 +199,10 @@ pub async fn authenticate(
 fn load_key(path: &str, passphrase: Option<&str>) -> Result<keys::PrivateKey, EngineError> {
     keys::load_secret_key(Path::new(path), passphrase).map_err(|err| {
         EngineError::with_detail(
-            "ssh_auth_failed",
+            SSH_AUTH_FAILED_CODE,
             "Unable to read SSH private key",
             err.to_string(),
         )
-        .with_message_key(SSH_AUTH_KEY_READ_FAILED)
+        .with_message_key(SSH_AUTH_KEY_READ_FAILED_KEY)
     })
 }

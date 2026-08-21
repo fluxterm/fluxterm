@@ -1,4 +1,7 @@
 //! 引擎核心实现。
+const SESSION_NOT_FOUND_CODE: &str = "session_not_found";
+pub const SESSION_COMMAND_FAILED_CODE: &str = "session_command_failed";
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -123,7 +126,7 @@ impl Engine {
                         "error": {
                             "code": &err.code,
                             "message": &err.message,
-                            "detail": &err.detail,
+                            "detail": &err.details,
                         }
                     }),
                 );
@@ -153,10 +156,10 @@ impl Engine {
             .lock()
             .unwrap()
             .remove(session_id)
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle.tx.send(SessionCommand::Disconnect).map_err(|_| {
             EngineError::new(
-                "session_command_failed",
+                SESSION_COMMAND_FAILED_CODE,
                 "Failed to send disconnect command",
             )
         })?;
@@ -171,11 +174,10 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
-        handle
-            .tx
-            .send(SessionCommand::Write(data))
-            .map_err(|_| EngineError::new("session_command_failed", "Failed to send input data"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
+        handle.tx.send(SessionCommand::Write(data)).map_err(|_| {
+            EngineError::new(SESSION_COMMAND_FAILED_CODE, "Failed to send input data")
+        })?;
         Ok(())
     }
 
@@ -187,11 +189,13 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::Resize { cols, rows })
-            .map_err(|_| EngineError::new("session_command_failed", "Failed to resize terminal"))?;
+            .map_err(|_| {
+                EngineError::new(SESSION_COMMAND_FAILED_CODE, "Failed to resize terminal")
+            })?;
         Ok(())
     }
 
@@ -204,7 +208,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpList {
@@ -212,7 +216,10 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "Failed to send SFTP list command")
+                EngineError::new(
+                    SESSION_COMMAND_FAILED_CODE,
+                    "Failed to send SFTP list command",
+                )
             })?;
         self.await_response(resp_rx, "Failed to receive SFTP list response")
     }
@@ -226,7 +233,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpStat {
@@ -234,7 +241,10 @@ impl Engine {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "Failed to send SFTP stat command")
+                EngineError::new(
+                    SESSION_COMMAND_FAILED_CODE,
+                    "Failed to send SFTP stat command",
+                )
             })?;
         self.await_response(resp_rx, "Failed to receive SFTP stat response")
     }
@@ -248,14 +258,17 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpHome {
                 respond_to: resp_tx,
             })
             .map_err(|_| {
-                EngineError::new("session_command_failed", "Failed to send SFTP home command")
+                EngineError::new(
+                    SESSION_COMMAND_FAILED_CODE,
+                    "Failed to send SFTP home command",
+                )
             })?;
         self.await_response(resp_rx, "Failed to receive SFTP home response")
     }
@@ -269,7 +282,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpResolvePath {
@@ -278,7 +291,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP path resolution command",
                 )
             })?;
@@ -299,7 +312,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpUpload {
@@ -309,7 +322,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP upload command",
                 )
             })?;
@@ -330,7 +343,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpUploadPaths {
@@ -340,7 +353,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP paths upload command",
                 )
             })?;
@@ -361,7 +374,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpDownload {
@@ -371,7 +384,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP download command",
                 )
             })?;
@@ -392,7 +405,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpDownloadDir {
@@ -402,7 +415,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP directory download command",
                 )
             })?;
@@ -425,7 +438,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpCancelTransfer {
@@ -434,7 +447,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP transfer cancellation command",
                 )
             })?;
@@ -453,7 +466,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpRename {
@@ -463,7 +476,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP rename command",
                 )
             })?;
@@ -479,7 +492,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpRemove {
@@ -488,7 +501,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP remove command",
                 )
             })?;
@@ -504,7 +517,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::SftpMkdir {
@@ -513,7 +526,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send SFTP mkdir command",
                 )
             })?;
@@ -533,7 +546,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelOpen {
@@ -542,7 +555,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send tunnel create command",
                 )
             })?;
@@ -558,7 +571,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelClose {
@@ -567,7 +580,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send tunnel close command",
                 )
             })?;
@@ -583,7 +596,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelList {
@@ -591,7 +604,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send tunnel list command",
                 )
             })?;
@@ -607,7 +620,7 @@ impl Engine {
             .unwrap()
             .get(session_id)
             .cloned()
-            .ok_or_else(|| EngineError::new("session_not_found", "Session not found"))?;
+            .ok_or_else(|| EngineError::new(SESSION_NOT_FOUND_CODE, "Session not found"))?;
         handle
             .tx
             .send(SessionCommand::TunnelCloseAll {
@@ -615,7 +628,7 @@ impl Engine {
             })
             .map_err(|_| {
                 EngineError::new(
-                    "session_command_failed",
+                    SESSION_COMMAND_FAILED_CODE,
                     "Failed to send tunnel batch close command",
                 )
             })?;
@@ -659,7 +672,7 @@ impl Engine {
     ) -> Result<T, EngineError> {
         self.runtime.block_on(async {
             rx.await
-                .map_err(|_| EngineError::new("session_command_failed", message))
+                .map_err(|_| EngineError::new(SESSION_COMMAND_FAILED_CODE, message))
         })?
     }
 }

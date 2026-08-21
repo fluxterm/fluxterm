@@ -1,5 +1,8 @@
 //! 应用配置目录路径解析与位置管理。
 
+const BOOTSTRAP_INVALID_CODE: &str = "bootstrap_invalid";
+const CONFIG_PARENT_INVALID_CODE: &str = "config_parent_invalid";
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
@@ -128,13 +131,13 @@ impl ConfigDirectoryState {
         self.ensure_not_environment_locked()?;
         if !parent.is_absolute() {
             return Err(EngineError::new(
-                "config_parent_invalid",
+                CONFIG_PARENT_INVALID_CODE,
                 "The selected configuration parent directory must be absolute",
             ));
         }
         if !parent.is_dir() {
             return Err(EngineError::new(
-                "config_parent_invalid",
+                CONFIG_PARENT_INVALID_CODE,
                 "The selected configuration parent directory does not exist",
             ));
         }
@@ -406,7 +409,7 @@ fn read_bootstrap(path: &Path) -> (Option<BootstrapFile>, Option<EngineError>) {
         .and_then(|raw| {
             serde_json::from_str::<BootstrapFile>(&raw).map_err(|error| {
                 EngineError::with_detail(
-                    "bootstrap_invalid",
+                    BOOTSTRAP_INVALID_CODE,
                     "The bootstrap configuration is invalid",
                     error.to_string(),
                 )
@@ -420,7 +423,7 @@ fn read_bootstrap(path: &Path) -> (Option<BootstrapFile>, Option<EngineError>) {
                     .is_some_and(|path| !path.is_absolute())
             {
                 return Err(EngineError::new(
-                    "bootstrap_invalid",
+                    BOOTSTRAP_INVALID_CODE,
                     "The bootstrap configuration is invalid",
                 ));
             }

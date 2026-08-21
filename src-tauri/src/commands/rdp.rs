@@ -138,7 +138,8 @@ pub fn rdp_profile_save(
                 return Err(EngineError::new(
                     "rdp_fixed_resolution_required",
                     "Fixed resolution mode requires a valid width and height",
-                ));
+                )
+                .with_message_key("rdp.error.fixedResolutionRequired"));
             }
             profile.width = Some(width.max(320));
             profile.height = Some(height.max(200));

@@ -14,10 +14,12 @@ pub mod ssh_transport;
 pub mod types;
 pub mod util;
 
-pub use crate::engine::Engine;
+pub use crate::engine::{Engine, SESSION_COMMAND_FAILED_CODE};
 pub use crate::error::EngineError;
 pub use crate::host_key::{HostKeyProbe, probe_host_key};
 pub use crate::serial::SerialManager;
 pub use crate::session::ExpectedHostKey;
-pub use crate::ssh_transport::{JumpHostProfile, JumpHostSpec};
+pub use crate::ssh_transport::{
+    JumpHostProfile, JumpHostSpec, SSH_CONNECT_FAILED_CODE, SSH_JUMP_DEPTH_EXCEEDED_CODE,
+};
 pub use crate::types::*;

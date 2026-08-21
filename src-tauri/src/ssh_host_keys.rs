@@ -13,6 +13,9 @@
 //!
 //! 主 SSH 会话与资源监控连接都依赖本模块的受信任记录来决定是否允许继续握手。
 
+const KNOWN_HOSTS_READ_FAILED_CODE: &str = "known_hosts_read_failed";
+const KNOWN_HOSTS_WRITE_FAILED_CODE: &str = "known_hosts_write_failed";
+
 use std::fs;
 use std::path::Path;
 
@@ -69,7 +72,7 @@ fn trust_host_key_path(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             EngineError::with_detail(
-                "known_hosts_write_failed",
+                KNOWN_HOSTS_WRITE_FAILED_CODE,
                 "Failed to create the known_hosts directory",
                 err.to_string(),
             )
@@ -81,7 +84,7 @@ fn trust_host_key_path(
     if path.exists() {
         let content = fs::read_to_string(path).map_err(|err| {
             EngineError::with_detail(
-                "known_hosts_read_failed",
+                KNOWN_HOSTS_READ_FAILED_CODE,
                 "Failed to read the known_hosts file",
                 err.to_string(),
             )
@@ -103,7 +106,7 @@ fn trust_host_key_path(
     preserved.push(format!("{pattern} {key_algorithm} {public_key_base64}"));
     fs::write(path, preserved.join("\n") + "\n").map_err(|err| {
         EngineError::with_detail(
-            "known_hosts_write_failed",
+            KNOWN_HOSTS_WRITE_FAILED_CODE,
             "Failed to write the known_hosts file",
             err.to_string(),
         )
@@ -121,7 +124,7 @@ fn match_host_key_path(
     let content = if path.exists() {
         fs::read_to_string(path).map_err(|err| {
             EngineError::with_detail(
-                "known_hosts_read_failed",
+                KNOWN_HOSTS_READ_FAILED_CODE,
                 "Failed to read the known_hosts file",
                 err.to_string(),
             )

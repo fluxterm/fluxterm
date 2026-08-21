@@ -1,5 +1,9 @@
 //! 安全状态与保护模式命令。
 
+const SECURITY_ENABLE_UNAVAILABLE_CODE: &str = "security_enable_unavailable";
+const SECURITY_MODE_INVALID_CODE: &str = "security_mode_invalid";
+const SECURITY_UNLOCK_UNAVAILABLE_CODE: &str = "security_unlock_unavailable";
+
 use engine::{EngineError, HostProfile};
 use tauri::{AppHandle, State};
 
@@ -53,14 +57,18 @@ pub fn security_unlock(
 ) -> Result<SecurityStatus, EngineError> {
     let security_config = read_security_config(&app)?;
     let config = security_config.as_ref().ok_or_else(|| {
-        EngineError::new("security_mode_invalid", "Security mode is not configured")
+        EngineError::new(
+            SECURITY_MODE_INVALID_CODE,
+            "Security mode is not configured",
+        )
     })?;
     let provider = config.provider.trim().to_ascii_lowercase();
     if provider != "user_password" {
         return Err(EngineError::new(
-            "security_unlock_unavailable",
+            SECURITY_UNLOCK_UNAVAILABLE_CODE,
             "Strong protection mode is not enabled",
-        ));
+        )
+        .with_message_key("error.securityUnlockUnavailable"));
     }
     let session = CryptoService::unlock_user_password(config, &input.password)?;
     security.set_session(session);
@@ -80,9 +88,10 @@ pub fn security_lock(
         .unwrap_or_else(|| "embedded".to_string());
     if provider != "user_password" {
         return Err(EngineError::new(
-            "security_unlock_unavailable",
+            SECURITY_UNLOCK_UNAVAILABLE_CODE,
             "Strong protection mode is not enabled",
-        ));
+        )
+        .with_message_key("error.securityUnlockUnavailable"));
     }
     security.clear_session();
     security_status(app, security)
@@ -103,9 +112,10 @@ pub fn security_enable_strong_protection(
     let current_crypto = CryptoService::new(current_config.as_ref(), current_session.as_ref())?;
     if current_crypto.provider_kind() != crate::security::EncryptionProviderKind::Embedded {
         return Err(EngineError::new(
-            "security_enable_unavailable",
+            SECURITY_ENABLE_UNAVAILABLE_CODE,
             "Strong protection mode is already enabled",
-        ));
+        )
+        .with_message_key("error.securityEnableUnavailable"));
     }
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
@@ -142,13 +152,17 @@ pub fn security_change_password(
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let config = current_config.as_ref().ok_or_else(|| {
-        EngineError::new("security_mode_invalid", "Security mode is not configured")
+        EngineError::new(
+            SECURITY_MODE_INVALID_CODE,
+            "Security mode is not configured",
+        )
     })?;
     if !config.provider.trim().eq_ignore_ascii_case("user_password") {
         return Err(EngineError::new(
             "security_change_unavailable",
             "Strong protection mode is not enabled",
-        ));
+        )
+        .with_message_key("error.securityChangeUnavailable"));
     }
 
     let current_session = CryptoService::unlock_user_password(config, &input.current_password)?;
@@ -192,15 +206,17 @@ pub fn security_enable_weak_protection(
         && current_session.is_none()
     {
         return Err(EngineError::new(
-            "security_locked",
+            crate::security::SECURITY_LOCKED_CODE,
             "Security data is locked",
-        ));
+        )
+        .with_message_key("error.securityLocked"));
     }
     if current_crypto.provider_kind() == crate::security::EncryptionProviderKind::Embedded {
         return Err(EngineError::new(
-            "security_enable_unavailable",
+            SECURITY_ENABLE_UNAVAILABLE_CODE,
             "Weak protection mode is already enabled",
-        ));
+        )
+        .with_message_key("error.securityEnableUnavailable"));
     }
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;

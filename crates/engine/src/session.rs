@@ -12,6 +12,9 @@
 //!
 //! 资源监控不复用本模块内的主终端会话，而是通过独立 SSH 连接执行远端采样。
 //! 这样可以隔离 PTY/终端交互与监控采样，避免监控链路承载用户态终端语义。
+const SSH_TUNNEL_OPEN_FAILED_CODE: &str = "ssh_tunnel_open_failed";
+const SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE: &str = "ssh_tunnel_socks_handshake_failed";
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -504,7 +507,7 @@ async fn open_local_or_dynamic_tunnel(
                         let Ok(channel) = channel else {
                             let mut g = runtime_for_conn.lock().await;
                             g.active_connections = g.active_connections.saturating_sub(1);
-                            g.last_error = Some(EngineError::new("ssh_tunnel_open_failed", "Failed to create SSH forwarding channel"));
+                            g.last_error = Some(EngineError::new(SSH_TUNNEL_OPEN_FAILED_CODE, "Failed to create SSH forwarding channel"));
                             emit_tunnel_update(&on_event_for_conn, &g.clone());
                             return;
                         };
@@ -600,7 +603,7 @@ async fn open_remote_tunnel(
                 }),
             );
             EngineError::with_detail(
-                "ssh_tunnel_open_failed",
+                SSH_TUNNEL_OPEN_FAILED_CODE,
                 "Failed to create remote forwarding",
                 err.to_string(),
             )
@@ -713,28 +716,28 @@ async fn socks5_connect_handshake(
     let mut greeting = [0u8; 2];
     stream.read_exact(&mut greeting).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "SOCKS handshake failed",
             err.to_string(),
         )
     })?;
     if greeting[0] != 0x05 {
         return Err(EngineError::new(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "Only SOCKS5 is supported",
         ));
     }
     let mut methods = vec![0u8; greeting[1] as usize];
     stream.read_exact(&mut methods).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "SOCKS handshake failed",
             err.to_string(),
         )
     })?;
     stream.write_all(&[0x05, 0x00]).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "SOCKS handshake failed",
             err.to_string(),
         )
@@ -743,7 +746,7 @@ async fn socks5_connect_handshake(
     let mut request_head = [0u8; 4];
     stream.read_exact(&mut request_head).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "Failed to read SOCKS request",
             err.to_string(),
         )
@@ -753,7 +756,7 @@ async fn socks5_connect_handshake(
             .write_all(&[0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
             .await;
         return Err(EngineError::new(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "Only CONNECT command is supported",
         ));
     }
@@ -763,7 +766,7 @@ async fn socks5_connect_handshake(
             let mut ipv4 = [0u8; 4];
             stream.read_exact(&mut ipv4).await.map_err(|err| {
                 EngineError::with_detail(
-                    "ssh_tunnel_socks_handshake_failed",
+                    SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                     "Failed to read SOCKS address",
                     err.to_string(),
                 )
@@ -774,7 +777,7 @@ async fn socks5_connect_handshake(
             let mut len = [0u8; 1];
             stream.read_exact(&mut len).await.map_err(|err| {
                 EngineError::with_detail(
-                    "ssh_tunnel_socks_handshake_failed",
+                    SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                     "Failed to read SOCKS domain",
                     err.to_string(),
                 )
@@ -782,7 +785,7 @@ async fn socks5_connect_handshake(
             let mut domain = vec![0u8; len[0] as usize];
             stream.read_exact(&mut domain).await.map_err(|err| {
                 EngineError::with_detail(
-                    "ssh_tunnel_socks_handshake_failed",
+                    SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                     "Failed to read SOCKS domain",
                     err.to_string(),
                 )
@@ -793,7 +796,7 @@ async fn socks5_connect_handshake(
             let mut ipv6 = [0u8; 16];
             stream.read_exact(&mut ipv6).await.map_err(|err| {
                 EngineError::with_detail(
-                    "ssh_tunnel_socks_handshake_failed",
+                    SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                     "Failed to read SOCKS IPv6 address",
                     err.to_string(),
                 )
@@ -805,7 +808,7 @@ async fn socks5_connect_handshake(
                 .write_all(&[0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
                 .await;
             return Err(EngineError::new(
-                "ssh_tunnel_socks_handshake_failed",
+                SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                 "Unsupported address type",
             ));
         }
@@ -813,7 +816,7 @@ async fn socks5_connect_handshake(
     let mut port_buf = [0u8; 2];
     stream.read_exact(&mut port_buf).await.map_err(|err| {
         EngineError::with_detail(
-            "ssh_tunnel_socks_handshake_failed",
+            SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
             "Failed to read SOCKS port",
             err.to_string(),
         )
@@ -824,7 +827,7 @@ async fn socks5_connect_handshake(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                "ssh_tunnel_socks_handshake_failed",
+                SSH_TUNNEL_SOCKS_HANDSHAKE_FAILED_CODE,
                 "Failed to send SOCKS response",
                 err.to_string(),
             )
@@ -885,7 +888,7 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
     .await
     .map_err(|_| {
         EngineError::with_detail(
-            "ssh_connect_failed",
+            crate::ssh_transport::SSH_CONNECT_FAILED_CODE,
             "Failed to connect to target host (connection timed out)",
             format!(
                 "host={} port={} timeout={}s",

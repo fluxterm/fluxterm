@@ -1,5 +1,5 @@
 import type { Locale } from "@/i18n";
-import type { EngineErrorView } from "@/types";
+import type { BackendErrorPayload } from "@/shared/errors/appError";
 
 export type AiResponseLanguageStrategy = "follow_ui" | "follow_user_input";
 
@@ -120,5 +120,5 @@ export type AiChatDonePayload = {
 export type AiChatErrorPayload = {
   requestId: string;
   sessionId: string;
-  error: EngineErrorView;
+  error: BackendErrorPayload;
 };

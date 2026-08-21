@@ -7,7 +7,7 @@
  * 4. 采用“内存态缓存 + 防抖异步落盘”模式。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { logDebug, logWarn } from "@/shared/logging";
 import type { Locale } from "@/i18n";
 import type { LocalShellConfig, LocalShellProfile, ThemeId } from "@/types";
@@ -310,7 +310,8 @@ export default function useAppSettings({
 
   /** 重新拉取系统可用的本地 Shell 列表，并在必要时修正当前选中项。 */
   const refreshAvailableShells = useCallback(async () => {
-    const shells = await invoke<LocalShellProfile[]>("local_shell_list");
+    const shells =
+      await invokeTauriCommand<LocalShellProfile[]>("local_shell_list");
     setAvailableShells(shells);
     const fallbackId = resolveDefaultShellId(shells);
     setShellId((current) => {

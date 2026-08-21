@@ -1,5 +1,5 @@
 import { createOperationId } from "@/shared/logging";
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import type { RdpInputEvent, RdpProfile, RdpSessionSnapshot } from "@/types";
 
 type RdpCommandOptions = {
@@ -12,14 +12,14 @@ function resolveOperationId(options?: RdpCommandOptions) {
 
 /** 读取 RDP Profile 列表。 */
 export function listRdpProfiles(options?: RdpCommandOptions) {
-  return callTauri<RdpProfile[]>("rdp_profile_list", {
+  return invokeTauriCommand<RdpProfile[]>("rdp_profile_list", {
     operationId: resolveOperationId(options),
   });
 }
 
 /** 读取 RDP 分组列表。 */
 export function listRdpProfileGroups(options?: RdpCommandOptions) {
-  return callTauri<string[]>("rdp_profile_groups_list", {
+  return invokeTauriCommand<string[]>("rdp_profile_groups_list", {
     operationId: resolveOperationId(options),
   });
 }
@@ -29,7 +29,7 @@ export function saveRdpProfileGroups(
   groups: string[],
   options?: RdpCommandOptions,
 ) {
-  return callTauri<string[]>("rdp_profile_groups_save", {
+  return invokeTauriCommand<string[]>("rdp_profile_groups_save", {
     groups,
     operationId: resolveOperationId(options),
   });
@@ -40,7 +40,7 @@ export function saveRdpProfile(
   profile: RdpProfile,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpProfile>("rdp_profile_save", {
+  return invokeTauriCommand<RdpProfile>("rdp_profile_save", {
     profile,
     operationId: resolveOperationId(options),
   });
@@ -51,7 +51,7 @@ export function deleteRdpProfile(
   profileId: string,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<boolean>("rdp_profile_delete", {
+  return invokeTauriCommand<boolean>("rdp_profile_delete", {
     profileId,
     operationId: resolveOperationId(options),
   });
@@ -63,7 +63,7 @@ export function createRdpSession(
   initialSize?: { width: number; height: number },
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpSessionSnapshot>("rdp_session_create", {
+  return invokeTauriCommand<RdpSessionSnapshot>("rdp_session_create", {
     profileId,
     width: initialSize?.width,
     height: initialSize?.height,
@@ -76,7 +76,7 @@ export function connectRdpSession(
   sessionId: string,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpSessionSnapshot>("rdp_session_connect", {
+  return invokeTauriCommand<RdpSessionSnapshot>("rdp_session_connect", {
     sessionId,
     operationId: resolveOperationId(options),
   });
@@ -87,7 +87,7 @@ export function disconnectRdpSession(
   sessionId: string,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpSessionSnapshot>("rdp_session_disconnect", {
+  return invokeTauriCommand<RdpSessionSnapshot>("rdp_session_disconnect", {
     sessionId,
     operationId: resolveOperationId(options),
   });
@@ -99,7 +99,7 @@ export function sendRdpInput(
   input: RdpInputEvent,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<void>("rdp_session_send_input", {
+  return invokeTauriCommand<void>("rdp_session_send_input", {
     sessionId,
     input,
     operationId: options?.operationId,
@@ -113,7 +113,7 @@ export function resizeRdpSession(
   height: number,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpSessionSnapshot>("rdp_session_resize", {
+  return invokeTauriCommand<RdpSessionSnapshot>("rdp_session_resize", {
     sessionId,
     width,
     height,
@@ -127,7 +127,7 @@ export function setRdpClipboard(
   text: string,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<void>("rdp_session_set_clipboard", {
+  return invokeTauriCommand<void>("rdp_session_set_clipboard", {
     sessionId,
     text,
     operationId: resolveOperationId(options),
@@ -140,7 +140,7 @@ export function setRdpAudioMuted(
   muted: boolean,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<void>("rdp_session_set_audio_muted", {
+  return invokeTauriCommand<void>("rdp_session_set_audio_muted", {
     sessionId,
     muted,
     operationId: resolveOperationId(options),
@@ -153,7 +153,7 @@ export function decideRdpCertificate(
   accept: boolean,
   options?: RdpCommandOptions,
 ) {
-  return callTauri<RdpSessionSnapshot>("rdp_session_cert_decide", {
+  return invokeTauriCommand<RdpSessionSnapshot>("rdp_session_cert_decide", {
     sessionId,
     accept,
     operationId: resolveOperationId(options),

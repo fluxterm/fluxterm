@@ -7,6 +7,9 @@
 
 pub mod context;
 
+const AI_PROVIDER_CONFIG_INVALID_CODE: &str = "ai_provider_config_invalid";
+const AI_STATE_LOCK_FAILED_CODE: &str = "ai_state_lock_failed";
+
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -117,7 +120,7 @@ pub fn read_provider_config_by_id(
     let model = selected_provider.model.trim().to_string();
     if base_url.is_empty() || model.is_empty() {
         return Err(EngineError::new(
-            "ai_provider_config_invalid",
+            AI_PROVIDER_CONFIG_INVALID_CODE,
             "The active AI provider configuration is incomplete",
         ));
     }
@@ -169,7 +172,7 @@ fn resolve_provider<'a>(
     };
     selected.ok_or_else(|| {
         EngineError::new(
-            "ai_provider_config_invalid",
+            AI_PROVIDER_CONFIG_INVALID_CODE,
             "The active AI provider configuration is incomplete",
         )
     })
@@ -181,10 +184,9 @@ pub fn register_remote_session(
     session: &Session,
     profile: &HostProfile,
 ) -> Result<(), EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     store.sessions.insert(
         session.session_id.clone(),
         SessionContextRecord::from_remote(session, profile),
@@ -199,10 +201,9 @@ pub fn register_local_session(
     label: &str,
     shell_name: Option<String>,
 ) -> Result<(), EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     store.sessions.insert(
         session.session_id.clone(),
         SessionContextRecord::from_local(session, label, shell_name),
@@ -300,10 +301,9 @@ pub(crate) fn with_store<T>(
     state: &AiRuntimeState,
     callback: impl FnOnce(&AiRuntimeStore) -> Result<T, EngineError>,
 ) -> Result<T, EngineError> {
-    let store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     callback(&store)
 }
 
@@ -312,10 +312,9 @@ pub fn register_chat_stream(
     state: &AiRuntimeState,
     request_id: &str,
 ) -> Result<Arc<AtomicBool>, EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     let cancelled = Arc::new(AtomicBool::new(false));
     store
         .active_streams
@@ -325,10 +324,9 @@ pub fn register_chat_stream(
 
 /// 取消流式问答请求。
 pub fn cancel_chat_stream(state: &AiRuntimeState, request_id: &str) -> Result<bool, EngineError> {
-    let store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     Ok(store
         .active_streams
         .get(request_id)
@@ -341,10 +339,9 @@ pub fn cancel_chat_stream(state: &AiRuntimeState, request_id: &str) -> Result<bo
 
 /// 清理流式问答请求。
 pub fn finish_chat_stream(state: &AiRuntimeState, request_id: &str) -> Result<(), EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     store.active_streams.remove(request_id);
     Ok(())
 }
@@ -354,10 +351,9 @@ pub fn get_cached_response(
     state: &AiRuntimeState,
     cache_key: &str,
 ) -> Result<Option<String>, EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     prune_expired_cache(&mut store.request_cache);
     Ok(store
         .request_cache
@@ -372,10 +368,9 @@ pub fn store_cached_response(
     content: String,
     ttl_ms: u64,
 ) -> Result<(), EngineError> {
-    let mut store = state
-        .inner
-        .lock()
-        .map_err(|_| EngineError::new("ai_state_lock_failed", "AI runtime state is unavailable"))?;
+    let mut store = state.inner.lock().map_err(|_| {
+        EngineError::new(AI_STATE_LOCK_FAILED_CODE, "AI runtime state is unavailable")
+    })?;
     prune_expired_cache(&mut store.request_cache);
     store.request_cache.insert(
         cache_key,

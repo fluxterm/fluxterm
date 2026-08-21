@@ -1,5 +1,7 @@
 //! AI 会话上下文构建模块。
 
+const AI_CONTEXT_MISSING_CODE: &str = "ai_context_missing";
+
 use std::collections::HashSet;
 
 use engine::EngineError;
@@ -41,7 +43,7 @@ pub fn build_session_chat_input(
     with_store(state, |store| {
         let session = store.sessions.get(&request.session_id).ok_or_else(|| {
             EngineError::new(
-                "ai_context_missing",
+                AI_CONTEXT_MISSING_CODE,
                 "AI context for the current session was not found",
             )
         })?;
@@ -67,7 +69,7 @@ pub fn build_session_chat_stream_input(
     with_store(state, |store| {
         let session = store.sessions.get(&request.session_id).ok_or_else(|| {
             EngineError::new(
-                "ai_context_missing",
+                AI_CONTEXT_MISSING_CODE,
                 "AI context for the current session was not found",
             )
         })?;

@@ -1,4 +1,6 @@
 //! 本地文件系统读取工具。
+const LOCAL_LIST_FAILED_CODE: &str = "local_list_failed";
+
 use std::fs;
 #[cfg(target_os = "windows")]
 use std::path::Path;
@@ -13,7 +15,7 @@ pub fn local_list_entries(path: &str) -> Result<Vec<SftpEntry>, EngineError> {
     }
     let dir = fs::read_dir(path).map_err(|err| {
         EngineError::with_detail(
-            "local_list_failed",
+            LOCAL_LIST_FAILED_CODE,
             "Failed to read the local directory",
             err.to_string(),
         )
@@ -22,21 +24,21 @@ pub fn local_list_entries(path: &str) -> Result<Vec<SftpEntry>, EngineError> {
     for item in dir {
         let entry = item.map_err(|err| {
             EngineError::with_detail(
-                "local_list_failed",
+                LOCAL_LIST_FAILED_CODE,
                 "Failed to read a local directory entry",
                 err.to_string(),
             )
         })?;
         let file_type = entry.file_type().map_err(|err| {
             EngineError::with_detail(
-                "local_list_failed",
+                LOCAL_LIST_FAILED_CODE,
                 "Failed to read the file type",
                 err.to_string(),
             )
         })?;
         let metadata = entry.metadata().map_err(|err| {
             EngineError::with_detail(
-                "local_list_failed",
+                LOCAL_LIST_FAILED_CODE,
                 "Failed to read file metadata",
                 err.to_string(),
             )

@@ -1,5 +1,7 @@
 //! SSH 与 RDP 分类型凭据存储。
 
+pub(crate) const CREDENTIAL_PASSWORD_REQUIRED_CODE: &str = "credential_password_required";
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -129,7 +131,7 @@ pub fn encrypt_credentials(
                 .protect_optional_string(Some(credential.password_ref))?
                 .ok_or_else(|| {
                     EngineError::new(
-                        "credential_password_required",
+                        CREDENTIAL_PASSWORD_REQUIRED_CODE,
                         "Credential password is required",
                     )
                 })?;

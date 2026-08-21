@@ -3,7 +3,7 @@
  *
  * 仅复用调用方已有的帧回调和 RAF，不创建定时器或新的采样循环。
  */
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import {
   FixedHistogram,
   type HistogramValue,
@@ -37,7 +37,9 @@ const FRAME_INTERVAL_BOUNDS = [4, 8, 12, 16.67, 25, 33.33, 50, 100, 250, 1000];
 /** 查询发送端状态；失败按禁用处理。 */
 export async function getRdpPerformanceTelemetryStatus(): Promise<TelemetryStatus> {
   try {
-    return await callTauri<TelemetryStatus>("performance_telemetry_status_get");
+    return await invokeTauriCommand<TelemetryStatus>(
+      "performance_telemetry_status_get",
+    );
   } catch {
     return { enabled: false, intervalMs: 1000, domains: [] };
   }
@@ -205,7 +207,7 @@ export class RdpPerformanceCollector {
     }
     this.pendingFlush = this.pendingFlush
       .then(() =>
-        callTauri("performance_telemetry_record_rdp_batch", {
+        invokeTauriCommand("performance_telemetry_record_rdp_batch", {
           batch: {
             streamId: this.streamId,
             window: {

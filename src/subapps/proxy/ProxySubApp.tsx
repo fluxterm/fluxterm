@@ -572,8 +572,8 @@ export default function ProxySubApp({ id, locale, t }: ProxySubAppProps) {
                   {item.lastError?.message ? (
                     <div className="proxy-item-error">
                       {item.lastError.message}
-                      {(item.lastError.detail ?? item.lastError.details)
-                        ? `: ${item.lastError.detail ?? item.lastError.details}`
+                      {item.lastError.details
+                        ? `: ${item.lastError.details}`
                         : ""}
                     </div>
                   ) : null}

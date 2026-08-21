@@ -28,6 +28,8 @@
 //! 注意：
 //! - 某些 OpenSSH 字段虽然已被导入并保存，但不代表 FluxTerm 当前连接链路已经消费这些字段。
 //! - 导入采用默认不覆盖策略，判重依据为 `name + host + port + username`。
+const SSH_CONFIG_PARSE_FAILED_CODE: &str = "ssh_config_parse_failed";
+
 use engine::{AuthType, EngineError, HostProfile};
 use russh_config::AddKeysToAgent;
 use serde::Serialize;
@@ -76,7 +78,7 @@ pub struct OpensshImportSummary {
 pub fn import_openssh_config(app: &AppHandle) -> Result<OpensshImportSummary, EngineError> {
     let home = app.path().home_dir().map_err(|err| {
         EngineError::with_detail(
-            "local_home_failed",
+            crate::utils::LOCAL_HOME_FAILED_CODE,
             "Failed to resolve local home directory",
             err.to_string(),
         )
@@ -128,7 +130,7 @@ fn parse_openssh_config(content: &str) -> Result<ParsedOpensshConfig, EngineErro
         }
         let Some((key, value)) = split_config_line(line) else {
             return Err(EngineError::new(
-                "ssh_config_parse_failed",
+                SSH_CONFIG_PARSE_FAILED_CODE,
                 "Failed to parse SSH config",
             ));
         };
@@ -240,7 +242,7 @@ fn map_host_target_to_profile(
 ) -> Result<HostProfile, EngineError> {
     let resolved = russh_config::parse(content, &target.alias).map_err(|err| {
         EngineError::with_detail(
-            "ssh_config_parse_failed",
+            SSH_CONFIG_PARSE_FAILED_CODE,
             "Failed to parse SSH config",
             err.to_string(),
         )

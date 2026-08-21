@@ -2,7 +2,7 @@
  * 文件打开与远端编辑命令。
  * 职责：封装本地文件打开与远端编辑实例的 tauri 命令调用。
  */
-import { callTauri } from "@/shared/tauri/commands";
+import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { createOperationId } from "@/shared/logging";
 import type { RemoteEditSnapshot, SftpEntry } from "@/types";
 
@@ -17,7 +17,7 @@ export async function openLocalFile(
   filePath: string,
   defaultEditorPath: string,
 ) {
-  return callTauri("file_open", {
+  return invokeTauriCommand("file_open", {
     filePath,
     defaultEditorPath: defaultEditorPath.trim() || null,
   });
@@ -30,7 +30,7 @@ export async function openRemoteFileForEditing(
   entry: SftpEntry,
   defaultEditorPath: string,
 ) {
-  return callTauri<RemoteEditSnapshot>("remote_edit_open", {
+  return invokeTauriCommand<RemoteEditSnapshot>("remote_edit_open", {
     request: {
       sessionId,
       target: {
@@ -47,12 +47,12 @@ export async function openRemoteFileForEditing(
 
 /** 获取当前活动的远端编辑实例。 */
 export async function listRemoteEditSessions() {
-  return callTauri<RemoteEditSnapshot[]>("remote_edit_list");
+  return invokeTauriCommand<RemoteEditSnapshot[]>("remote_edit_list");
 }
 
 /** 确认上传当前远端编辑实例的本地修改。 */
 export async function confirmRemoteEditUpload(instanceId: string) {
-  return callTauri<RemoteEditSnapshot>("remote_edit_confirm_upload", {
+  return invokeTauriCommand<RemoteEditSnapshot>("remote_edit_confirm_upload", {
     instanceId,
     operationId: createOperationId(),
   });
@@ -60,7 +60,7 @@ export async function confirmRemoteEditUpload(instanceId: string) {
 
 /** 忽略当前远端编辑实例待确认的本地修改。 */
 export async function dismissRemoteEditPending(instanceId: string) {
-  return callTauri<RemoteEditSnapshot>("remote_edit_dismiss_pending", {
+  return invokeTauriCommand<RemoteEditSnapshot>("remote_edit_dismiss_pending", {
     instanceId,
     operationId: createOperationId(),
   });

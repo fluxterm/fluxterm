@@ -1,4 +1,6 @@
 //! RDP profile、会话与进程内运行时编排。
+const RDP_SESSION_NOT_FOUND_CODE: &str = "rdp_session_not_found";
+
 #[cfg(feature = "performance-telemetry")]
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -153,7 +155,7 @@ pub struct RdpCertificatePrompt {
 }
 
 /// RDP 运行时快照。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RdpSessionSnapshot {
     pub session_id: String,
@@ -418,7 +420,7 @@ impl RdpState {
         sessions
             .get(session_id)
             .map(|runtime| (runtime.snapshot.clone(), runtime.profile.clone()))
-            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP session not found"))
+            .ok_or_else(|| EngineError::new(RDP_SESSION_NOT_FOUND_CODE, "RDP session not found"))
     }
 
     fn update_session_snapshot(
@@ -429,7 +431,7 @@ impl RdpState {
         let mut sessions = self.sessions.lock().map_err(lock_error)?;
         let runtime = sessions
             .get_mut(session_id)
-            .ok_or_else(|| EngineError::new("rdp_session_not_found", "RDP session not found"))?;
+            .ok_or_else(|| EngineError::new(RDP_SESSION_NOT_FOUND_CODE, "RDP session not found"))?;
         update(&mut runtime.snapshot);
         Ok(runtime.snapshot.clone())
     }
