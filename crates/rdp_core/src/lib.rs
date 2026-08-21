@@ -1,6 +1,6 @@
 //! # RdpCore
 //!
-//! `rdp_core` crate 提供了 FluxTerm 进程内 RDP (远程桌面协议) 核心能力。
+//! `fluxterm-rdp-core` crate 提供了 FluxTerm 进程内 RDP (远程桌面协议) 核心能力。
 //! 它封装了底层 RDP 协议处理、会话管理以及与前端 WebGL 渲染器通信的 WebSocket 桥接。
 
 mod audio;

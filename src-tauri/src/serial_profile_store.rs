@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use engine::{EngineError, SerialProfile};
+use fluxterm_engine::{EngineError, SerialProfile};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 

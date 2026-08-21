@@ -1,5 +1,5 @@
 //! 本地 Shell 命令。
-use engine::{EngineError, Session, TerminalSize};
+use fluxterm_engine::{EngineError, Session, TerminalSize};
 use tauri::{AppHandle, State};
 
 use crate::ai::{AiRuntimeState, register_local_session};

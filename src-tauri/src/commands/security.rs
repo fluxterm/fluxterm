@@ -4,7 +4,7 @@ const SECURITY_ENABLE_UNAVAILABLE_CODE: &str = "security_enable_unavailable";
 const SECURITY_MODE_INVALID_CODE: &str = "security_mode_invalid";
 const SECURITY_UNLOCK_UNAVAILABLE_CODE: &str = "security_unlock_unavailable";
 
-use engine::{EngineError, HostProfile};
+use fluxterm_engine::{EngineError, HostProfile};
 use tauri::{AppHandle, State};
 
 use crate::ai_settings::{AiSettings, read_ai_settings, write_ai_settings};

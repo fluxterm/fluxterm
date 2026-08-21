@@ -6,7 +6,7 @@ const AI_SETTINGS_PARSE_FAILED_CODE: &str = "ai_settings_parse_failed";
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 

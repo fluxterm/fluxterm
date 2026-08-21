@@ -1,7 +1,7 @@
 //! 本地文件操作命令。
 use std::path::PathBuf;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use tauri::{AppHandle, Manager};
 
 use crate::local_fs::local_list_entries;
@@ -21,7 +21,7 @@ pub fn local_home(app: AppHandle) -> Result<String, EngineError> {
 
 #[tauri::command]
 /// 获取本机目录列表。
-pub fn local_list(path: String) -> Result<Vec<engine::SftpEntry>, EngineError> {
+pub fn local_list(path: String) -> Result<Vec<fluxterm_engine::SftpEntry>, EngineError> {
     local_list_entries(&path)
 }
 

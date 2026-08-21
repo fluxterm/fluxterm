@@ -5,7 +5,7 @@ use std::fs;
 #[cfg(target_os = "windows")]
 use std::path::Path;
 
-use engine::{EngineError, SftpEntry, SftpEntryKind};
+use fluxterm_engine::{EngineError, SftpEntry, SftpEntryKind};
 
 /// 读取本地目录条目并转换为通用 SFTP 结构。
 pub fn local_list_entries(path: &str) -> Result<Vec<SftpEntry>, EngineError> {

@@ -10,7 +10,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
 

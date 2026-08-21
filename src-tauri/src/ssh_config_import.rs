@@ -30,7 +30,7 @@
 //! - 导入采用默认不覆盖策略，判重依据为 `name + host + port + username`。
 const SSH_CONFIG_PARSE_FAILED_CODE: &str = "ssh_config_parse_failed";
 
-use engine::{AuthType, EngineError, HostProfile};
+use fluxterm_engine::{AuthType, EngineError, HostProfile};
 use russh_config::AddKeysToAgent;
 use serde::Serialize;
 use std::collections::HashSet;

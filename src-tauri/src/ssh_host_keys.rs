@@ -19,7 +19,7 @@ const KNOWN_HOSTS_WRITE_FAILED_CODE: &str = "known_hosts_write_failed";
 use std::fs;
 use std::path::Path;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use russh::keys::{self, HashAlg};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;

@@ -52,7 +52,7 @@ AI 面板中的问答能力仅在存在活动会话时可用。
 
 ### 独立 crate
 
-- `crates/openai`
+- `crates/openai` (`fluxterm-openai`)
 
 职责：
 
@@ -253,7 +253,7 @@ type AiExplainSelectionResponse = {
 
 当前已落地：
 
-- 独立 `crates/openai` crate
+- 独立 `fluxterm-openai` crate（目录为 `crates/openai`）
 - `ai_session_chat` 命令
 - `ai_session_chat_stream_start` 与 `ai_session_chat_stream_cancel` 命令
 - `ai_explain_selection` 命令

@@ -26,7 +26,7 @@ pub mod utils;
 
 use std::sync::Arc;
 
-use engine::Engine;
+use fluxterm_engine::Engine;
 use fluxterm_logging::{LogLevel, log_event};
 #[cfg(feature = "performance-telemetry")]
 use fluxterm_performance_telemetry::install_global_sink;
@@ -190,7 +190,7 @@ pub fn run() {
         .manage(SecurityState::default())
         .manage(LockScreenState::default())
         .manage(SerialState {
-            manager: Arc::new(engine::SerialManager::new()),
+            manager: Arc::new(fluxterm_engine::SerialManager::new()),
         })
         .manage(LocalShellState::default())
         .manage(ResourceMonitorState::default())

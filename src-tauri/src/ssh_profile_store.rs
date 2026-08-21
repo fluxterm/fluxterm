@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use engine::{EngineError, HostProfile};
+use fluxterm_engine::{EngineError, HostProfile};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 

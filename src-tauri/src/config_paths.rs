@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use fluxterm_logging::{LogLevel, log_event};
 use serde::{Deserialize, Serialize};
 use serde_json::json;

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use rand::random;
 use uuid::Uuid;
 

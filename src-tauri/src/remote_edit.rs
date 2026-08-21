@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use engine::{Engine, EngineError, SftpEntry};
+use fluxterm_engine::{Engine, EngineError, SftpEntry};
 use fluxterm_logging::{LogLevel, log_event};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -429,7 +429,7 @@ fn get_file_extension(name: &str) -> &str {
 }
 
 fn is_remote_entry_editable_text(entry: &SftpEntry) -> bool {
-    if !matches!(entry.kind, engine::SftpEntryKind::File) {
+    if !matches!(entry.kind, fluxterm_engine::SftpEntryKind::File) {
         return false;
     }
     if entry
@@ -795,7 +795,7 @@ pub(crate) fn remote_edit_prepare_open(
 ) -> Result<(RemoteEditSnapshot, Option<RemoteEditInstance>), EngineError> {
     ensure_remote_file_cache_cleanup(app)?;
     let remote_entry = engine.sftp_stat(session_id, &entry.path)?;
-    if !matches!(remote_entry.kind, engine::SftpEntryKind::File) {
+    if !matches!(remote_entry.kind, fluxterm_engine::SftpEntryKind::File) {
         return Err(EngineError::new(
             "remote_edit_not_file",
             "The current entry is not an editable file",

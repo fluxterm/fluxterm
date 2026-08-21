@@ -16,12 +16,12 @@ FluxTerm 是一款面向 SSH 与 SFTP 工作流的现代桌面终端。当前平
 ## 总体架构
 
 ```text
-frontend (React/Vite)  --->  tauri (Rust)  --->  engine (Rust)
+frontend (React/Vite)  --->  tauri (Rust)  --->  fluxterm-engine (Rust)
 ```
 
 ## 模块说明
 
-### `crates/engine`
+### `crates/engine` (`fluxterm-engine`)
 
 核心连接与文件传输引擎。
 
@@ -41,7 +41,7 @@ frontend (React/Vite)  --->  tauri (Rust)  --->  engine (Rust)
 
 桌面 GUI 外壳。
 
-- 连接前端与 `engine`
+- 连接前端与 `fluxterm-engine`
 - 向前端暴露 Rust 命令接口
 - 管理窗口能力权限与原生窗口行为
 

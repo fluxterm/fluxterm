@@ -35,7 +35,7 @@ use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::{os::windows::process::CommandExt, thread::sleep};
 
-use engine::{
+use fluxterm_engine::{
     EngineError, Session, SessionState, TerminalSize,
     util::{decode_terminal_output, now_epoch},
 };
@@ -628,7 +628,7 @@ pub fn start_local_shell(
     Ok(Session {
         session_id,
         profile_id: Some(LOCAL_PROFILE_ID.to_string()),
-        kind: engine::SessionKind::LocalShell,
+        kind: fluxterm_engine::SessionKind::LocalShell,
         state: SessionState::Connected,
         created_at: now_epoch(),
         last_error: None,

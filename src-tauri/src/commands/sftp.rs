@@ -1,7 +1,7 @@
 //! SFTP 文件操作命令。
 use std::sync::Arc;
 
-use engine::{Engine, EngineError, SftpEntry, SftpProgress};
+use fluxterm_engine::{Engine, EngineError, SftpEntry, SftpProgress};
 use tauri::State;
 
 use crate::state::EngineState;
@@ -22,7 +22,7 @@ pub async fn sftp_list(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to list the SFTP directory",
             err.to_string(),
         )
@@ -43,7 +43,7 @@ pub async fn sftp_home(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to resolve the SFTP home directory",
             err.to_string(),
         )
@@ -66,7 +66,7 @@ pub async fn sftp_resolve_path(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to resolve the SFTP path",
             err.to_string(),
         )
@@ -91,7 +91,7 @@ pub async fn sftp_upload(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to upload through SFTP",
             err.to_string(),
         )
@@ -116,7 +116,7 @@ pub async fn sftp_upload_paths(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to perform the SFTP batch upload",
             err.to_string(),
         )
@@ -141,7 +141,7 @@ pub async fn sftp_download(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to download through SFTP",
             err.to_string(),
         )
@@ -166,7 +166,7 @@ pub async fn sftp_download_dir(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to download the SFTP directory",
             err.to_string(),
         )
@@ -189,7 +189,7 @@ pub async fn sftp_cancel_transfer(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to cancel the SFTP transfer",
             err.to_string(),
         )
@@ -214,7 +214,7 @@ pub async fn sftp_rename(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to rename the SFTP entry",
             err.to_string(),
         )
@@ -237,7 +237,7 @@ pub async fn sftp_remove(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to remove the SFTP entry",
             err.to_string(),
         )
@@ -260,7 +260,7 @@ pub async fn sftp_mkdir(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to create the SFTP directory",
             err.to_string(),
         )

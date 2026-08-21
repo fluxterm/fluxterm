@@ -1,5 +1,5 @@
 [package]
-name = "rdp_core"
+name = "fluxterm-rdp-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

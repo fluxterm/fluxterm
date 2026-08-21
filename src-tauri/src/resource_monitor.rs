@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use engine::{
+use fluxterm_engine::{
     EngineEvent, EventCallback, ExpectedHostKey, HostProfile, JumpHostSpec, ResourceCpuSnapshot,
     ResourceMemorySnapshot, ResourceMonitorStatus, ResourceMonitorUnsupportedReason,
     SessionResourceSnapshot,
@@ -297,7 +297,7 @@ fn build_unsupported_resource_snapshot(
 #[cfg(test)]
 mod tests {
     use super::build_unsupported_resource_snapshot;
-    use engine::{ResourceMonitorStatus, ResourceMonitorUnsupportedReason};
+    use fluxterm_engine::{ResourceMonitorStatus, ResourceMonitorUnsupportedReason};
 
     #[test]
     fn build_unsupported_snapshot_marks_status_reason_and_clears_metrics() {

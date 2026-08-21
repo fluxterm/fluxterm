@@ -1,6 +1,6 @@
 //! 加密 Provider 抽象。
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 
 use crate::security::types::{EncryptionProviderKind, ProviderCiphertext, SecurityStatus};
 

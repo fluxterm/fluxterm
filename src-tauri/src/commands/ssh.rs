@@ -6,7 +6,7 @@ const SSH_HOST_KEY_UNKNOWN_CODE: &str = "ssh_host_key_unknown";
 use std::collections::HashSet;
 use std::time::Instant;
 
-use engine::{
+use fluxterm_engine::{
     AuthType, EngineError, ExpectedHostKey, HostProfile, JumpHostProfile, JumpHostSpec, Session,
     TerminalSize, probe_host_key,
 };
@@ -298,7 +298,7 @@ async fn enforce_host_key_policy(
 fn emit_host_key_required(
     app: &AppHandle,
     profile: &HostProfile,
-    probe: &engine::HostKeyProbe,
+    probe: &fluxterm_engine::HostKeyProbe,
     previous_fingerprint_sha256: Option<String>,
     policy: &str,
 ) -> Result<(), EngineError> {
@@ -364,7 +364,7 @@ fn resolve_jump_profiles(
     let ids = profile.jump_profile_ids.clone().unwrap_or_default();
     if ids.len() > 8 {
         return Err(EngineError::with_detail(
-            engine::SSH_JUMP_DEPTH_EXCEEDED_CODE,
+            fluxterm_engine::SSH_JUMP_DEPTH_EXCEEDED_CODE,
             "Jump chain exceeds the maximum depth",
             format!("maxDepth=8 actual={}", ids.len()),
         ));
@@ -423,7 +423,7 @@ fn resolve_profile_credential(
 #[cfg(test)]
 mod tests {
     use super::validate_ssh_connect_fields;
-    use engine::AuthType;
+    use fluxterm_engine::AuthType;
 
     #[test]
     fn password_auth_requires_host_username_and_password() {

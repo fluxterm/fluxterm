@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State, WebviewWindow};
 use uuid::Uuid;

@@ -11,8 +11,8 @@ edition = "2024"
 authors = ["sfwwslm"]
 
 [workspace.dependencies]
-engine = { path = "crates/engine" }
-openai = { path = "crates/openai" }
+fluxterm-engine = { path = "crates/engine" }
+fluxterm-openai = { path = "crates/openai" }
 fluxterm-logging = { path = "crates/logging" }
 fluxterm-performance-telemetry = { path = "crates/performance_telemetry" }
 fluxterm-pulse-protocol = { git = "https://github.com/fluxterm/fluxterm-pulse-protocol.git", tag = "0.1.0" }

@@ -5,7 +5,7 @@ const BACKGROUND_WRITE_FAILED_CODE: &str = "background_write_failed";
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;

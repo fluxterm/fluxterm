@@ -7,14 +7,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 #[cfg(feature = "performance-telemetry")]
 use fluxterm_performance_telemetry::{
     PerformanceDomain, RecordOutcome, StreamCorrelation, StreamKind, StreamOutcome,
     StreamParameter, StreamTarget, close_stream as close_performance_stream,
     create_stream_descriptor, domain_enabled, open_stream as open_performance_stream, unix_time_ms,
 };
-use rdp_core::{
+use fluxterm_rdp_core::{
     RdpRuntime, RuntimeAudioState, RuntimeConnectRequest, RuntimeError, RuntimeInputEvent,
     RuntimePerformanceFlags, RuntimeSessionSnapshot,
 };

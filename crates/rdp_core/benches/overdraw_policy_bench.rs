@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use rdp_core::benchmark_support::evaluate_overdraw_policy;
+use fluxterm_rdp_core::benchmark_support::evaluate_overdraw_policy;
 
 type BenchRect = (u16, u16, u16, u16);
 

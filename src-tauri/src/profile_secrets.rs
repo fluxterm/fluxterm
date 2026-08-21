@@ -1,6 +1,6 @@
 //! HostProfile 敏感字段编解码。
 
-use engine::{EngineError, HostProfile};
+use fluxterm_engine::{EngineError, HostProfile};
 
 use crate::rdp::RdpProfile;
 use crate::security::SecretStore;

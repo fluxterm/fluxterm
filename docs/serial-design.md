@@ -11,7 +11,7 @@
 
 ## 2. 分层职责
 
-### `crates/engine`
+### `fluxterm-engine`（目录：`crates/engine`）
 
 - 使用 `tokio-serial` 枚举并打开系统串口。
 - 校验波特率、数据位、停止位、校验位和流控制参数。

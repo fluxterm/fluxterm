@@ -1,7 +1,7 @@
 //! 引擎事件到前端事件的桥接。
 use std::sync::Arc;
 
-use engine::{EngineError, EngineEvent, SessionState};
+use fluxterm_engine::{EngineError, EngineEvent, SessionState};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 

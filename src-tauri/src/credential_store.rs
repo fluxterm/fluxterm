@@ -5,7 +5,7 @@ pub(crate) const CREDENTIAL_PASSWORD_REQUIRED_CODE: &str = "credential_password_
 use std::fs;
 use std::path::PathBuf;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 

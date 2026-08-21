@@ -2,7 +2,7 @@
 
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use rand::random;
 
 use crate::security::provider::EncryptionProvider;

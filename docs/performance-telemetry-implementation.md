@@ -35,8 +35,8 @@ flowchart LR
 | `fluxterm-pulse-protocol` | 共享 v1 消息模型、流类型、参数规则和指标目录 |
 | `crates/performance_telemetry` | 统一采集 API、指标构造、协议编码和禁用态 no-op |
 | `src-tauri/src/performance_telemetry.rs` | 配置、设备身份、流注册表、队列、UDP Worker 和状态计数 |
-| `crates/engine/src/sftp.rs` | SFTP 任务分类、窗口化传输和任务级指标 |
-| `crates/rdp_core` 与 `src/subapps/rdp` | RDP runtime 指标、Webview 呈现指标和尾窗口提交 |
+| `crates/engine/src/sftp.rs` (`fluxterm-engine`) | SFTP 任务分类、窗口化传输和任务级指标 |
+| `crates/rdp_core` (`fluxterm-rdp-core`) 与 `src/subapps/rdp` | RDP runtime 指标、Webview 呈现指标和尾窗口提交 |
 
 Tauri 启动时读取配置并创建稳定设备身份，随后安装全局 Sink。业务模块通过统一 API 打开流、提交聚合窗口并关闭流，无需感知 UDP 或 JSON 编码。
 

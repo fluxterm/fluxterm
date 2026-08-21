@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
-use rdp_core::benchmark_support::{
+use fluxterm_rdp_core::benchmark_support::{
     build_rgba_frame_batch_message, build_rgba_frame_message, copy_rgba_rect,
     create_test_rgba_surface,
 };

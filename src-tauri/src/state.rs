@@ -1,7 +1,7 @@
 //! 共享状态定义。
 use std::sync::{Arc, Mutex};
 
-use engine::{Engine, SerialManager};
+use fluxterm_engine::{Engine, SerialManager};
 
 /// Tauri 共享状态，承载引擎实例。
 pub struct EngineState {

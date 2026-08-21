@@ -13,11 +13,11 @@
 1. 主窗口负责 RDP Profile 管理与发起连接
 2. `RDP SubApp` 负责会话标签、画面显示、键鼠输入与会话状态展示
 3. `src-tauri` 负责 Profile 读取、安全解密、命令编排与会话快照代理
-4. `crates/rdp_core` 负责进程内 `IronRDP` 运行时、本地 WebSocket bridge、图像帧广播与输入转发
+4. `fluxterm-rdp-core`（目录为 `crates/rdp_core`）负责进程内 `IronRDP` 运行时、本地 WebSocket bridge、图像帧广播与输入转发
 
-- `src-tauri` 与 `rdp_core` 运行在同一应用进程内
+- `src-tauri` 与 `fluxterm-rdp-core` 运行在同一应用进程内
 - 高频画面数据不经过 Tauri 事件总线
-- 前端子应用通过本地 loopback WebSocket 直连 `rdp_core` bridge
+- 前端子应用通过本地 loopback WebSocket 直连 `fluxterm-rdp-core` bridge
 
 ## 3. 运行单元与职责
 
@@ -60,12 +60,12 @@ RDP 子应用不负责：
 - 读取与写入 RDP Profile / 分组数据
 - 处理敏感字段解密与加密
 - 对前端暴露 RDP 相关 Tauri command
-- 将前端 DTO 转换为 `rdp_core` 运行时参数
+- 将前端 DTO 转换为 `fluxterm-rdp-core` 运行时参数
 - 维护本地 `RdpState` 快照，作为子应用命令调用的代理层
 
-### 3.4 `crates/rdp_core`
+### 3.4 `fluxterm-rdp-core`（目录：`crates/rdp_core`）
 
-`rdp_core` 当前职责：
+`fluxterm-rdp-core` 当前职责：
 
 - 启动和维护单个或多个 `IronRDP` 会话
 - 管理会话状态、输入命令与桥接广播
@@ -90,7 +90,7 @@ RDP 子应用不负责：
 
 ### 4.2 图像与状态面
 
-RDP 画面和高频状态通过 `rdp_core` 本地 WebSocket bridge 下发：
+RDP 画面和高频状态通过 `fluxterm-rdp-core` 本地 WebSocket bridge 下发：
 
 - 文本消息：状态、光标、剪贴板、错误、输入确认
 - 二进制消息：单脏矩形帧或批量脏矩形帧
@@ -143,7 +143,7 @@ RDP 子应用状态栏当前展示：
 1. Profile 管理入口只保留在主窗口，不回流到子应用
 2. 主窗口只发起连接意图，不直接持有 RDP runtime
 3. 子应用是唯一的远程桌面运行态 owner
-4. `rdp_core` 是 RDP 底层协议、bridge 与会话状态的 source of truth
+4. `fluxterm-rdp-core` 是 RDP 底层协议、bridge 与会话状态的 source of truth
 5. 用户可见文案必须走 `src/i18n`
 6. RDP 相关日志统一遵循结构化日志规范，避免 `console.*` 或不可检索自由文本
 7. 不允许通过前端补丁掩盖后端、runtime、状态机或生命周期问题
@@ -197,7 +197,7 @@ RDP 子应用当前保留以下运行态职责：
 RDP 键盘输入当前采用“两段式”策略：
 
 1. 前端负责采集 `keydown` / `keyup`、透传 `code` / `key` / 修饰键状态，并在失焦时补发 `key_up`
-2. `rdp_core` 负责把 `KeyboardEvent.code` 映射为 RDP 扫描码，并在运行时判断某次输入应走 Unicode 还是扫描码
+2. `fluxterm-rdp-core` 负责把 `KeyboardEvent.code` 映射为 RDP 扫描码，并在运行时判断某次输入应走 Unicode 还是扫描码
 
 具体规则：
 

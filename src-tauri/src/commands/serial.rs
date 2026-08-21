@@ -1,7 +1,7 @@
 //! 串口枚举、Profile 与会话命令。
 
-use engine::serial::validate_profile;
-use engine::{EngineError, SerialEncoding, SerialPortInfo, SerialProfile, Session};
+use fluxterm_engine::serial::validate_profile;
+use fluxterm_engine::{EngineError, SerialEncoding, SerialPortInfo, SerialProfile, Session};
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 

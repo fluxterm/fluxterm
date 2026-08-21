@@ -1,7 +1,7 @@
 //! 系统级通用命令。
 use std::path::PathBuf;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::Serialize;
 use sysinfo::System;
 use tauri::{AppHandle, State, WebviewWindow};

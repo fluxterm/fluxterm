@@ -3,7 +3,7 @@ const REMOTE_EDIT_NOT_FOUND_CODE: &str = "remote_edit_not_found";
 
 use std::time::Instant;
 
-use engine::SftpEntry;
+use fluxterm_engine::SftpEntry;
 use fluxterm_logging::{LogLevel, log_event};
 use serde::Deserialize;
 use serde_json::json;
@@ -34,7 +34,7 @@ pub async fn remote_edit_open(
     state: State<'_, EngineState>,
     remote_edit_state: State<'_, RemoteEditState>,
     request: RemoteEditOpenRequest,
-) -> Result<RemoteEditSnapshot, engine::EngineError> {
+) -> Result<RemoteEditSnapshot, fluxterm_engine::EngineError> {
     let RemoteEditOpenRequest {
         session_id,
         target,
@@ -62,8 +62,8 @@ pub async fn remote_edit_open(
     .await;
     let prepared = match prepared {
         Ok(result) => result,
-        Err(error) => Err(engine::EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+        Err(error) => Err(fluxterm_engine::EngineError::with_detail(
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to open the remote edit session",
             error.to_string(),
         )),
@@ -111,7 +111,7 @@ pub async fn remote_edit_open(
 /// 列出当前活动的远端编辑实例。
 pub async fn remote_edit_list(
     remote_edit_state: State<'_, RemoteEditState>,
-) -> Result<Vec<RemoteEditSnapshot>, engine::EngineError> {
+) -> Result<Vec<RemoteEditSnapshot>, fluxterm_engine::EngineError> {
     Ok(remote_edit_state.list().await)
 }
 
@@ -123,10 +123,10 @@ pub async fn remote_edit_confirm_upload(
     remote_edit_state: State<'_, RemoteEditState>,
     instance_id: String,
     operation_id: String,
-) -> Result<RemoteEditSnapshot, engine::EngineError> {
+) -> Result<RemoteEditSnapshot, fluxterm_engine::EngineError> {
     let started_at = Instant::now();
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
-        return Err(engine::EngineError::new(
+        return Err(fluxterm_engine::EngineError::new(
             REMOTE_EDIT_NOT_FOUND_CODE,
             "Remote edit session not found",
         )
@@ -135,7 +135,7 @@ pub async fn remote_edit_confirm_upload(
     {
         let mut guard = instance.lock().await;
         if guard.pending_snapshot.is_none() {
-            return Err(engine::EngineError::new(
+            return Err(fluxterm_engine::EngineError::new(
                 "remote_edit_not_pending",
                 "The remote edit session has no pending changes",
             )
@@ -162,7 +162,7 @@ pub async fn remote_edit_confirm_upload(
     let result = tauri::async_runtime::spawn_blocking(move || {
         let remote_before_upload = engine.sftp_stat(&session_id, &remote_path)?;
         if remote_before_upload.mtime != remote_mtime || remote_before_upload.size != remote_size {
-            return Err(engine::EngineError::new(
+            return Err(fluxterm_engine::EngineError::new(
                 "remote_edit_conflict",
                 "The remote file changed and local modifications were not uploaded",
             )
@@ -177,8 +177,8 @@ pub async fn remote_edit_confirm_upload(
     })
     .await
     .map_err(|err| {
-        engine::EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+        fluxterm_engine::EngineError::with_detail(
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to upload the remote edit working copy",
             err.to_string(),
         )
@@ -255,9 +255,9 @@ pub async fn remote_edit_dismiss_pending(
     remote_edit_state: State<'_, RemoteEditState>,
     instance_id: String,
     operation_id: String,
-) -> Result<RemoteEditSnapshot, engine::EngineError> {
+) -> Result<RemoteEditSnapshot, fluxterm_engine::EngineError> {
     let Some(instance) = remote_edit_state.get(&instance_id).await else {
-        return Err(engine::EngineError::new(
+        return Err(fluxterm_engine::EngineError::new(
             REMOTE_EDIT_NOT_FOUND_CODE,
             "Remote edit session not found",
         )

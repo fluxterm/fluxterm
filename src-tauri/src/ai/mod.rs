@@ -16,8 +16,8 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use engine::{EngineError, HostProfile, Session, SessionResourceSnapshot, SessionState};
-use openai::OpenAiClientConfig;
+use fluxterm_engine::{EngineError, HostProfile, Session, SessionResourceSnapshot, SessionState};
+use fluxterm_openai::OpenAiClientConfig;
 use tauri::{AppHandle, Manager};
 
 use crate::ai_settings::{AiProviderSettings, AiSettings, read_ai_settings};
@@ -268,7 +268,7 @@ pub fn record_session_status_from_app(
     app: &AppHandle,
     session_id: &str,
     state_name: SessionState,
-    error: Option<engine::EngineError>,
+    error: Option<fluxterm_engine::EngineError>,
 ) {
     let state = app.state::<AiRuntimeState>();
     if let Ok(mut store) = state.inner.lock()

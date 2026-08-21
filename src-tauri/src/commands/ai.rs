@@ -6,8 +6,8 @@ const AI_REQUEST_FAILED_CODE: &str = "ai_request_failed";
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use engine::EngineError;
-use openai::OpenAiSessionChatResponse;
+use fluxterm_engine::EngineError;
+use fluxterm_openai::OpenAiSessionChatResponse;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -43,7 +43,7 @@ pub async fn ai_provider_test(
     provider_id: Option<String>,
 ) -> Result<(), EngineError> {
     let config = read_provider_config_by_id(&app, provider_id.as_deref())?;
-    openai::test_connection(&config)
+    fluxterm_openai::test_connection(&config)
         .await
         .map_err(map_openai_error)
 }
@@ -61,13 +61,13 @@ pub async fn ai_session_chat(
     let cache_key = build_cache_key("session_chat", &input)?;
     if let Some(content) = get_cached_response(&state, &cache_key)? {
         return Ok(OpenAiSessionChatResponse {
-            message: openai::ChatMessage {
+            message: fluxterm_openai::ChatMessage {
                 role: "assistant".to_string(),
                 content,
             },
         });
     }
-    let response = openai::chat_session(&config, input)
+    let response = fluxterm_openai::chat_session(&config, input)
         .await
         .map_err(map_openai_error)?;
     store_cached_response(
@@ -115,7 +115,7 @@ pub async fn ai_session_chat_stream_start(
     let input = context::build_session_chat_stream_input(&state, request, &settings)?;
     let cache_key = build_cache_key(
         "session_chat",
-        &openai::OpenAiSessionChatInput {
+        &fluxterm_openai::OpenAiSessionChatInput {
             context: input.context.clone(),
             response_language_strategy: input.response_language_strategy.clone(),
             ui_language: input.ui_language.clone(),
@@ -162,7 +162,7 @@ pub async fn ai_session_chat_stream_start(
         let session_id = input.context.session_id.clone();
         let emit_handle = app_handle.clone();
         let mut streamed_content = String::new();
-        let result = openai::chat_session_stream(
+        let result = fluxterm_openai::chat_session_stream(
             &config,
             input,
             |content: &str| {
@@ -243,16 +243,24 @@ fn build_cache_key(label: &str, value: &impl Serialize) -> Result<String, Engine
     Ok(format!("{label}:{}", hasher.finish()))
 }
 
-fn map_openai_error(error: openai::OpenAiError) -> EngineError {
+fn map_openai_error(error: fluxterm_openai::OpenAiError) -> EngineError {
     match error {
-        openai::OpenAiError::Config(message) => EngineError::new("ai_unavailable", message),
-        openai::OpenAiError::Timeout(message) => EngineError::new("ai_timeout", message),
-        openai::OpenAiError::RateLimited(message) => EngineError::new("ai_rate_limited", message),
-        openai::OpenAiError::ResponseInvalid(message) => {
+        fluxterm_openai::OpenAiError::Config(message) => {
+            EngineError::new("ai_unavailable", message)
+        }
+        fluxterm_openai::OpenAiError::Timeout(message) => EngineError::new("ai_timeout", message),
+        fluxterm_openai::OpenAiError::RateLimited(message) => {
+            EngineError::new("ai_rate_limited", message)
+        }
+        fluxterm_openai::OpenAiError::ResponseInvalid(message) => {
             EngineError::new("ai_response_invalid", message)
         }
-        openai::OpenAiError::Request(message) => EngineError::new(AI_REQUEST_FAILED_CODE, message),
-        openai::OpenAiError::Http(_, message) => EngineError::new(AI_REQUEST_FAILED_CODE, message),
+        fluxterm_openai::OpenAiError::Request(message) => {
+            EngineError::new(AI_REQUEST_FAILED_CODE, message)
+        }
+        fluxterm_openai::OpenAiError::Http(_, message) => {
+            EngineError::new(AI_REQUEST_FAILED_CODE, message)
+        }
     }
 }
 
@@ -267,7 +275,7 @@ impl OpenAiToEngineError {
         ))
     }
 
-    fn into_openai(self) -> openai::OpenAiError {
-        openai::OpenAiError::Request(self.0.message)
+    fn into_openai(self) -> fluxterm_openai::OpenAiError {
+        fluxterm_openai::OpenAiError::Request(self.0.message)
     }
 }

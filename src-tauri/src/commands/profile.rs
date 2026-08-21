@@ -1,7 +1,7 @@
 //! 主机配置相关命令。
 const GROUP_NAME_TOO_LONG_CODE: &str = "group_name_too_long";
 
-use engine::{AuthType, EngineError, HostProfile};
+use fluxterm_engine::{AuthType, EngineError, HostProfile};
 use tauri::AppHandle;
 use tauri::State;
 use uuid::Uuid;

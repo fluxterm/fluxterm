@@ -1,5 +1,5 @@
 //! 资源监控命令。
-use engine::{EngineError, HostProfile};
+use fluxterm_engine::{EngineError, HostProfile};
 use fluxterm_logging::{LogLevel, log_event};
 use serde_json::json;
 use tauri::{AppHandle, State};

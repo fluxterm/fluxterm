@@ -4,8 +4,8 @@ const AI_CONTEXT_MISSING_CODE: &str = "ai_context_missing";
 
 use std::collections::HashSet;
 
-use engine::EngineError;
-use openai::{
+use fluxterm_engine::EngineError;
+use fluxterm_openai::{
     ChatMessage, OpenAiSessionChatInput, OpenAiSessionChatStreamInput, ResponseLanguageStrategy,
     SessionContextSnapshot,
 };
@@ -189,7 +189,7 @@ fn truncate_chars(input: &str, limit: usize) -> String {
 mod tests {
     use super::*;
     use crate::ai::{AiRuntimeState, register_local_session};
-    use engine::{Session, SessionState};
+    use fluxterm_engine::{Session, SessionState};
 
     #[test]
     fn build_session_chat_input_requires_session() {
@@ -227,7 +227,7 @@ mod tests {
             &Session {
                 session_id: "local-1".to_string(),
                 profile_id: Some("__local_shell__".to_string()),
-                kind: engine::SessionKind::LocalShell,
+                kind: fluxterm_engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,
@@ -274,7 +274,7 @@ mod tests {
             &Session {
                 session_id: "local-4".to_string(),
                 profile_id: Some("__local_shell__".to_string()),
-                kind: engine::SessionKind::LocalShell,
+                kind: fluxterm_engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,
@@ -325,7 +325,7 @@ mod tests {
             &Session {
                 session_id: "local-5".to_string(),
                 profile_id: Some("__local_shell__".to_string()),
-                kind: engine::SessionKind::LocalShell,
+                kind: fluxterm_engine::SessionKind::LocalShell,
                 state: SessionState::Connected,
                 created_at: 0,
                 last_error: None,

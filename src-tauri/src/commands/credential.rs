@@ -2,7 +2,7 @@
 
 const CREDENTIAL_NOT_FOUND_CODE: &str = "credential_not_found";
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use uuid::Uuid;

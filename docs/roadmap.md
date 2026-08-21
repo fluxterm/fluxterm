@@ -53,7 +53,7 @@
 下一步：
 
 - 已确认使用 `SubApp` 承载
-- 当前实现已落地为 `src-tauri` 编排 + `crates/rdp_core` 进程内 runtime + 本地 WebSocket bridge
+- 当前实现已落地为 `src-tauri` 编排 + `fluxterm-rdp-core`（目录为 `crates/rdp_core`）进程内 runtime + 本地 WebSocket bridge
 - 主窗口继续负责 Profile 管理与发起连接，RDP 子应用继续负责运行态与画面显示
 - 当前阶段优先稳固基础能力，包括国际化、telemetry、注释收敛、文档同步与冗余清理
 - 按 `docs/rdp-subapp-design.md` 持续推进实施与记录进度

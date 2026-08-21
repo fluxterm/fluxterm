@@ -2,7 +2,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use fluxterm_logging::{LogLevel, create_operation_id, log_event};
 use serde_json::json;
 use tauri::AppHandle;

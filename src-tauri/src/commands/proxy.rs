@@ -1,7 +1,7 @@
 //! 全局代理相关命令。
 use std::sync::Arc;
 
-use engine::{Engine, EngineError, ProxyRuntime, ProxySpec};
+use fluxterm_engine::{Engine, EngineError, ProxyRuntime, ProxySpec};
 use tauri::{AppHandle, State};
 
 use crate::events::build_event_bridge;
@@ -23,7 +23,7 @@ pub async fn proxy_open(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to create the proxy instance",
             err.to_string(),
         )
@@ -44,7 +44,7 @@ pub async fn proxy_close(
     .await
     .map_err(|err| {
         EngineError::with_detail(
-            engine::SESSION_COMMAND_FAILED_CODE,
+            fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
             "Failed to close the proxy instance",
             err.to_string(),
         )
@@ -59,7 +59,7 @@ pub async fn proxy_list(state: State<'_, EngineState>) -> Result<Vec<ProxyRuntim
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                engine::SESSION_COMMAND_FAILED_CODE,
+                fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
                 "Failed to list proxy instances",
                 err.to_string(),
             )
@@ -77,7 +77,7 @@ pub async fn proxy_close_all(
         .await
         .map_err(|err| {
             EngineError::with_detail(
-                engine::SESSION_COMMAND_FAILED_CODE,
+                fluxterm_engine::SESSION_COMMAND_FAILED_CODE,
                 "Failed to close all proxy instances",
                 err.to_string(),
             )

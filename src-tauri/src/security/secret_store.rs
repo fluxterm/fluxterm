@@ -1,6 +1,6 @@
 //! 面向业务字段的 secret 读写封装。
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 
 use crate::security::CryptoService;
 

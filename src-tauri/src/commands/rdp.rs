@@ -1,6 +1,6 @@
 //! RDP profile 与会话命令。
 
-use engine::EngineError;
+use fluxterm_engine::EngineError;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 

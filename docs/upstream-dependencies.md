@@ -49,8 +49,8 @@ When removing the forks:
 
 1. Replace the fork branch dependencies in `Cargo.toml` with crates.io or upstream repository versions
 2. Refresh `Cargo.lock`
-3. Confirm `cargo tree -p rdp_core -i curve25519-dalek` resolves to a single compatible version
-4. Run `cargo check -p rdp_core`
+3. Confirm `cargo tree -p fluxterm-rdp-core -i curve25519-dalek` resolves to a single compatible version
+4. Run `cargo check -p fluxterm-rdp-core`
 5. Run `cargo clippy --all-targets --all-features -- -D warnings`
 
 ## Acknowledgements

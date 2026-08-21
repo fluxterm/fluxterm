@@ -23,7 +23,7 @@
 
 ## 连接构建
 
-engine 中的 `ssh_transport` 负责将 Profile 转换为可供 `russh::client::connect_stream` 使用的字节流。
+`fluxterm-engine` 中的 `ssh_transport` 负责将 Profile 转换为可供 `russh::client::connect_stream` 使用的字节流。
 
 直连模式使用 `TcpStream::connect` 连接目标主机。
 
