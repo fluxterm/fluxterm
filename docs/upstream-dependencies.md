@@ -13,10 +13,11 @@ This document lists only the upstream dependencies that are important to FluxTer
 | [Tauri](https://tauri.app/) | Desktop shell and system integration | Provides cross-platform windows, commands, plugins, and application lifecycle support. |
 | [React](https://react.dev/) | Frontend UI | Powers the main window, widgets, sub-applications, and business UI. |
 | [Vite](https://vite.dev/) | Frontend build tooling | Provides the development server, module bundling, and frontend asset builds. |
+| [xterm.js](https://github.com/xtermjs/xterm.js) | Web terminal emulator | Provides terminal emulation, terminal rendering, search, Unicode handling, web links, and WebGL acceleration. |
 | [russh](https://github.com/warp-tech/russh) | SSH protocol stack | Powers SSH sessions, authentication, tunneling, and SSH-related runtime features. |
 | [IronRDP](https://github.com/Devolutions/IronRDP) | RDP protocol stack | Powers RDP connection handling, graphics output, input forwarding, dynamic virtual channels, and clipboard support. |
-| [sspi-rs](https://github.com/Devolutions/sspi-rs) | CredSSP / SSPI support | Provides CredSSP, Kerberos, NTLM, and smart-card related authentication support for the RDP stack. |
-| [picky-rs](https://github.com/Devolutions/picky-rs) | X.509 / ASN.1 / Kerberos primitives | Provides certificate, ASN.1, Kerberos, and cryptographic building blocks used by the authentication stack. |
+| [Tokio](https://tokio.rs/) | Asynchronous runtime | Provides the async runtime, task scheduling, timers, I/O, and synchronization primitives used by the Rust backend. |
+| [portable-pty](https://docs.rs/portable-pty/latest/portable_pty/) | Local pseudo-terminal support | Provides cross-platform PTY creation and process I/O for local shell sessions. The crate is maintained within the [WezTerm](https://github.com/wezterm/wezterm) project. |
 
 ## Current Fork Branches
 
@@ -37,7 +38,7 @@ FluxTerm currently maintains temporary fork branches to resolve a RustCrypto / D
 - `x25519-dalek = 3.0.0-rc.0`
 - `p256 / p384 / p521 = 0.14.0-rc.10`
 
-The upstream `picky-rs` / `sspi-rs` dependency stack still uses an older `pre` / `rc` line for some of these crates. Because several of these crates are pinned with exact prerelease versions, Cargo cannot select both lines in the same dependency graph.
+The upstream `picky-rs` / `sspi-rs` dependency stack still depends on an older prerelease line for some of these crates. Because several of these crates are pinned with exact prerelease versions, Cargo cannot select both lines in the same dependency graph.
 
 The goal of the forks is to let the SSH and RDP stacks share a compatible crypto dependency line. The forks do not change FluxTerm's RDP protocol behavior.
 
@@ -55,4 +56,6 @@ When removing the forks:
 
 ## Acknowledgements
 
-FluxTerm depends on the long-term work of the upstream projects listed above. Its SSH, RDP, desktop windowing, frontend UI, and authentication features are built on top of their open source contributions.
+FluxTerm gratefully acknowledges the maintainers and contributors of the open-source projects listed in this document. Tauri, React, Vite, xterm.js, russh, IronRDP, Tokio, and portable-pty provide the desktop shell, frontend, terminal, protocol, runtime, and local PTY foundations of the application.
+
+FluxTerm also uses temporary fork branches of IronRDP, sspi-rs, and picky-rs while upstream-compatible dependency releases are unavailable.
