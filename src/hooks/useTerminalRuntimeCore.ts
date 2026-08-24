@@ -33,7 +33,10 @@ import type {
   CommandAutocompleteCandidate,
   CommandAutocompleteProvider,
 } from "@/features/command-history/core/autocomplete";
-import { updateCommandInputBuffer } from "@/features/command-history/core/inputTracker";
+import {
+  isTerminalAutocompleteEditingInput,
+  resolveTerminalCursorDirection,
+} from "@/features/command-history/core/inputTracker";
 import {
   AUTOCOMPLETE_MIN_PANEL_HEIGHT,
   AUTOCOMPLETE_VISIBLE_ITEMS,
@@ -271,6 +274,7 @@ function encodeBinaryInput(data: string) {
 }
 
 const STREAM_OUTPUT_CURSOR_RESTORE_DELAY_MS = 140;
+const AUTOCOMPLETE_RECONCILE_SETTLE_MS = 2_000;
 
 /** 播放极短提示音，避免引入额外音频资源。 */
 function playBellSound(audioContext: AudioContext) {
@@ -294,10 +298,20 @@ function playBellSound(audioContext: AudioContext) {
 }
 
 /** 当前会话输入行监听的内部状态。 */
+type TerminalInteractionState = "unknown" | "prompt" | "running";
+
 type CommandCaptureMeta = {
   promptPrefix: string | null;
-  waitingForNextPrompt: boolean;
+  interactionState: TerminalInteractionState;
 };
+
+type CursorLineSnapshot = {
+  beforeCursorLine: string;
+  fullLine: string;
+  cursorAtLineEnd: boolean;
+};
+
+const TMUX_VERTICAL_BORDER_CHARS = new Set(["│", "┃", "║", "╎", "╏"]);
 
 /**
  * 判断当前焦点是否应由表单或模态框继续持有。
@@ -465,7 +479,7 @@ function looksLikeUnsupportedPrompt(line: string) {
 }
 
 function normalizeCommandCaptureLine(line: string) {
-  return line.replace(/\u00a0/g, " ").trimEnd();
+  return line.replace(/\u00a0/g, " ");
 }
 
 function looksLikePromptLine(line: string) {
@@ -551,6 +565,12 @@ export default function useTerminalRuntime({
   const osc7SeenDuringWriteRef = useRef<Record<string, boolean>>({});
   const autocompleteInputBufferRef = useRef<Record<string, string>>({});
   const autocompleteSuppressedInputRef = useRef<Record<string, string>>({});
+  const autocompleteHardSuppressedRef = useRef<Record<string, boolean>>({});
+  const autocompleteReconcilePendingRef = useRef<Record<string, boolean>>({});
+  const autocompleteLastRawInputRef = useRef<Record<string, string>>({});
+  const autocompleteReconcileSettleTimersRef = useRef<Record<string, number>>(
+    {},
+  );
   const commandCaptureMetaRef = useRef<Record<string, CommandCaptureMeta>>({});
   const commandCaptureTimersRef = useRef<Record<string, number>>({});
   const lastBellAtBySessionRef = useRef<Record<string, number>>({});
@@ -654,6 +674,26 @@ export default function useTerminalRuntime({
   }, [resolveWordSeparators]);
 
   useEffect(() => {
+    const previousSessionId = activeSessionIdRef.current;
+    if (previousSessionId && previousSessionId !== activeSessionId) {
+      delete autocompleteInputBufferRef.current[previousSessionId];
+      delete autocompleteSuppressedInputRef.current[previousSessionId];
+      delete autocompleteHardSuppressedRef.current[previousSessionId];
+      delete autocompleteReconcilePendingRef.current[previousSessionId];
+      delete autocompleteLastRawInputRef.current[previousSessionId];
+      const settleTimer =
+        autocompleteReconcileSettleTimersRef.current[previousSessionId];
+      if (settleTimer !== undefined) {
+        window.clearTimeout(settleTimer);
+        delete autocompleteReconcileSettleTimersRef.current[previousSessionId];
+      }
+      if (activeAutocompleteRef.current?.sessionId === previousSessionId) {
+        activeAutocompleteRef.current = null;
+      }
+      setActiveAutocomplete((prev) =>
+        prev?.sessionId === previousSessionId ? null : prev,
+      );
+    }
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
@@ -723,14 +763,28 @@ export default function useTerminalRuntime({
 
   useEffect(() => {
     if (!activeAutocomplete) return;
+    const sessionId = activeAutocomplete.sessionId;
+    const suppressCurrentAutocomplete = () => {
+      const currentInput = autocompleteInputBufferRef.current[sessionId] ?? "";
+      if (currentInput.trim()) {
+        autocompleteSuppressedInputRef.current[sessionId] = currentInput;
+      }
+      autocompleteHardSuppressedRef.current[sessionId] = true;
+      if (activeAutocompleteRef.current?.sessionId === sessionId) {
+        activeAutocompleteRef.current = null;
+      }
+      setActiveAutocomplete((prev) =>
+        prev?.sessionId === sessionId ? null : prev,
+      );
+    };
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
       if (target.closest(".terminal-autocomplete")) return;
-      setActiveAutocomplete(null);
+      suppressCurrentAutocomplete();
     };
     const handleWindowBlur = () => {
-      setActiveAutocomplete(null);
+      suppressCurrentAutocomplete();
     };
     document.addEventListener("pointerdown", handlePointerDown, true);
     window.addEventListener("blur", handleWindowBlur);
@@ -740,17 +794,17 @@ export default function useTerminalRuntime({
     };
   }, [activeAutocomplete]);
 
-  /**
-   * 刷新当前会话的联想候选。
-   * 这里读取的是本地输入缓冲，不直接读取终端显示缓冲；
-   * 真实命令采集仍以后面的输入行监听为准。
-   */
+  /** 使用已经从可见 shell prompt 校准的输入刷新当前会话候选。 */
   function refreshAutocomplete(
     sessionId: string,
     input: string,
     anchorCursorCol?: number | null,
   ) {
     autocompleteInputBufferRef.current[sessionId] = input;
+    if (autocompleteHardSuppressedRef.current[sessionId]) {
+      clearAutocompleteForSession(sessionId);
+      return;
+    }
     if (autocompleteSuppressedInputRef.current[sessionId] !== input) {
       delete autocompleteSuppressedInputRef.current[sessionId];
     }
@@ -780,7 +834,7 @@ export default function useTerminalRuntime({
       return;
     }
     const meta = ensureCommandCaptureMeta(sessionId);
-    if (meta.waitingForNextPrompt) {
+    if (meta.interactionState !== "prompt") {
       setActiveAutocomplete((prev) =>
         prev?.sessionId === sessionId ? null : prev,
       );
@@ -803,7 +857,7 @@ export default function useTerminalRuntime({
       const nextIndex = selectedCommand
         ? items.findIndex((item) => item.command === selectedCommand)
         : -1;
-      return {
+      const next = {
         sessionId,
         input,
         items,
@@ -812,23 +866,9 @@ export default function useTerminalRuntime({
           anchorCursorCol ??
           (prev?.sessionId === sessionId ? prev.anchorCursorCol : null),
       };
+      activeAutocompleteRef.current = next;
+      return next;
     });
-  }
-
-  function resolvePredictedAutocompleteCursorCol(
-    sessionId: string,
-    currentInput: string,
-    nextInput: string,
-  ) {
-    const bundle = terminalsRef.current[sessionId];
-    const currentCursorCol = bundle?.terminal.buffer.active.cursorX;
-    if (typeof currentCursorCol !== "number" || currentCursorCol < 0) {
-      return null;
-    }
-    return Math.max(
-      0,
-      currentCursorCol + nextInput.length - currentInput.length,
-    );
   }
 
   /** 获取或初始化当前会话的输入行监听元数据。 */
@@ -836,20 +876,100 @@ export default function useTerminalRuntime({
     if (!commandCaptureMetaRef.current[sessionId]) {
       commandCaptureMetaRef.current[sessionId] = {
         promptPrefix: null,
-        waitingForNextPrompt: false,
+        interactionState: "unknown",
       };
     }
     return commandCaptureMetaRef.current[sessionId];
   }
 
-  /** 读取当前光标所在 buffer 行的可见文本，用于实时输入行监听。 */
-  function getCurrentCursorLineText(sessionId: string) {
-    const bundle = terminalsRef.current[sessionId];
-    if (!bundle) return "";
-    const line = bundle.terminal.buffer.active.getLine(
-      getAbsoluteCursorLine(bundle.terminal),
+  /** 清理单个会话的联想状态，避免切换运行上下文后复用旧输入。 */
+  function clearAutocompleteForSession(
+    sessionId: string,
+    clearInputBuffer = false,
+  ) {
+    if (clearInputBuffer) {
+      delete autocompleteInputBufferRef.current[sessionId];
+      delete autocompleteSuppressedInputRef.current[sessionId];
+      delete autocompleteHardSuppressedRef.current[sessionId];
+      delete autocompleteReconcilePendingRef.current[sessionId];
+      delete autocompleteLastRawInputRef.current[sessionId];
+      disposeAutocompleteReconcileSettleTimer(sessionId);
+    }
+    if (activeAutocompleteRef.current?.sessionId !== sessionId) return;
+    activeAutocompleteRef.current = null;
+    setActiveAutocomplete((prev) =>
+      prev?.sessionId === sessionId ? null : prev,
     );
-    return normalizeCommandCaptureLine(line?.translateToString(true) ?? "");
+  }
+
+  /** 清理等待终端回显稳定的联想校准计时器。 */
+  function disposeAutocompleteReconcileSettleTimer(sessionId: string) {
+    const timer = autocompleteReconcileSettleTimersRef.current[sessionId];
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
+    delete autocompleteReconcileSettleTimersRef.current[sessionId];
+  }
+
+  /** 输出安静一段时间后结束本轮输入校准，兼容逐字符远端回显。 */
+  function scheduleAutocompleteReconcileSettle(sessionId: string) {
+    disposeAutocompleteReconcileSettleTimer(sessionId);
+    autocompleteReconcileSettleTimersRef.current[sessionId] = window.setTimeout(
+      () => {
+        delete autocompleteReconcileSettleTimersRef.current[sessionId];
+        delete autocompleteReconcilePendingRef.current[sessionId];
+      },
+      AUTOCOMPLETE_RECONCILE_SETTLE_MS,
+    );
+  }
+
+  /** 读取当前光标所在 pane 行的完整文本与光标前文本。 */
+  function getCurrentCursorLineSnapshot(
+    sessionId: string,
+  ): CursorLineSnapshot | null {
+    const bundle = terminalsRef.current[sessionId];
+    if (!bundle) return null;
+    const buffer = bundle.terminal.buffer.active;
+    const line = buffer.getLine(getAbsoluteCursorLine(bundle.terminal));
+    if (!line) return null;
+    let paneStart = 0;
+    let paneEnd = bundle.terminal.cols;
+    for (let column = 0; column < buffer.cursorX; column += 1) {
+      if (
+        TMUX_VERTICAL_BORDER_CHARS.has(line.getCell(column)?.getChars() ?? "")
+      ) {
+        paneStart = column + 1;
+      }
+    }
+    for (
+      let column = buffer.cursorX;
+      column < bundle.terminal.cols;
+      column += 1
+    ) {
+      if (
+        TMUX_VERTICAL_BORDER_CHARS.has(line.getCell(column)?.getChars() ?? "")
+      ) {
+        paneEnd = column;
+        break;
+      }
+    }
+    let contentEnd = paneStart;
+    for (let column = paneEnd - 1; column >= paneStart; column -= 1) {
+      const chars = line.getCell(column)?.getChars() ?? "";
+      if (chars && !/^\s+$/.test(chars)) {
+        contentEnd = column + 1;
+        break;
+      }
+    }
+    const lineEnd = Math.max(buffer.cursorX, contentEnd);
+    return {
+      beforeCursorLine: normalizeCommandCaptureLine(
+        line.translateToString(false, paneStart, buffer.cursorX),
+      ),
+      fullLine: normalizeCommandCaptureLine(
+        line.translateToString(false, paneStart, lineEnd),
+      ),
+      cursorAtLineEnd: buffer.cursorX >= contentEnd,
+    };
   }
 
   /** 向上层发布输入行监听状态；内容无变化时不重复派发。 */
@@ -874,33 +994,46 @@ export default function useTerminalRuntime({
    */
   function resolveTrackedCommand(sessionId: string) {
     const meta = ensureCommandCaptureMeta(sessionId);
-    const currentLine = getCurrentCursorLineText(sessionId);
-    if (!currentLine) {
+    const snapshot = getCurrentCursorLineSnapshot(sessionId);
+    if (
+      meta.interactionState !== "prompt" ||
+      !snapshot ||
+      !meta.promptPrefix ||
+      !snapshot.beforeCursorLine.startsWith(meta.promptPrefix) ||
+      !snapshot.fullLine.startsWith(meta.promptPrefix)
+    ) {
       return {
         promptPrefix: meta.promptPrefix,
         command: "",
+        rawCommand: "",
+        autocompleteInput: "",
+        cursorAtLineEnd: false,
+        confirmedPrompt: false,
       };
     }
-    if (meta.promptPrefix && currentLine.startsWith(meta.promptPrefix)) {
-      return {
-        promptPrefix: meta.promptPrefix,
-        command: currentLine.slice(meta.promptPrefix.length).trim(),
-      };
-    }
+    const rawCommand = snapshot.fullLine.slice(meta.promptPrefix.length);
+    const autocompleteInput = snapshot.beforeCursorLine.slice(
+      meta.promptPrefix.length,
+    );
     return {
       promptPrefix: meta.promptPrefix,
-      command: currentLine.trim(),
+      command: rawCommand.trim(),
+      rawCommand,
+      autocompleteInput,
+      cursorAtLineEnd: snapshot.cursorAtLineEnd,
+      confirmedPrompt: true,
     };
   }
 
   /** 当前可见行已进入新提示符时，立即结束命令提交后的等待状态。 */
   function resumeCommandCaptureAtVisiblePrompt(sessionId: string) {
     const meta = ensureCommandCaptureMeta(sessionId);
-    if (!meta.waitingForNextPrompt) return false;
-    const currentLine = getCurrentCursorLineText(sessionId);
+    if (meta.interactionState !== "running") return false;
+    const currentLine =
+      getCurrentCursorLineSnapshot(sessionId)?.beforeCursorLine ?? "";
     if (!looksLikePromptLine(currentLine)) return false;
     meta.promptPrefix = currentLine;
-    meta.waitingForNextPrompt = false;
+    meta.interactionState = "prompt";
     publishCommandCapture(sessionId, {
       state: "listening",
       command: "",
@@ -914,33 +1047,92 @@ export default function useTerminalRuntime({
    * 生命周期：
    * 1. 空行显示 listening
    * 2. 有内容显示 tracking
-   * 3. 回车后进入 waitingForNextPrompt，等待下一轮 prompt 出现
+   * 3. 回车后进入 running，等待下一轮 prompt 出现
    */
   function refreshCommandCapture(sessionId: string) {
     const bundle = terminalsRef.current[sessionId];
     if (!bundle) return;
     const meta = ensureCommandCaptureMeta(sessionId);
-    const currentLine = getCurrentCursorLineText(sessionId);
+    const currentLine =
+      getCurrentCursorLineSnapshot(sessionId)?.beforeCursorLine ?? "";
+    let promptChanged = false;
 
-    if (meta.waitingForNextPrompt) {
-      resumeCommandCaptureAtVisiblePrompt(sessionId);
+    if (meta.interactionState === "running") {
+      if (!resumeCommandCaptureAtVisiblePrompt(sessionId)) {
+        clearAutocompleteForSession(sessionId, true);
+        return;
+      }
+      promptChanged = true;
+    }
+
+    if (meta.interactionState === "unknown") {
+      if (!looksLikePromptLine(currentLine)) {
+        clearAutocompleteForSession(sessionId, true);
+        return;
+      }
+      meta.promptPrefix = currentLine;
+      meta.interactionState = "prompt";
+      promptChanged = true;
+    } else if (looksLikePromptLine(currentLine)) {
+      const knownPromptIndex = meta.promptPrefix
+        ? currentLine.lastIndexOf(meta.promptPrefix)
+        : -1;
+      const movedToRepeatedPrompt = knownPromptIndex > 0;
+      if (
+        !meta.promptPrefix ||
+        !currentLine.startsWith(meta.promptPrefix) ||
+        movedToRepeatedPrompt
+      ) {
+        meta.promptPrefix = currentLine;
+        promptChanged = true;
+      }
+    }
+
+    const tracked = resolveTrackedCommand(sessionId);
+    if (!tracked.confirmedPrompt) {
+      clearAutocompleteForSession(sessionId, true);
       return;
     }
-
-    if (!meta.promptPrefix || looksLikePromptLine(currentLine)) {
-      meta.promptPrefix = currentLine;
-    }
-
-    const command = resolveTrackedCommand(sessionId).command;
+    const previousRawInput = autocompleteLastRawInputRef.current[sessionId];
+    const rawInputChanged = previousRawInput !== tracked.rawCommand;
+    autocompleteLastRawInputRef.current[sessionId] = tracked.rawCommand;
     publishCommandCapture(sessionId, {
-      state: command ? "tracking" : "listening",
-      command,
+      state: tracked.command ? "tracking" : "listening",
+      command: tracked.command,
       updatedAt: Date.now(),
     });
+    if (!tracked.cursorAtLineEnd) {
+      delete autocompleteReconcilePendingRef.current[sessionId];
+      disposeAutocompleteReconcileSettleTimer(sessionId);
+      clearAutocompleteForSession(sessionId);
+      return;
+    }
+    if (promptChanged) {
+      delete autocompleteReconcilePendingRef.current[sessionId];
+      disposeAutocompleteReconcileSettleTimer(sessionId);
+      clearAutocompleteForSession(sessionId);
+      return;
+    }
+    if (!autocompleteReconcilePendingRef.current[sessionId]) {
+      if (rawInputChanged) {
+        clearAutocompleteForSession(sessionId);
+      }
+      return;
+    }
+    if (!rawInputChanged) return;
+    scheduleAutocompleteReconcileSettle(sessionId);
+    refreshAutocomplete(
+      sessionId,
+      tracked.autocompleteInput,
+      terminalsRef.current[sessionId]?.terminal.buffer.active.cursorX ?? null,
+    );
   }
 
   /** 对终端输出触发的输入行监听刷新做防抖，避免快速编辑时频繁抖动。 */
-  function scheduleCommandCaptureRefresh(sessionId: string) {
+  function scheduleCommandCaptureRefresh(
+    sessionId: string,
+    delayMs = COMMAND_CAPTURE_DEBOUNCE_MS,
+  ) {
     const currentTimer = commandCaptureTimersRef.current[sessionId];
     if (currentTimer) {
       window.clearTimeout(currentTimer);
@@ -948,7 +1140,7 @@ export default function useTerminalRuntime({
     commandCaptureTimersRef.current[sessionId] = window.setTimeout(() => {
       delete commandCaptureTimersRef.current[sessionId];
       refreshCommandCapture(sessionId);
-    }, COMMAND_CAPTURE_DEBOUNCE_MS);
+    }, delayMs);
   }
 
   /**
@@ -971,7 +1163,14 @@ export default function useTerminalRuntime({
         : null) ??
       null;
     if (!selectedCommand) return false;
-    const currentInput = autocompleteInputBufferRef.current[sessionId] ?? "";
+    const tracked = resolveTrackedCommand(sessionId);
+    if (tracked.confirmedPrompt && !tracked.cursorAtLineEnd) {
+      clearAutocompleteForSession(sessionId);
+      return false;
+    }
+    const currentInput = tracked.confirmedPrompt
+      ? tracked.rawCommand
+      : (autocompleteInputBufferRef.current[sessionId] ?? "");
     const clearInputSequence = handlersRef.current.isLocalSession(sessionId)
       ? "\u007f".repeat(currentInput.length)
       : "\u0015";
@@ -987,14 +1186,56 @@ export default function useTerminalRuntime({
   }
 
   /** 记录用户主动关闭联想时的输入，避免方向键等无输入变化操作立即重新弹出。 */
-  function suppressAutocompleteForCurrentInput(sessionId: string) {
+  function suppressAutocompleteForCurrentInput(
+    sessionId: string,
+    hard = false,
+  ) {
     const currentInput = autocompleteInputBufferRef.current[sessionId] ?? "";
     if (currentInput.trim()) {
       autocompleteSuppressedInputRef.current[sessionId] = currentInput;
     }
-    setActiveAutocomplete((prev) =>
-      prev?.sessionId === sessionId ? null : prev,
-    );
+    if (hard) {
+      autocompleteHardSuppressedRef.current[sessionId] = true;
+    }
+    clearAutocompleteForSession(sessionId);
+  }
+
+  /** 返回当前会话可由键盘操作的联想面板。 */
+  function getReadyAutocomplete(sessionId: string) {
+    const autocomplete = activeAutocompleteRef.current;
+    const input = autocompleteInputBufferRef.current[sessionId] ?? "";
+    if (
+      autocomplete?.sessionId !== sessionId ||
+      !autocomplete.items.length ||
+      !input.trim() ||
+      autocompleteHardSuppressedRef.current[sessionId] ||
+      ensureCommandCaptureMeta(sessionId).interactionState !== "prompt"
+    ) {
+      return null;
+    }
+    return autocomplete;
+  }
+
+  /** 使用按键语义切换候选，避免依赖 tmux 改写后的原始转义序列。 */
+  function selectAutocompleteByDirection(
+    sessionId: string,
+    direction: "up" | "down",
+  ) {
+    const autocomplete = getReadyAutocomplete(sessionId);
+    if (!autocomplete) return false;
+    const selectedIndex =
+      direction === "up"
+        ? autocomplete.selectedIndex < 0
+          ? autocomplete.items.length - 1
+          : (autocomplete.selectedIndex - 1 + autocomplete.items.length) %
+            autocomplete.items.length
+        : autocomplete.selectedIndex < 0
+          ? 0
+          : (autocomplete.selectedIndex + 1) % autocomplete.items.length;
+    const next = { ...autocomplete, selectedIndex };
+    activeAutocompleteRef.current = next;
+    setActiveAutocomplete(next);
+    return true;
   }
 
   function handleTerminalBell(sessionId: string) {
@@ -1138,7 +1379,12 @@ export default function useTerminalRuntime({
       parseWorkingDirectoryFromPromptRef.current(sessionId, data, {
         suppressPathPublish: suppressPromptPathPublish,
       });
-      scheduleCommandCaptureRefreshRef.current(sessionId);
+      scheduleCommandCaptureRefreshRef.current(
+        sessionId,
+        autocompleteReconcilePendingRef.current[sessionId]
+          ? 0
+          : COMMAND_CAPTURE_DEBOUNCE_MS,
+      );
       bundle.outputWritePending = false;
       if (bundle.outputQueuedChars === 0) return;
       bundle.outputDrainTimer = window.setTimeout(() => {
@@ -1670,6 +1916,13 @@ export default function useTerminalRuntime({
         publishWorkingDirectoryFromOsc7(sessionId, data);
         return true;
       }),
+      term.buffer.onBufferChange(() => {
+        const meta = ensureCommandCaptureMeta(sessionId);
+        meta.promptPrefix = null;
+        meta.interactionState = "unknown";
+        clearAutocompleteForSession(sessionId, true);
+        refreshCommandCapture(sessionId);
+      }),
     );
 
     const handleCompositionStart = () => {
@@ -1727,6 +1980,32 @@ export default function useTerminalRuntime({
       // 拦截 macOS CapsLock 切换输入法时触发的 Unidentified 事件，防止 IME 内容重复提交。
       if (shouldBlockMacCapsImeEvent) {
         return false;
+      }
+
+      if (event.type === "keydown" && getReadyAutocomplete(sessionId)) {
+        if (event.ctrlKey || event.altKey || event.metaKey) {
+          suppressAutocompleteForCurrentInput(sessionId, true);
+        } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          event.preventDefault();
+          event.stopPropagation();
+          selectAutocompleteByDirection(
+            sessionId,
+            event.key === "ArrowUp" ? "up" : "down",
+          );
+          return false;
+        } else if (event.key === "Enter") {
+          const autocomplete = getReadyAutocomplete(sessionId);
+          if (autocomplete && autocomplete.selectedIndex >= 0) {
+            event.preventDefault();
+            event.stopPropagation();
+            applyAutocompleteSuggestion(sessionId).catch(() => {});
+            return false;
+          }
+        } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          suppressAutocompleteForCurrentInput(sessionId, true);
+        } else if (event.key === "Escape") {
+          suppressAutocompleteForCurrentInput(sessionId);
+        }
       }
 
       const action = resolveTerminalHostKeyAction(
@@ -1810,45 +2089,23 @@ export default function useTerminalRuntime({
           return;
         }
         resumeCommandCaptureAtVisiblePrompt(sessionId);
-        const autocomplete = activeAutocompleteRef.current;
-        const activeAutocomplete =
-          autocomplete?.sessionId === sessionId ? autocomplete : null;
-        const autocompleteInput =
-          autocompleteInputBufferRef.current[sessionId] ?? "";
-        const autocompleteReady =
-          !!activeAutocomplete?.items.length &&
-          !!autocompleteInput.trim() &&
-          !ensureCommandCaptureMeta(sessionId).waitingForNextPrompt;
+        const cursorDirection = resolveTerminalCursorDirection(effectiveData);
+        if (isTerminalAutocompleteEditingInput(effectiveData)) {
+          disposeAutocompleteReconcileSettleTimer(sessionId);
+          autocompleteReconcilePendingRef.current[sessionId] = true;
+          delete autocompleteHardSuppressedRef.current[sessionId];
+        }
         if (
-          autocompleteReady &&
-          (effectiveData === "\u001b[A" || effectiveData === "\u001b[B")
+          (cursorDirection === "up" || cursorDirection === "down") &&
+          selectAutocompleteByDirection(sessionId, cursorDirection)
         ) {
-          setActiveAutocomplete((prev) => {
-            if (!prev || prev.sessionId !== sessionId || !prev.items.length) {
-              return prev;
-            }
-            let nextIndex: number;
-            if (effectiveData === "\u001b[A") {
-              nextIndex =
-                prev.selectedIndex < 0
-                  ? prev.items.length - 1
-                  : (prev.selectedIndex - 1 + prev.items.length) %
-                    prev.items.length;
-            } else {
-              nextIndex =
-                prev.selectedIndex < 0
-                  ? 0
-                  : (prev.selectedIndex + 1) % prev.items.length;
-            }
-            return { ...prev, selectedIndex: nextIndex };
-          });
           return;
         }
         if (
-          autocompleteReady &&
-          (effectiveData === "\u001b[C" || effectiveData === "\u001b[D")
+          (cursorDirection === "left" || cursorDirection === "right") &&
+          getReadyAutocomplete(sessionId)
         ) {
-          setActiveAutocomplete(null);
+          suppressAutocompleteForCurrentInput(sessionId, true);
           handlersRef.current
             .sendSessionInput(sessionId, { kind: "text", data: effectiveData })
             .catch(() => {});
@@ -1856,9 +2113,10 @@ export default function useTerminalRuntime({
           return;
         }
         if (effectiveData === "\r" || effectiveData === "\n") {
+          const activeAutocomplete = getReadyAutocomplete(sessionId);
           if (
             (activeAutocomplete?.selectedIndex ?? -1) >= 0 &&
-            autocompleteReady
+            activeAutocomplete
           ) {
             applyAutocompleteSuggestion(sessionId).catch(() => {});
             return;
@@ -1871,27 +2129,13 @@ export default function useTerminalRuntime({
             handlersRef.current.setLastCommand(sessionId, committedCommand);
             handlersRef.current.onCommandCommit?.(sessionId, committedCommand);
           }
-          ensureCommandCaptureMeta(sessionId).waitingForNextPrompt = true;
+          ensureCommandCaptureMeta(sessionId).interactionState = "running";
           publishCommandCapture(sessionId, {
             state: "listening",
             command: "",
             updatedAt: Date.now(),
           });
-          const currentInput =
-            autocompleteInputBufferRef.current[sessionId] ?? "";
-          const nextInput = updateCommandInputBuffer(
-            currentInput,
-            effectiveData,
-          ).buffer;
-          refreshAutocomplete(
-            sessionId,
-            nextInput,
-            resolvePredictedAutocompleteCursorCol(
-              sessionId,
-              currentInput,
-              nextInput,
-            ),
-          );
+          clearAutocompleteForSession(sessionId, true);
           handlersRef.current
             .sendSessionInput(sessionId, { kind: "text", data: effectiveData })
             .catch(() => {});
@@ -1906,21 +2150,6 @@ export default function useTerminalRuntime({
           scheduleCommandCaptureRefresh(sessionId);
           return;
         }
-        const currentInput =
-          autocompleteInputBufferRef.current[sessionId] ?? "";
-        const nextInput = updateCommandInputBuffer(
-          currentInput,
-          effectiveData,
-        ).buffer;
-        refreshAutocomplete(
-          sessionId,
-          nextInput,
-          resolvePredictedAutocompleteCursorCol(
-            sessionId,
-            currentInput,
-            nextInput,
-          ),
-        );
         handlersRef.current
           .sendSessionInput(sessionId, { kind: "text", data: effectiveData })
           .catch(() => {});
@@ -2018,6 +2247,7 @@ export default function useTerminalRuntime({
     }
     delete commandCaptureMetaRef.current[sessionId];
     delete activeCommandCaptureBySessionRef.current[sessionId];
+    clearAutocompleteForSession(sessionId, true);
     disposeCursorSuppressTimer(sessionId);
     delete cursorSuppressedBySessionRef.current[sessionId];
     disposeSelectionAutoCopyTimer(sessionId);
@@ -2594,6 +2824,7 @@ export default function useTerminalRuntime({
   }
 
   function closeActiveAutocomplete() {
+    activeAutocompleteRef.current = null;
     setActiveAutocomplete(null);
   }
 

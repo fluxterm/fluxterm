@@ -26,11 +26,12 @@
     "logging:test": "node --experimental-strip-types --test src/shared/logging/*.test.ts",
     "app-error:test": "node --experimental-strip-types --test src/shared/errors/*.test.ts",
     "connection-validation:test": "node --experimental-strip-types --test src/features/session/core/connectionValidation.test.ts",
+    "command-input-tracker:test": "node --experimental-strip-types --test src/features/command-history/core/inputTracker.test.ts",
     "sftp-transfer-state:test": "node --experimental-strip-types --test src/features/sftp/core/transferState.test.ts",
     "performance-telemetry:check": "node scripts/check-performance-telemetry.mjs",
     "performance-telemetry:test": "node --experimental-strip-types --test src/subapps/rdp/performanceTelemetryCore.test.ts",
     "runtime-message:check": "node scripts/check-runtime-messages.mjs",
-    "check": "pnpm type-check && pnpm lint && pnpm logging:check && pnpm logging:test && pnpm app-error:test && pnpm connection-validation:test && pnpm sftp-transfer-state:test && pnpm performance-telemetry:check && pnpm performance-telemetry:test && pnpm runtime-message:check",
+    "check": "pnpm type-check && pnpm lint && pnpm logging:check && pnpm logging:test && pnpm app-error:test && pnpm connection-validation:test && pnpm command-input-tracker:test && pnpm sftp-transfer-state:test && pnpm performance-telemetry:check && pnpm performance-telemetry:test && pnpm runtime-message:check",
     "check:all": "pnpm check && cargo clippy --all-targets --all-features -- -D warnings",
     "code:stats": "node --experimental-strip-types scripts/count-code-lines.ts"
   },
