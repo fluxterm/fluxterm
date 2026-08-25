@@ -162,39 +162,42 @@ export default function useSubApps({
     [setRuntimeStatus],
   );
 
-  const flushPendingRdpCommands = useCallback(() => {
-    if (statusByIdRef.current.rdp !== "ready") return;
-    const label = createSubAppWindowLabel("rdp");
-    const dispatchPendingConnects = () => {
+  const flushPendingRdpCommands = useCallback(
+    ({ deferForStartup = false }: { deferForStartup?: boolean } = {}) => {
       if (statusByIdRef.current.rdp !== "ready") return;
-      if (!pendingRdpConnectQueueRef.current.length) return;
-      const queue = [...pendingRdpConnectQueueRef.current];
-      pendingRdpConnectQueueRef.current = [];
-      queue.forEach((profileId) => {
-        postLifecycleMessage({
-          type: "subapp:rdp-connect",
-          source: "main",
-          target: { id: "rdp", label },
-          profileId,
+      const label = createSubAppWindowLabel("rdp");
+      const dispatchPendingConnects = () => {
+        if (statusByIdRef.current.rdp !== "ready") return;
+        if (!pendingRdpConnectQueueRef.current.length) return;
+        const queue = [...pendingRdpConnectQueueRef.current];
+        pendingRdpConnectQueueRef.current = [];
+        queue.forEach((profileId) => {
+          postLifecycleMessage({
+            type: "subapp:rdp-connect",
+            source: "main",
+            target: { id: "rdp", label },
+            profileId,
+          });
         });
-      });
-    };
-    if (!pendingRdpConnectQueueRef.current.length) return;
-    if (pendingRdpConnectTimerRef.current !== null) {
-      window.clearTimeout(pendingRdpConnectTimerRef.current);
-      pendingRdpConnectTimerRef.current = null;
-    }
-    if (import.meta.env.DEV) {
-      // dev 模式下 React StrictMode / HMR 会让子应用首轮 effect 抖动，
-      // 延后一次连接指令派发，等子窗口监听稳定后再发送。
-      pendingRdpConnectTimerRef.current = window.setTimeout(() => {
+      };
+      if (!pendingRdpConnectQueueRef.current.length) return;
+      if (pendingRdpConnectTimerRef.current !== null) {
+        window.clearTimeout(pendingRdpConnectTimerRef.current);
         pendingRdpConnectTimerRef.current = null;
-        dispatchPendingConnects();
-      }, 300);
-      return;
-    }
-    dispatchPendingConnects();
-  }, [postLifecycleMessage]);
+      }
+      if (import.meta.env.DEV && deferForStartup) {
+        // dev 模式下 React StrictMode / HMR 会让子应用首轮 effect 抖动，
+        // 延后一次连接指令派发，等子窗口监听稳定后再发送。
+        pendingRdpConnectTimerRef.current = window.setTimeout(() => {
+          pendingRdpConnectTimerRef.current = null;
+          dispatchPendingConnects();
+        }, 300);
+        return;
+      }
+      dispatchPendingConnects();
+    },
+    [postLifecycleMessage],
+  );
 
   const closeSubApp = useCallback(
     async (id: SubAppId) => {
@@ -226,7 +229,7 @@ export default function useSubApps({
         setRuntimeStatus(payload.id, "ready");
         syncAppearance({ id: payload.id, label: payload.label });
         if (payload.id === "rdp") {
-          flushPendingRdpCommands();
+          flushPendingRdpCommands({ deferForStartup: true });
         }
         return;
       }
@@ -349,8 +352,15 @@ export default function useSubApps({
         window.clearTimeout(pendingRdpConnectTimerRef.current);
         pendingRdpConnectTimerRef.current = null;
       }
+      const isRdpReady = statusByIdRef.current.rdp === "ready";
+      if (isRdpReady) {
+        // Windows 聚焦全屏窗口时可能暂停 Main WebView，必须先派发连接意图。
+        flushPendingRdpCommands();
+      }
       await launchSubApp("rdp");
-      flushPendingRdpCommands();
+      if (!isRdpReady) {
+        flushPendingRdpCommands({ deferForStartup: true });
+      }
     },
     [flushPendingRdpCommands, launchSubApp],
   );
