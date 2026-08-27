@@ -42,10 +42,6 @@ This repository contains FluxTerm, a Tauri-based terminal app with a Rust backen
 - Comments: Follow `cargo doc` conventions so generated docs are clear and readable; do not add meaningless comments.
 - Frontend business UI must include stable, searchable DOM markers for debugging and automation. Prefer `data-page`, `data-ui`, and `data-slot`; use `id` only when global uniqueness is semantically required.
 
-## Testing Guidelines
-
-There is no dedicated JS test runner configured yet. For Rust, use `cargo test` in the workspace or inside a crate once tests are added. If you add tests, place them near the module under test or in a `tests/` folder per Rust conventions.
-
 ## Documentation Guidelines
 
 - Add Chinese documentation comments for frontend/backend functions, structs, and modules; Rust docs must use `//!` and `///` and comply with `cargo doc` conventions.
