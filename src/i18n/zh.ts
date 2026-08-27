@@ -88,7 +88,7 @@ export const zhCnTranslations = {
   "config.security.unlockPassword": "输入安全密码",
   "config.security.changePassword": "更换安全密码",
   "config.security.passwordHintWeak":
-    "弱保护模式使用应用内置密钥保护本地敏感数据，安全性较低。设置安全密码后可切换到强保护模式。",
+    "弱保护使用配置目录的独立随机密钥加密敏感数据；设置安全密码可启用强保护。",
   "config.security.passwordHintEncrypted":
     "强保护模式下，应用重启后需要重新输入安全密码才能继续使用受保护数据。",
   "config.security.currentPasswordPlaceholder": "请输入当前安全密码",
@@ -112,7 +112,7 @@ export const zhCnTranslations = {
   "config.security.dangerTitle": "危险操作",
   "config.security.dangerHint": "此操作不可撤销，请谨慎执行。",
   "config.security.enableWeakConfirm":
-    "切换到弱保护模式后，所有已保存的 SSH 密码、私钥口令和 AI Key 都会改用应用内置密钥重新加密。是否继续？",
+    "切换后，所有敏感数据将使用配置目录的随机密钥重新加密。是否继续？",
   "error.securityLocked":
     "当前安全数据已锁定，请点击状态栏锁图标或打开安全设置后输入安全密码解锁",
   "error.securityPasswordInvalid": "安全密码不正确",

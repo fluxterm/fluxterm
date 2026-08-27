@@ -92,7 +92,7 @@ export const enUsTranslations = {
   "config.security.unlockPassword": "Enter Security Password",
   "config.security.changePassword": "Change Security Password",
   "config.security.passwordHintWeak":
-    "Weak protection uses an app-embedded key to protect local secrets and offers lower security. Set a security password to switch to strong protection.",
+    "Weak protection encrypts secrets with a random key in the configuration directory. Set a security password to enable strong protection.",
   "config.security.passwordHintEncrypted":
     "In strong protection mode, enter your security password again after restart before using protected data.",
   "config.security.currentPasswordPlaceholder":
@@ -120,7 +120,7 @@ export const enUsTranslations = {
   "config.security.dangerHint":
     "This action cannot be undone. Proceed carefully.",
   "config.security.enableWeakConfirm":
-    "Switching to weak protection will re-encrypt all saved SSH passwords, key passphrases, and AI keys with the app-embedded key. Continue?",
+    "Switching will re-encrypt all secrets with the configuration directory's random key. Continue?",
   "error.securityLocked":
     "Protected data is locked. Click the lock icon in the status bar or open Security settings, then enter your security password to unlock it",
   "error.securityPasswordInvalid": "The security password is incorrect",
