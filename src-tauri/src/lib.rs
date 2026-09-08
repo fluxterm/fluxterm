@@ -215,6 +215,9 @@ pub fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                // 单文件上限为 10 MiB，另保留最近 5 个归档文件。
+                .max_file_size(10 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
                 .targets(log_targets)
                 .level(log_level)
                 // https://github.com/tauri-apps/tauri/issues/8494 2025年7月22日 未解决
