@@ -36,7 +36,7 @@ use ironrdp::pdu::rdp::multitransport::MultitransportResponsePdu;
 use ironrdp::rdpdr::{NoopRdpdrBackend, Rdpdr};
 use ironrdp::rdpsnd::client::Rdpsnd;
 use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{ActiveStage, ActiveStageOutput};
+use ironrdp::session::{ActiveStageBuilder, ActiveStageOutput, fast_path};
 use ironrdp_cliprdr::CliprdrClient;
 use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
 use ironrdp_tls::extract_tls_server_public_key;
@@ -280,6 +280,17 @@ impl Drop for FramePerfWindow {
 enum RuntimeCloseReason {
     UserDisconnected,
     ServerClosed,
+}
+
+/// 去激活后重建活动阶段所需的协商结果。
+struct ReactivationResult {
+    width: u16,
+    height: u16,
+    share_id: u32,
+    user_channel_id: u16,
+    io_channel_id: u16,
+    enable_server_pointer: bool,
+    pointer_software_rendering: bool,
 }
 
 struct ActiveStageContext<'a> {
@@ -666,14 +677,30 @@ where
     S: Send + Sync + Unpin + tokio::io::AsyncRead + tokio::io::AsyncWrite,
 {
     let (mut reader, mut writer) = split_tokio_framed(framed);
-    let user_channel_id = connection_result.user_channel_id;
-    let io_channel_id = connection_result.io_channel_id;
-    let mut image = DecodedImage::new(
-        PixelFormat::RgbA32,
-        connection_result.desktop_size.width,
-        connection_result.desktop_size.height,
-    );
-    let mut active_stage = ActiveStage::new(connection_result);
+    let ConnectionResult {
+        mut io_channel_id,
+        mut user_channel_id,
+        message_channel_id,
+        share_id,
+        static_channels,
+        desktop_size,
+        enable_server_pointer,
+        pointer_software_rendering,
+        activation_factory,
+        compression_type,
+    } = connection_result;
+    let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_size.width, desktop_size.height);
+    let mut active_stage = ActiveStageBuilder {
+        static_channels,
+        user_channel_id,
+        io_channel_id,
+        message_channel_id,
+        share_id,
+        compression_type,
+        enable_server_pointer,
+        pointer_software_rendering,
+    }
+    .build();
     let mut input_db = InputDatabase::new();
     let mut logged_first_frame = false;
     #[cfg(feature = "performance-telemetry")]
@@ -1252,17 +1279,37 @@ where
                         },
                     );
                 }
-                ActiveStageOutput::DeactivateAll(sequence) => {
+                ActiveStageOutput::DeactivateAll => {
                     pending_graphics_rects.clear();
                     pending_flush_deadline = None;
                     pending_flush_started_at = None;
                     cursor_cache = CursorCache::default();
-                    let Some((width, height)) =
-                        complete_deactivation_reactivation(&mut reader, &mut writer, sequence)
-                            .await?
+                    let Some(reactivation) = complete_deactivation_reactivation(
+                        &mut reader,
+                        &mut writer,
+                        Box::new(activation_factory.create()),
+                    )
+                    .await?
                     else {
                         return Err("deactivation-reactivation did not finalize".to_string());
                     };
+                    let width = reactivation.width;
+                    let height = reactivation.height;
+                    user_channel_id = reactivation.user_channel_id;
+                    io_channel_id = reactivation.io_channel_id;
+                    active_stage.set_fastpath_processor(
+                        fast_path::ProcessorBuilder {
+                            io_channel_id,
+                            user_channel_id,
+                            share_id: reactivation.share_id,
+                            enable_server_pointer: reactivation.enable_server_pointer,
+                            pointer_software_rendering: reactivation.pointer_software_rendering,
+                            bulk_decompressor: None,
+                        }
+                        .build(),
+                    );
+                    active_stage.set_share_id(reactivation.share_id);
+                    active_stage.set_enable_server_pointer(reactivation.enable_server_pointer);
                     log_event!(
                         LogLevel::Debug,
                         "rdp.runtime.reactivated",
@@ -1372,15 +1419,28 @@ async fn complete_deactivation_reactivation<S>(
     reader: &mut TokioFramed<tokio::io::ReadHalf<S>>,
     writer: &mut TokioFramed<tokio::io::WriteHalf<S>>,
     mut sequence: Box<ConnectionActivationSequence>,
-) -> Result<Option<(u16, u16)>, String>
+) -> Result<Option<ReactivationResult>, String>
 where
     S: Send + Sync + Unpin + tokio::io::AsyncRead + tokio::io::AsyncWrite,
 {
     let mut buffer = ironrdp::core::WriteBuf::new();
     loop {
         match sequence.connection_activation_state() {
-            ConnectionActivationState::Finalized { desktop_size, .. } => {
-                return Ok(Some((desktop_size.width, desktop_size.height)));
+            ConnectionActivationState::Finalized {
+                desktop_size,
+                share_id,
+                enable_server_pointer,
+                pointer_software_rendering,
+            } => {
+                return Ok(Some(ReactivationResult {
+                    width: desktop_size.width,
+                    height: desktop_size.height,
+                    share_id,
+                    user_channel_id: sequence.user_channel_id(),
+                    io_channel_id: sequence.io_channel_id(),
+                    enable_server_pointer,
+                    pointer_software_rendering,
+                }));
             }
             ConnectionActivationState::Consumed => {
                 return Ok(None);
