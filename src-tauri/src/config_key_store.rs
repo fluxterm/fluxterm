@@ -116,31 +116,35 @@ fn write_new_config_key(path: &Path, raw: &str) -> Result<(), EngineError> {
             error.to_string(),
         )
     })?;
-    let mut file = match fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
-        Err(error) => {
-            return Err(EngineError::with_detail(
+    let mut file = tempfile::Builder::new()
+        .prefix(".fluxterm-config-key-")
+        .suffix(".tmp")
+        .tempfile_in(parent)
+        .map_err(|error| {
+            EngineError::with_detail(
                 CONFIG_KEY_WRITE_FAILED_CODE,
-                "Failed to create the configuration key file",
+                "Failed to create a temporary configuration key file",
                 error.to_string(),
-            ));
-        }
-    };
-    if let Err(error) = file.write_all(raw.as_bytes()).and_then(|_| file.sync_all()) {
-        drop(file);
-        let _ = fs::remove_file(path);
-        return Err(EngineError::with_detail(
+            )
+        })?;
+    file.write_all(raw.as_bytes())
+        .and_then(|_| file.as_file().sync_all())
+        .map_err(|error| {
+            EngineError::with_detail(
+                CONFIG_KEY_WRITE_FAILED_CODE,
+                "Failed to write the configuration key",
+                error.to_string(),
+            )
+        })?;
+    match file.persist_noclobber(path) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(EngineError::with_detail(
             CONFIG_KEY_WRITE_FAILED_CODE,
-            "Failed to write the configuration key",
-            error.to_string(),
-        ));
+            "Failed to persist the configuration key",
+            error.error.to_string(),
+        )),
     }
-    Ok(())
 }
 
 fn decode_config_key(stored: ConfigKeyFile) -> Result<ConfigKey, EngineError> {
@@ -218,7 +222,8 @@ mod tests {
 
     #[test]
     fn concurrent_creation_reuses_single_configuration_key() {
-        let path = temp_key_path("concurrent");
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("config-key.json");
         let barrier = Arc::new(Barrier::new(8));
         let handles = (0..8)
             .map(|_| {
@@ -240,7 +245,12 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(keys.windows(2).all(|pair| pair[0] == pair[1]));
-        let _ = std::fs::remove_file(path);
+        let files = std::fs::read_dir(directory.path())
+            .expect("read temporary directory")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("read temporary directory entries");
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path(), path);
     }
 
     #[test]
