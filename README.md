@@ -14,7 +14,7 @@ FluxTerm is not intended to clone an existing product. Its goal is to build a ma
 
 ## Acknowledgements
 
-FluxTerm is built on top of many open source projects that provide the foundations for desktop integration, terminal workflows, SSH/SFTP, RDP, and authentication. See [Upstream Dependencies and Acknowledgements](./docs/upstream-dependencies.md) for the key projects and maintenance notes.
+FluxTerm is built on top of many open source projects that provide the foundations for desktop integration, terminal workflows, SSH/SFTP, RDP, and authentication. See [Acknowledgements](./docs/acknowledgements.md) for project credits.
 
 ## Contributing
 

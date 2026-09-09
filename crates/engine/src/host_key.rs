@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use russh::client;
-use russh::keys::{self, HashAlg, PublicKeyBase64};
+use russh::keys::{self, HashAlg, PublicKeyBase64, PublicKeyOrCertificate};
 use tokio::time::timeout;
 
 use crate::error::EngineError;
@@ -38,13 +38,13 @@ impl client::Handler for ProbeHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &keys::PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         let mut guard = self
             .key
             .lock()
             .map_err(|_| anyhow::anyhow!("host key probe lock poisoned"))?;
-        *guard = Some(server_public_key.clone());
+        *guard = Some(server_public_key.public_key());
         Ok(false)
     }
 }

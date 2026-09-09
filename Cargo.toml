@@ -24,16 +24,17 @@ tokio = { version = "1.50.0" }
 uuid = { version = "=1.23.2" }
 serde_json = { version = "1.0.149" }
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
-russh = { version = "0.61.2", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh = { version = "0.63.2", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-config = { version = "0.58.0" }
+russh-sftp = { version = "3.0.0" }
 
 [patch.crates-io]
-sspi = { version = "0.21", git = "https://github.com/fluxterm/sspi-rs", branch = "fix/rustcrypto-rc0-russh-061" }
-picky = { version = "=7.0.0-rc.23", git = "https://github.com/fluxterm/picky-rs", branch = "fix/rustcrypto-rc0-russh-061" }
-picky-asn1 = { version = "0.10", git = "https://github.com/fluxterm/picky-rs", branch = "fix/rustcrypto-rc0-russh-061" }
-picky-asn1-der = { version = "0.5", git = "https://github.com/fluxterm/picky-rs", branch = "fix/rustcrypto-rc0-russh-061" }
-picky-asn1-x509 = { version = "0.15", git = "https://github.com/fluxterm/picky-rs", branch = "fix/rustcrypto-rc0-russh-061" }
-picky-krb = { version = "0.12", git = "https://github.com/fluxterm/picky-rs", branch = "fix/rustcrypto-rc0-russh-061" }
+sspi = { version = "=0.21.3", git = "https://github.com/fluxterm/sspi-rs", branch = "codex/compat-russh-0632" }
+picky = { version = "=7.0.0-rc.26", git = "https://github.com/fluxterm/picky-rs", branch = "codex/compat-russh-0632" }
+picky-asn1 = { version = "=0.10.1", git = "https://github.com/fluxterm/picky-rs", branch = "codex/compat-russh-0632" }
+picky-asn1-der = { version = "=0.5.6", git = "https://github.com/fluxterm/picky-rs", branch = "codex/compat-russh-0632" }
+picky-asn1-x509 = { version = "=0.15.4", git = "https://github.com/fluxterm/picky-rs", branch = "codex/compat-russh-0632" }
+picky-krb = { version = "=0.12.4", git = "https://github.com/fluxterm/picky-rs", branch = "codex/compat-russh-0632" }
 
 [profile.dev]
 incremental = true

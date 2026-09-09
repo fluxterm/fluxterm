@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 use fluxterm_logging::{LogLevel, log_event};
 use russh::client;
-use russh::keys::{self, PublicKeyBase64};
+use russh::keys::{PublicKeyBase64, PublicKeyOrCertificate};
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -275,13 +275,13 @@ impl client::Handler for ClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &keys::PublicKey,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         let Some(expected) = &self.expected_host_key else {
             return Ok(true);
         };
         // 正式握手期间校验当前服务端公钥与预期公钥一致。
-        let actual = server_public_key.public_key_base64();
+        let actual = server_public_key.public_key().public_key_base64();
         if actual == expected.public_key_base64 {
             return Ok(true);
         }
@@ -302,6 +302,7 @@ impl client::Handler for ClientHandler {
         connected_port: u32,
         _originator_address: &str,
         _originator_port: u32,
+        reply: client::ChannelOpenHandle,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
         let Some(route) = self
@@ -313,6 +314,7 @@ impl client::Handler for ClientHandler {
         else {
             return Ok(());
         };
+        reply.accept().await;
 
         let on_event = self.on_event.clone();
         let session_id = self.session_id.clone();
@@ -1326,7 +1328,7 @@ mod tests {
     use crate::error::EngineError;
     use crate::types::{SshTunnelKind, SshTunnelRuntime, SshTunnelStatus};
     use russh::client::Handler;
-    use russh::keys::{self, HashAlg, PublicKeyBase64};
+    use russh::keys::{self, HashAlg, PublicKeyBase64, PublicKeyOrCertificate};
     use std::sync::Arc;
     use tokio::sync::Mutex;
 
@@ -1398,6 +1400,7 @@ mod tests {
             fingerprint_sha256: public_key.fingerprint(HashAlg::Sha256).to_string(),
         };
         let mut handler = ClientHandler::with_expected(expected);
+        let public_key = PublicKeyOrCertificate::from(public_key);
 
         let accepted = handler
             .check_server_key(&public_key)
@@ -1416,6 +1419,7 @@ mod tests {
             fingerprint_sha256: expected_key.fingerprint(HashAlg::Sha256).to_string(),
         };
         let mut handler = ClientHandler::with_expected(expected);
+        let actual_key = PublicKeyOrCertificate::from(actual_key);
 
         let accepted = handler
             .check_server_key(&actual_key)
@@ -1436,6 +1440,7 @@ mod tests {
     #[tokio::test]
     async fn client_handler_unchecked_accepts_any_host_key() {
         let public_key = keys::parse_public_key_base64(KEY_A).expect("public key");
+        let public_key = PublicKeyOrCertificate::from(public_key);
         let mut handler = ClientHandler::unchecked();
 
         let accepted = handler

@@ -15,7 +15,7 @@ fluxterm-performance-telemetry = { workspace = true, optional = true }
 anyhow = { version = "1.0.102" }
 serde = { workspace = true, features = ["derive"] }
 russh = { workspace = true }
-russh-sftp = { version = "2.1.1" }
+russh-sftp = { workspace = true }
 tokio = { workspace = true, features = ["fs", "rt-multi-thread", "time", "io-util", "sync", "macros"] }
 uuid = { workspace = true, features = ["v4"] }
 log= { workspace = true }

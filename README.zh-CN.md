@@ -14,7 +14,7 @@ FluxTerm 并不以复刻既有产品为目标，而是在 `Tauri`、`Rust` 与 `
 
 ## 致谢
 
-FluxTerm 的桌面窗口、终端、SSH/SFTP、RDP 与安全认证能力建立在多个开源项目之上。关键上游依赖与维护说明见 [Upstream Dependencies and Acknowledgements](./docs/upstream-dependencies.md)。
+FluxTerm 的桌面窗口、终端、SSH/SFTP、RDP 与安全认证能力建立在多个开源项目之上。项目致谢见 [Acknowledgements](./docs/acknowledgements.md)。
 
 ## 贡献
 

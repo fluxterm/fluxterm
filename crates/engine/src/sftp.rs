@@ -3526,7 +3526,7 @@ async fn open_raw_sftp(
         let limits = russh_sftp::client::rawsession::Limits::from(limits);
         limits_snapshot.read_limit = limits.read_len;
         limits_snapshot.write_limit = limits.write_len;
-        raw.set_limits(Arc::new(limits));
+        raw.set_limits(limits);
     }
     Ok((Arc::new(raw), limits_snapshot))
 }
