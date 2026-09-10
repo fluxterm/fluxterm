@@ -1,0 +1,36 @@
+[package]
+name = "ironrdp-graphics"
+version = "0.9.0"
+readme = "README.md"
+description = "RDP image processing primitives"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/Devolutions/IronRDP"
+repository = "https://github.com/Devolutions/IronRDP"
+authors = ["Devolutions Inc. <infos@devolutions.net>", "Teleport <goteleport.com>"]
+keywords = ["rdp", "remote-desktop", "network", "client", "protocol"]
+categories = ["network-programming"]
+
+[lib]
+doctest = false
+# test = false
+
+[dependencies]
+bit_field = "0.10"
+bitflags = "2.11"
+bitvec = "1.0"
+ironrdp-core = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.2" } # public
+ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.9", features = ["std"] } # public
+byteorder = "1.5" # TODO: remove
+num-derive = "0.5" # TODO: remove
+num-traits = "0.2" # TODO: remove
+yuv = { version = "0.8", features = ["rdp"] }
+wide = "0.7" # portable SIMD for the inverse DWT (wasm/x86/ARM); `std::simd` is still nightly-only
+
+[dev-dependencies]
+bmp = "0.5"
+bytemuck = "1.24"
+expect-test = "1"
+
+[workspace]

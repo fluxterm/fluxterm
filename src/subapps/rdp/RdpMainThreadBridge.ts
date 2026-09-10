@@ -1,3 +1,4 @@
+import { GraphicsConsumer } from "./graphicsProtocol";
 /**
  * @file RdpMainThreadBridge.ts
  * @description RDP 主线程渲染桥接，用于 WebKitGTK 等不支持 Worker WebGL 的环境。
@@ -6,6 +7,7 @@
 import { RdpWebGLRenderer } from "./WebGLRenderer";
 
 type RdpWireEvent =
+  | { type: "graphics-metrics"; window: Record<string, number> }
   | {
       type: "state";
       state: string;
@@ -24,10 +26,13 @@ type MainThreadSessionRuntime = {
   bridgeUrl: string | null;
   texture: WebGLTexture | null;
   textureSize: { width: number; height: number };
-  pendingFrames: ArrayBuffer[];
+  graphics: GraphicsConsumer;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
   frameRequest: number | null;
   frameVersion: number;
   needsPresent: boolean;
+  receivedFrames: number;
+  renderDurationMs: number;
 };
 
 export type RdpMainThreadBridgeState = {
@@ -151,6 +156,9 @@ export class RdpMainThreadBridge {
       session.ws = null;
     }
 
+    if (session.reconnectTimer !== null) clearTimeout(session.reconnectTimer);
+    session.reconnectTimer = null;
+    session.graphics = new GraphicsConsumer();
     const ws = new WebSocket(url);
     session.bridgeUrl = url;
     ws.binaryType = "arraybuffer";
@@ -198,6 +206,16 @@ export class RdpMainThreadBridge {
         return;
       }
       currentSession.ws = null;
+      if (event.code === 1013) {
+        currentSession.reconnectTimer = setTimeout(() => {
+          if (
+            this.sessions.get(sessionId) === currentSession &&
+            currentSession.bridgeUrl === url
+          ) {
+            this.connect(sessionId, url);
+          }
+        }, 250);
+      }
       const details = {
         code: event.code,
         reason: event.reason,
@@ -238,7 +256,8 @@ export class RdpMainThreadBridge {
       session.ws?.close();
       session.ws = null;
       session.bridgeUrl = null;
-      session.pendingFrames = [];
+      if (session.reconnectTimer !== null) clearTimeout(session.reconnectTimer);
+      session.reconnectTimer = null;
       session.needsPresent = false;
       if (session.texture) {
         this.renderer.deleteTexture(session.texture);
@@ -270,26 +289,76 @@ export class RdpMainThreadBridge {
         bridgeUrl: null,
         texture: null,
         textureSize: { width: 0, height: 0 },
-        pendingFrames: [],
+        graphics: new GraphicsConsumer(),
+        reconnectTimer: null,
         frameRequest: null,
         frameVersion: 0,
         needsPresent: false,
+        receivedFrames: 0,
+        renderDurationMs: 0,
       };
       this.sessions.set(sessionId, session);
     }
     return session;
   }
 
-  /** 将后端推送的二进制帧加入待渲染队列。 */
+  /** 收到批次后立即更新纹理并确认，后台会话不依赖动画帧回调。 */
   private queueFrame(sessionId: string, buffer: ArrayBuffer) {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.pendingFrames.push(buffer);
-    session.needsPresent = true;
-    this.requestRender(sessionId);
+    if (!session || !session.ws) return;
+    const startedAt = performance.now();
+    try {
+      const ack = session.graphics.consume(buffer, (width, height, rects) => {
+        if (
+          !session.texture ||
+          session.textureSize.width !== width ||
+          session.textureSize.height !== height
+        ) {
+          if (session.texture) this.renderer.deleteTexture(session.texture);
+          session.texture = this.renderer.createTexture(width, height) ?? null;
+          session.textureSize = { width, height };
+        }
+        if (!session.texture)
+          throw new Error("RDP graphics texture unavailable");
+        for (const rect of rects) {
+          this.renderer.uploadRect(
+            session.texture,
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            rect.pixels,
+          );
+        }
+      });
+      session.ws.send(ack);
+      session.receivedFrames += 1;
+      session.renderDurationMs += performance.now() - startedAt;
+      session.needsPresent = true;
+      if (this.activeSessionId === sessionId) this.requestRender(sessionId);
+      else {
+        this.notifyFramePresented(session, {
+          presentedFrames: 0,
+          receivedFrames: session.receivedFrames,
+          droppedFrames: 0,
+          queueDepthMax: 1,
+          renderDurationMs: session.renderDurationMs,
+        });
+        session.receivedFrames = 0;
+        session.renderDurationMs = 0;
+      }
+    } catch (error) {
+      this.callbacks.onDiagnostic(
+        "error",
+        "rdp.mainThreadBridge.graphics.invalid",
+        { error: getErrorFields(error) },
+        sessionId,
+      );
+      session.ws.close(1002, "Invalid RDP graphics batch");
+    }
   }
 
-  /** 请求下一帧渲染并批量消费积压帧。 */
+  /** 请求下一帧呈现最新纹理。 */
   private requestRender(sessionId: string) {
     const session = this.sessions.get(sessionId);
     if (!session || session.frameRequest !== null) return;
@@ -297,10 +366,6 @@ export class RdpMainThreadBridge {
     session.frameRequest = window.requestAnimationFrame(() => {
       session.frameRequest = null;
       const renderStartedAt = performance.now();
-      const queue = session.pendingFrames.splice(0);
-      for (const buffer of queue) {
-        this.drawFrame(session, buffer);
-      }
 
       if (
         this.activeSessionId === sessionId &&
@@ -315,11 +380,14 @@ export class RdpMainThreadBridge {
         session.needsPresent = false;
         this.notifyFramePresented(session, {
           presentedFrames: 1,
-          receivedFrames: queue.length,
-          droppedFrames: Math.max(0, queue.length - 1),
-          queueDepthMax: queue.length,
-          renderDurationMs: performance.now() - renderStartedAt,
+          receivedFrames: session.receivedFrames,
+          droppedFrames: 0,
+          queueDepthMax: session.receivedFrames > 0 ? 1 : 0,
+          renderDurationMs:
+            session.renderDurationMs + performance.now() - renderStartedAt,
         });
+        session.receivedFrames = 0;
+        session.renderDurationMs = 0;
       }
     });
   }
@@ -335,93 +403,11 @@ export class RdpMainThreadBridge {
       renderDurationMs: number;
     },
   ) {
-    session.frameVersion += 1;
+    session.frameVersion += performance.presentedFrames;
     this.callbacks.onFramePresented(session.sessionId, session.frameVersion, {
       ...performance,
       surfaceWidth: session.textureSize.width,
       surfaceHeight: session.textureSize.height,
     });
-  }
-
-  /** 解析 RDP bridge 二进制帧并上传到 WebGL 纹理。 */
-  private drawFrame(session: MainThreadSessionRuntime, buffer: ArrayBuffer) {
-    const view = new DataView(buffer);
-    const messageType = view.getUint8(0);
-
-    if (messageType === 1) {
-      if (view.byteLength < 25) return;
-      const x = view.getUint32(1, true);
-      const y = view.getUint32(5, true);
-      const rectWidth = view.getUint32(9, true);
-      const rectHeight = view.getUint32(13, true);
-      const surfaceWidth = view.getUint32(17, true);
-      const surfaceHeight = view.getUint32(21, true);
-      const pixels = new Uint8Array(buffer, 25);
-
-      this.ensureTexture(session, surfaceWidth, surfaceHeight);
-      if (!session.texture) return;
-      this.renderer.uploadRect(
-        session.texture,
-        x,
-        y,
-        rectWidth,
-        rectHeight,
-        pixels,
-      );
-      return;
-    }
-
-    if (messageType !== 2 || view.byteLength < 13) {
-      return;
-    }
-
-    const surfaceWidth = view.getUint32(1, true);
-    const surfaceHeight = view.getUint32(5, true);
-    const rectCount = view.getUint32(9, true);
-
-    this.ensureTexture(session, surfaceWidth, surfaceHeight);
-    if (!session.texture) return;
-
-    let offset = 13;
-    for (let index = 0; index < rectCount; index += 1) {
-      if (offset + 16 > view.byteLength) break;
-      const x = view.getUint32(offset, true);
-      const y = view.getUint32(offset + 4, true);
-      const rectWidth = view.getUint32(offset + 8, true);
-      const rectHeight = view.getUint32(offset + 12, true);
-      offset += 16;
-      const pixelBytes = rectWidth * rectHeight * 4;
-      if (offset + pixelBytes > view.byteLength) break;
-      const pixels = new Uint8Array(buffer, offset, pixelBytes);
-      this.renderer.uploadRect(
-        session.texture,
-        x,
-        y,
-        rectWidth,
-        rectHeight,
-        pixels,
-      );
-      offset += pixelBytes;
-    }
-  }
-
-  /** 确保会话纹理尺寸与远端画布尺寸一致。 */
-  private ensureTexture(
-    session: MainThreadSessionRuntime,
-    surfaceWidth: number,
-    surfaceHeight: number,
-  ) {
-    if (
-      session.texture &&
-      session.textureSize.width === surfaceWidth &&
-      session.textureSize.height === surfaceHeight
-    ) {
-      return;
-    }
-    if (session.texture) {
-      this.renderer.deleteTexture(session.texture);
-    }
-    session.texture = this.renderer.createTexture(surfaceWidth, surfaceHeight);
-    session.textureSize = { width: surfaceWidth, height: surfaceHeight };
   }
 }

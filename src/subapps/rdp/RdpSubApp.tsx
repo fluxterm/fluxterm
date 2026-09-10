@@ -1,3 +1,9 @@
+import { recordGraphicsWindow } from "./graphicsDiagnostics";
+import {
+  WheelInputBatcher,
+  OrderedInputSender,
+  normalizeWheel,
+} from "@/features/rdp/core/wheelInput";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -70,6 +76,7 @@ type RdpStatusIndicatorTone = "normal" | "degraded" | "error";
 type RdpLogLevel = "debug" | "info" | "warn" | "error";
 
 type RdpWireEvent =
+  | { type: "graphics-metrics"; window: Record<string, number> }
   | {
       type: "state";
       state: string;
@@ -430,6 +437,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     sessionId: string;
     input: RdpInputEvent;
   } | null>(null);
+  const orderedInputRef = useRef(new OrderedInputSender(sendRdpInput));
+  const wheelBatchRef = useRef<{
+    sessionId: string;
+    batch: WheelInputBatcher;
+  } | null>(null);
   const mouseMoveRafRef = useRef<number | null>(null);
   const presentedFpsRuntimeRef = useRef<{
     frameCount: number;
@@ -661,9 +673,16 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   /** 处理运行时状态、光标、剪贴板和错误事件。 */
   const handleWireEvent = useCallback(
     (sessionId: string, payload: RdpWireEvent) => {
+      if (payload.type === "graphics-metrics") {
+        recordGraphicsWindow(sessionId, payload.window);
+        return;
+      }
       if (payload.type === "state") {
         const isTerminalState = isTerminalRdpSessionState(payload.state);
         if (isTerminalState) {
+          if (wheelBatchRef.current?.sessionId === sessionId)
+            wheelBatchRef.current.batch.reset();
+          orderedInputRef.current.cancel(sessionId);
           mainThreadBridgeRef.current?.disconnect(sessionId);
           workerRef.current?.postMessage({
             type: "disconnect",
@@ -823,7 +842,7 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
     ) {
       frameVersionBySessionRef.current[message.sessionId] =
         message.frameVersion;
-      const presentedFrames = Math.max(1, message.presentedFrames ?? 1);
+      const presentedFrames = Math.max(0, message.presentedFrames ?? 1);
       presentedFrameCountBySessionRef.current[message.sessionId] =
         (presentedFrameCountBySessionRef.current[message.sessionId] ?? 0) +
         presentedFrames;
@@ -1120,6 +1139,8 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   }, [handleRendererMessage, isLinux]);
 
   useEffect(() => {
+    wheelBatchRef.current?.batch.reset();
+    wheelBatchRef.current = null;
     pendingMouseMoveRef.current = null;
     if (mouseMoveRafRef.current !== null) {
       window.cancelAnimationFrame(mouseMoveRafRef.current);
@@ -1136,7 +1157,11 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   }, [activeSessionId, postRendererControl, resetPresentedFpsSampler]);
 
   useEffect(() => {
+    const inputSender = orderedInputRef.current;
     return () => {
+      wheelBatchRef.current?.batch.reset();
+      wheelBatchRef.current = null;
+      inputSender.cancel();
       pendingMouseMoveRef.current = null;
       if (mouseMoveRafRef.current !== null) {
         window.cancelAnimationFrame(mouseMoveRafRef.current);
@@ -1529,6 +1554,9 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
             )?.operationId ?? createOperationId();
           try {
             await flushPerformanceCollector(session.sessionId);
+            if (wheelBatchRef.current?.sessionId === session.sessionId)
+              wheelBatchRef.current.batch.reset();
+            orderedInputRef.current.cancel(session.sessionId);
             await disconnectRdpSession(session.sessionId, { operationId });
           } catch {
             // 忽略单个会话断开失败，尽量继续清理剩余会话。
@@ -1642,6 +1670,9 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
         ?.operationId ?? createOperationId();
     try {
       await flushPerformanceCollector(sessionId);
+      if (wheelBatchRef.current?.sessionId === sessionId)
+        wheelBatchRef.current.batch.reset();
+      orderedInputRef.current.cancel(sessionId);
       await disconnectRdpSession(sessionId, { operationId });
       if (isLastSession) {
         clearLastSessionTab(sessionId);
@@ -1661,7 +1692,38 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
   /** 发送 RDP 输入前先确认当前仍有活动会话。 */
   function sendInput(input: RdpInputEvent) {
     if (!activeTab) return;
-    void sendRdpInput(activeTab.session.sessionId, input).catch(() => {});
+    flushMouseMoveInput();
+    if (input.kind === "wheel") {
+      const sessionId = activeTab.session.sessionId;
+      if (wheelBatchRef.current?.sessionId !== sessionId) {
+        wheelBatchRef.current?.batch.reset();
+        wheelBatchRef.current = {
+          sessionId,
+          batch: new WheelInputBatcher((event) => {
+            void orderedInputRef.current.send(sessionId, event).catch(() => {});
+          }),
+        };
+      }
+      wheelBatchRef.current.batch.push(input);
+    } else {
+      wheelBatchRef.current?.batch.flush();
+      void orderedInputRef.current
+        .send(activeTab.session.sessionId, input)
+        .catch(() => {});
+    }
+  }
+
+  /** 在后续输入前发送最新鼠标位置，避免旧位置越过滚轮和按键。 */
+  function flushMouseMoveInput() {
+    if (mouseMoveRafRef.current !== null)
+      window.cancelAnimationFrame(mouseMoveRafRef.current);
+    mouseMoveRafRef.current = null;
+    const pending = pendingMouseMoveRef.current;
+    pendingMouseMoveRef.current = null;
+    if (pending)
+      void orderedInputRef.current
+        .send(pending.sessionId, pending.input)
+        .catch(() => {});
   }
 
   /** 将高频鼠标移动合并到下一帧，只发送最新坐标。 */
@@ -1673,7 +1735,9 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       const pending = pendingMouseMoveRef.current;
       pendingMouseMoveRef.current = null;
       if (!pending) return;
-      void sendRdpInput(pending.sessionId, pending.input).catch(() => {});
+      void orderedInputRef.current
+        .send(pending.sessionId, pending.input)
+        .catch(() => {});
     });
   }
 
@@ -1709,16 +1773,21 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
 
   /** 远端画面失焦时补发所有 key_up，避免修饰键在远端会话中卡住。 */
   function handleSurfaceBlur() {
+    wheelBatchRef.current?.batch.flush();
+    wheelBatchRef.current?.batch.reset();
+    flushMouseMoveInput();
     if (!activeTab || pressedKeysRef.current.size === 0) return;
     for (const code of pressedKeysRef.current) {
-      void sendRdpInput(activeTab.session.sessionId, {
-        kind: "key_up",
-        code,
-        ctrlKey: false,
-        shiftKey: false,
-        altKey: false,
-        metaKey: false,
-      }).catch(() => {});
+      void orderedInputRef.current
+        .send(activeTab.session.sessionId, {
+          kind: "key_up",
+          code,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+        })
+        .catch(() => {});
     }
     pressedKeysRef.current.clear();
   }
@@ -1763,11 +1832,30 @@ export default function RdpSubApp({ id, locale, t }: RdpSubAppProps) {
       x,
       y,
       button: "button" in event ? event.button : undefined,
-      deltaX: "deltaX" in event ? event.deltaX : undefined,
-      deltaY: "deltaY" in event ? event.deltaY : undefined,
+      deltaX:
+        "deltaX" in event
+          ? normalizeWheel(
+              event.deltaX,
+              event.deltaMode,
+              frameRect?.remoteHeight ?? 0,
+            )
+          : undefined,
+      deltaY:
+        "deltaY" in event
+          ? normalizeWheel(
+              event.deltaY,
+              event.deltaMode,
+              frameRect?.remoteHeight ?? 0,
+            )
+          : undefined,
+      ctrlKey: event.ctrlKey,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
     };
 
     if (kind === "mouse_move") {
+      wheelBatchRef.current?.batch.flush();
       scheduleMouseMoveInput(activeTab.session.sessionId, input);
       return;
     }

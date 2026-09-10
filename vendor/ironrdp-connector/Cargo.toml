@@ -1,0 +1,37 @@
+[package]
+name = "ironrdp-connector"
+version = "0.10.0"
+readme = "README.md"
+description = "State machines to drive an RDP connection sequence"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/Devolutions/IronRDP"
+repository = "https://github.com/Devolutions/IronRDP"
+authors = ["Devolutions Inc. <infos@devolutions.net>", "Teleport <goteleport.com>"]
+keywords = ["rdp", "remote-desktop", "network", "client", "protocol"]
+categories = ["network-programming"]
+
+[lib]
+doctest = false
+test = false
+
+[features]
+default = []
+qoi = ["ironrdp-pdu/qoi"]
+qoiz = ["ironrdp-pdu/qoiz"]
+
+[dependencies]
+ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.8" } # public
+ironrdp-core = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.2" } # public
+ironrdp-error = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.2" } # public
+ironrdp-pdu = { git = "https://github.com/Devolutions/IronRDP", rev = "f6391452da15cd7cf9896f095b0df2909593ccc0", version = "0.9", features = ["std"] } # public
+sspi = { version = "0.21", features = ["scard"] }
+url = "2.5" # public
+rand = { version = "0.9", features = ["std"] } # TODO: dependency injection?
+tracing = { version = "0.1", features = ["log"] }
+picky-asn1-der = "0.5"
+picky-asn1-x509 = "0.15"
+picky = "=7.0.0-rc.26" # FIXME: We are pinning with = because the candidate version number counts as the minor number by Cargo, and will be automatically bumped in the Cargo.lock.
+
+[workspace]

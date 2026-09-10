@@ -1,3 +1,4 @@
+import { GraphicsConsumer } from "./graphicsProtocol";
 /**
  * @file rdp.worker.ts
  * @description RDP 离屏渲染 Worker。
@@ -15,7 +16,8 @@ type WorkerSessionRuntime = {
   bridgeUrl: string | null;
   texture: WebGLTexture | null;
   textureSize: { width: number; height: number };
-  pendingFrames: ArrayBuffer[];
+  graphics: GraphicsConsumer;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
   frameRequest: number | null;
   frameVersion: number;
   pendingPresentedFrames: number;
@@ -28,6 +30,7 @@ type WorkerSessionRuntime = {
 };
 
 type RdpWireEvent =
+  | { type: "graphics-metrics"; window: Record<string, number> }
   | {
       type: "state";
       state: string;
@@ -172,6 +175,9 @@ class RdpWorkerContext {
       session.ws = null;
     }
 
+    if (session.reconnectTimer !== null) clearTimeout(session.reconnectTimer);
+    session.reconnectTimer = null;
+    session.graphics = new GraphicsConsumer();
     const ws = new WebSocket(url);
     session.bridgeUrl = url;
     ws.binaryType = "arraybuffer";
@@ -227,6 +233,16 @@ class RdpWorkerContext {
         return;
       }
       currentSession.ws = null;
+      if (event.code === 1013) {
+        currentSession.reconnectTimer = setTimeout(() => {
+          if (
+            this.sessions.get(sessionId) === currentSession &&
+            currentSession.bridgeUrl === url
+          ) {
+            this.connect(sessionId, url);
+          }
+        }, 250);
+      }
       const details = {
         code: event.code,
         reason: event.reason,
@@ -279,7 +295,8 @@ class RdpWorkerContext {
       session.ws?.close();
       session.ws = null;
       session.bridgeUrl = null;
-      session.pendingFrames = [];
+      if (session.reconnectTimer !== null) clearTimeout(session.reconnectTimer);
+      session.reconnectTimer = null;
       session.needsPresent = false;
       if (session.texture) {
         this.renderer?.deleteTexture(session.texture);
@@ -304,7 +321,8 @@ class RdpWorkerContext {
         bridgeUrl: null,
         texture: null,
         textureSize: { width: 0, height: 0 },
-        pendingFrames: [],
+        graphics: new GraphicsConsumer(),
+        reconnectTimer: null,
         frameRequest: null,
         frameVersion: 0,
         pendingPresentedFrames: 0,
@@ -320,17 +338,51 @@ class RdpWorkerContext {
     return session;
   }
 
+  /** 收到批次后立即更新纹理并确认，后台会话不依赖动画帧回调。 */
   private queueFrame(sessionId: string, buffer: ArrayBuffer) {
     const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.pendingFrames.push(buffer);
-    session.pendingReceivedFrames += 1;
-    session.queueDepthMax = Math.max(
-      session.queueDepthMax,
-      session.pendingFrames.length,
-    );
-    session.needsPresent = true;
-    this.requestRender(sessionId);
+    if (!session || !session.ws) return;
+    const startedAt = performance.now();
+    try {
+      const ack = session.graphics.consume(buffer, (width, height, rects) => {
+        if (
+          !session.texture ||
+          session.textureSize.width !== width ||
+          session.textureSize.height !== height
+        ) {
+          if (session.texture) this.renderer?.deleteTexture(session.texture);
+          session.texture = this.renderer?.createTexture(width, height) ?? null;
+          session.textureSize = { width, height };
+        }
+        if (!session.texture)
+          throw new Error("RDP graphics texture unavailable");
+        for (const rect of rects) {
+          this.renderer?.uploadRect(
+            session.texture,
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            rect.pixels,
+          );
+        }
+      });
+      session.ws.send(ack);
+      session.pendingReceivedFrames += 1;
+      session.queueDepthMax = 1;
+      session.pendingRenderDurationMs += performance.now() - startedAt;
+      session.needsPresent = true;
+      if (this.activeSessionId === sessionId) this.requestRender(sessionId);
+      else this.notifyFramePresented(session, 0);
+    } catch (error) {
+      postDiagnostic(
+        "error",
+        "rdp.worker.graphics.invalid",
+        { error: getErrorFields(error) },
+        sessionId,
+      );
+      session.ws.close(1002, "Invalid RDP graphics batch");
+    }
   }
 
   private requestRender(sessionId: string) {
@@ -340,11 +392,7 @@ class RdpWorkerContext {
     session.frameRequest = self.requestAnimationFrame(() => {
       session.frameRequest = null;
       const renderStartedAt = performance.now();
-      // 一个动画帧内批量消费积压脏矩形，减少主线程切换和重复 commit。
-      const queue = session.pendingFrames.splice(0);
-      for (const buffer of queue) {
-        this.drawFrame(session, buffer);
-      }
+      // 纹理在接收回调中更新，动画帧只提交活动会话。
 
       if (
         this.activeSessionId === sessionId &&
@@ -357,7 +405,7 @@ class RdpWorkerContext {
           session.textureSize.width,
           session.textureSize.height,
         );
-        session.pendingDroppedFrames += Math.max(0, queue.length - 1);
+
         session.pendingRenderDurationMs += performance.now() - renderStartedAt;
         session.needsPresent = false;
         this.notifyFramePresented(session);
@@ -369,9 +417,9 @@ class RdpWorkerContext {
    * 每次真正提交当前活动会话画面后递增版本号，交给主线程估算可见呈现 FPS。
    * 注意这里只能说明“渲染链路提交了新画面”，不能直接代表宿主合成和显示器最终上屏次数。
    */
-  private notifyFramePresented(session: WorkerSessionRuntime) {
-    session.frameVersion += 1;
-    session.pendingPresentedFrames += 1;
+  private notifyFramePresented(session: WorkerSessionRuntime, presented = 1) {
+    session.frameVersion += presented;
+    session.pendingPresentedFrames += presented;
     const now = performance.now();
     if (
       now - session.lastFramePresentedNotifyAt <
@@ -403,84 +451,6 @@ class RdpWorkerContext {
       surfaceWidth: session.textureSize.width,
       surfaceHeight: session.textureSize.height,
     } satisfies MainMessage);
-  }
-
-  private drawFrame(session: WorkerSessionRuntime, buffer: ArrayBuffer) {
-    if (!this.renderer) return;
-    const view = new DataView(buffer);
-    const messageType = view.getUint8(0);
-
-    if (messageType === 1) {
-      if (view.byteLength < 25) return;
-      const x = view.getUint32(1, true);
-      const y = view.getUint32(5, true);
-      const rectWidth = view.getUint32(9, true);
-      const rectHeight = view.getUint32(13, true);
-      const surfaceWidth = view.getUint32(17, true);
-      const surfaceHeight = view.getUint32(21, true);
-      const pixels = new Uint8Array(buffer, 25);
-
-      if (
-        !session.texture ||
-        session.textureSize.width !== surfaceWidth ||
-        session.textureSize.height !== surfaceHeight
-      ) {
-        if (session.texture) this.renderer.deleteTexture(session.texture);
-        session.texture = this.renderer.createTexture(
-          surfaceWidth,
-          surfaceHeight,
-        );
-        session.textureSize = { width: surfaceWidth, height: surfaceHeight };
-      }
-
-      this.renderer.uploadRect(
-        session.texture,
-        x,
-        y,
-        rectWidth,
-        rectHeight,
-        pixels,
-      );
-    } else if (messageType === 2 && view.byteLength >= 13) {
-      const surfaceWidth = view.getUint32(1, true);
-      const surfaceHeight = view.getUint32(5, true);
-      const rectCount = view.getUint32(9, true);
-
-      if (
-        !session.texture ||
-        session.textureSize.width !== surfaceWidth ||
-        session.textureSize.height !== surfaceHeight
-      ) {
-        if (session.texture) this.renderer.deleteTexture(session.texture);
-        session.texture = this.renderer.createTexture(
-          surfaceWidth,
-          surfaceHeight,
-        );
-        session.textureSize = { width: surfaceWidth, height: surfaceHeight };
-      }
-
-      let offset = 13;
-      for (let i = 0; i < rectCount; i++) {
-        if (offset + 16 > view.byteLength) break;
-        const x = view.getUint32(offset, true);
-        const y = view.getUint32(offset + 4, true);
-        const rectWidth = view.getUint32(offset + 8, true);
-        const rectHeight = view.getUint32(offset + 12, true);
-        offset += 16;
-        const pixelBytes = rectWidth * rectHeight * 4;
-        if (offset + pixelBytes > view.byteLength) break;
-        const pixels = new Uint8Array(buffer, offset, pixelBytes);
-        this.renderer.uploadRect(
-          session.texture,
-          x,
-          y,
-          rectWidth,
-          rectHeight,
-          pixels,
-        );
-        offset += pixelBytes;
-      }
-    }
   }
 }
 

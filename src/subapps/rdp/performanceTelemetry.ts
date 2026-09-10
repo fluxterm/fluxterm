@@ -89,13 +89,13 @@ export class RdpPerformanceCollector {
     if (renderDurationMs > 0) {
       this.renderDurations.record(renderDurationMs);
     }
-    if (this.lastPresentedAt > 0) {
+    if (frames > 0 && this.lastPresentedAt > 0) {
       this.frameIntervals.record(now - this.lastPresentedAt);
     }
-    this.lastPresentedAt = now;
+    if (frames > 0) this.lastPresentedAt = now;
   }
 
-  /** 记录渲染器明确丢弃或合并的帧。 */
+  /** 记录渲染器明确丢弃的批次；合并呈现不计为丢帧。 */
   recordDropped(frames: number) {
     this.droppedFrames += Math.max(0, Math.floor(frames));
     this.dirty = true;

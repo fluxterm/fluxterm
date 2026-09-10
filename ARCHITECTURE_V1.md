@@ -37,6 +37,12 @@ frontend (React/Vite)  --->  tauri (Rust)  --->  fluxterm-engine (Rust)
 - 文件级并发与窗口化读取用于改善高延迟链路表现
 - 远端目录按需创建并缓存去重，减少重复往返
 
+### `crates/rdp_core`（`fluxterm-rdp-core`）
+
+RDP 协议任务独占解码画面与每个桥接连接的图形发送状态。控制事件使用广播通道，RGBA 图形使用单批次消费确认与有界脏区域累计；等待时不复制旧像素。新连接和尺寸变化使用带代次、序号的完整快照，Worker 与主线程渲染器共用验证规则。键鼠控制仍经 Tauri 命令转发。详见 `docs/rdp-subapp-design.md` 与 `docs/rdp-performance-test.md`。
+
+图形输入支持传统更新与 RDPEGFX 通道。AVC420 使用 OpenH264 软件解码，每个表面独立保存参考帧；合成结果写入同一权威 RGBA 画面并复用背压链路。IronRDP 固定到单一上游提交，认证兼容、图形区域及尺寸处理补丁在 `vendor/` 中维护，来源与更新规则见 `vendor/README.md`。
+
 ### `src-tauri`
 
 桌面 GUI 外壳。

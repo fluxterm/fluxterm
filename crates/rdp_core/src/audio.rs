@@ -256,7 +256,13 @@ impl RdpsndClientHandler for FluxRdpsndBackend {
         PCM_AUDIO_FORMATS.as_slice()
     }
 
-    fn wave(&mut self, format_no: usize, _ts: u32, data: Cow<'_, [u8]>) {
+    fn wave(&mut self, format: &AudioFormat, _ts: u32, data: Cow<'_, [u8]>) {
+        let Some(format_no) = PCM_AUDIO_FORMATS
+            .iter()
+            .position(|candidate| candidate == format)
+        else {
+            return;
+        };
         self.shared.wave_sequence.fetch_add(1, Ordering::Relaxed);
         self.ensure_stream(format_no);
         if let Ok(mut buffer) = self.pcm_buffer.lock() {

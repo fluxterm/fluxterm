@@ -36,7 +36,7 @@ use ironrdp::pdu::rdp::multitransport::MultitransportResponsePdu;
 use ironrdp::rdpdr::{NoopRdpdrBackend, Rdpdr};
 use ironrdp::rdpsnd::client::Rdpsnd;
 use ironrdp::session::image::DecodedImage;
-use ironrdp::session::{ActiveStageBuilder, ActiveStageOutput, fast_path};
+use ironrdp::session::{ActiveStageBuilder, ActiveStageOutput};
 use ironrdp_cliprdr::CliprdrClient;
 use ironrdp_cliprdr::pdu::{ClipboardFormat, ClipboardFormatId};
 use ironrdp_tls::extract_tls_server_public_key;
@@ -49,14 +49,13 @@ use tokio::time::Instant as TokioInstant;
 
 use crate::audio::{AudioPlaybackController, AudioProxyEvent};
 use crate::cliprdr::{CliprdrProxyEvent, FluxCliprdrBackend};
+use crate::graphics_delivery::GraphicsDelivery;
 use crate::keyboard::code_to_scancode;
 use crate::protocol::{
     RuntimeAudioState, RuntimeConnectRequest, RuntimeInputEvent, RuntimePerformanceFlags,
 };
 use crate::session_manager::SessionManager;
-use crate::session_manager::{
-    RuntimeCommand, build_rgba_frame_batch_message, build_rgba_frame_message, json_message,
-};
+use crate::session_manager::{RuntimeCommand, build_graphics_message, json_message};
 use fluxterm_logging::{LogLevel, log_event};
 #[cfg(feature = "performance-telemetry")]
 use fluxterm_performance_telemetry::{
@@ -78,7 +77,7 @@ const GRAPHICS_FLUSH_ADAPTIVE_HIGH_RAW_RECTS: u32 = 220;
 const GRAPHICS_FLUSH_ADAPTIVE_MEDIUM_CYCLES: u32 = 120;
 const GRAPHICS_FLUSH_ADAPTIVE_HIGH_CYCLES: u32 = 260;
 const HIGH_PRESSURE_COLLAPSE_RECT_THRESHOLD: usize = 3;
-const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_NUMERATOR: u64 = 10;
+const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_NUMERATOR: u64 = 2;
 const HIGH_PRESSURE_COLLAPSE_MAX_OVERDRAW_DENOMINATOR: u64 = 1;
 const HIGH_PRESSURE_COLLAPSE_RAW_RECTS: u32 = 180;
 const HIGH_PRESSURE_COLLAPSE_CYCLES: u32 = 700;
@@ -119,6 +118,7 @@ impl From<String> for RdpRuntimeFailure {
 
 #[derive(Debug, Clone)]
 struct FramePerfWindow {
+    gfx: crate::gfx::GfxDiagnostics,
     started_at: StdInstant,
     #[cfg(feature = "performance-telemetry")]
     started_at_unix_ms: u64,
@@ -127,15 +127,14 @@ struct FramePerfWindow {
     stream_id: Option<String>,
     cycles: u32,
     raw_rects: u32,
-    #[cfg(feature = "performance-telemetry")]
+    raw_pixels: u64,
+    ack_count: u64,
+    ack_wait_us: u64,
+    coalesced_updates: u64,
     merged_rects: u32,
-    #[cfg(feature = "performance-telemetry")]
     received_bytes: u64,
-    #[cfg(feature = "performance-telemetry")]
     encoded_bytes: u64,
-    #[cfg(feature = "performance-telemetry")]
     sent_pixels: u64,
-    #[cfg(feature = "performance-telemetry")]
     messages: u64,
     #[cfg(feature = "performance-telemetry")]
     resize_requests: u64,
@@ -151,8 +150,6 @@ struct FramePerfWindow {
     copy_cpu_us: u64,
     #[cfg(feature = "performance-telemetry")]
     encode_cpu_us: u64,
-    #[cfg(feature = "performance-telemetry")]
-    bridge_send_cpu_us: u64,
     #[cfg(feature = "performance-telemetry")]
     flush_on_drop: bool,
 }
@@ -184,6 +181,7 @@ impl ClipboardChannelState {
 impl Default for FramePerfWindow {
     fn default() -> Self {
         Self {
+            gfx: crate::gfx::GfxDiagnostics::default(),
             started_at: StdInstant::now(),
             #[cfg(feature = "performance-telemetry")]
             started_at_unix_ms: unix_time_ms(),
@@ -192,15 +190,14 @@ impl Default for FramePerfWindow {
             stream_id: None,
             cycles: 0,
             raw_rects: 0,
-            #[cfg(feature = "performance-telemetry")]
+            raw_pixels: 0,
+            ack_count: 0,
+            ack_wait_us: 0,
+            coalesced_updates: 0,
             merged_rects: 0,
-            #[cfg(feature = "performance-telemetry")]
             received_bytes: 0,
-            #[cfg(feature = "performance-telemetry")]
             encoded_bytes: 0,
-            #[cfg(feature = "performance-telemetry")]
             sent_pixels: 0,
-            #[cfg(feature = "performance-telemetry")]
             messages: 0,
             #[cfg(feature = "performance-telemetry")]
             resize_requests: 0,
@@ -216,8 +213,6 @@ impl Default for FramePerfWindow {
             copy_cpu_us: 0,
             #[cfg(feature = "performance-telemetry")]
             encode_cpu_us: 0,
-            #[cfg(feature = "performance-telemetry")]
-            bridge_send_cpu_us: 0,
             #[cfg(feature = "performance-telemetry")]
             flush_on_drop: true,
         }
@@ -254,6 +249,7 @@ impl FramePerfWindow {
         #[cfg(feature = "performance-telemetry")]
         let stream_id = self.stream_id.take();
         let interval_ms = self.interval_ms;
+        let gfx = self.gfx.clone();
         #[cfg(feature = "performance-telemetry")]
         {
             self.flush_on_drop = false;
@@ -262,6 +258,7 @@ impl FramePerfWindow {
             #[cfg(feature = "performance-telemetry")]
             stream_id,
             interval_ms,
+            gfx,
             ..Self::default()
         };
     }
@@ -287,6 +284,7 @@ struct ReactivationResult {
     width: u16,
     height: u16,
     share_id: u32,
+    static_channel_chunk_size: usize,
     user_channel_id: u16,
     io_channel_id: u16,
     enable_server_pointer: bool,
@@ -294,6 +292,7 @@ struct ReactivationResult {
 }
 
 struct ActiveStageContext<'a> {
+    gfx: crate::gfx::GfxDiagnostics,
     sessions: &'a SessionManager,
     sender: &'a broadcast::Sender<Message>,
     session_id: &'a str,
@@ -468,8 +467,10 @@ async fn connect_and_run(
         .map_err(|error| format!("get local addr failed: {error}"))?;
 
     let mut framed = TokioFramed::new(socket);
-    let drdynvc =
-        DrdynvcClient::new().with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())));
+    let (graphics_pipeline, gfx) = crate::gfx::create_graphics_pipeline();
+    let drdynvc = DrdynvcClient::new()
+        .with_dynamic_channel(DisplayControlClient::new(|_| Ok(Vec::new())))
+        .with_dynamic_channel(graphics_pipeline);
 
     let (cliprdr_tx, cliprdr_rx) = mpsc::unbounded_channel();
     let temp_dir = std::env::temp_dir().to_string_lossy().into_owned();
@@ -583,6 +584,7 @@ async fn connect_and_run(
     );
 
     let ctx = ActiveStageContext {
+        gfx,
         sessions,
         sender,
         session_id,
@@ -688,6 +690,7 @@ where
         pointer_software_rendering,
         activation_factory,
         compression_type,
+        ..
     } = connection_result;
     let mut image = DecodedImage::new(PixelFormat::RgbA32, desktop_size.width, desktop_size.height);
     let mut active_stage = ActiveStageBuilder {
@@ -701,13 +704,16 @@ where
         pointer_software_rendering,
     }
     .build();
+    let mut graphics_delivery = GraphicsDelivery::new(image.width(), image.height());
     let mut input_db = InputDatabase::new();
     let mut logged_first_frame = false;
     #[cfg(feature = "performance-telemetry")]
     let mut perf_window = FramePerfWindow::for_stream(ctx.performance_stream_id);
     #[cfg(not(feature = "performance-telemetry"))]
     let mut perf_window = FramePerfWindow::default();
-    let mut pending_graphics_rects = Vec::new();
+    perf_window.gfx = ctx.gfx.clone();
+    let mut gfx_generation = 0;
+    let mut logged_avc420 = false;
     let mut pending_flush_deadline: Option<TokioInstant> = None;
     let mut pending_flush_started_at: Option<TokioInstant> = None;
     let mut graphics_rects = Vec::new();
@@ -719,6 +725,7 @@ where
     let mut graceful_disconnect_deadline: Option<TokioInstant> = None;
 
     loop {
+        let mut batch_input_responses = false;
         let outputs = tokio::select! {
             _ = async {
                 if let Some(deadline) = graceful_disconnect_deadline {
@@ -745,22 +752,19 @@ where
                     tokio::time::sleep_until(deadline).await;
                 }
             }, if pending_flush_deadline.is_some() => {
-                flush_pending_graphics(
-                    ctx.sender,
-                    &image,
-                    &mut pending_graphics_rects,
-                    &mut perf_window,
-                );
+                #[cfg(feature = "performance-telemetry")]
+                { perf_window.timeout_flushes += 1; }
+                flush_graphics_delivery(&mut graphics_delivery, &image, &mut perf_window);
                 pending_flush_deadline = None;
                 pending_flush_started_at = None;
-                rotate_frame_window(&mut perf_window);
+                rotate_frame_window(&mut perf_window, ctx.sender);
                 continue;
             }
             _ = tokio::time::sleep(
                 std::time::Duration::from_millis(perf_window.interval_ms)
                     .saturating_sub(perf_window.started_at.elapsed())
             ) => {
-                rotate_frame_window(&mut perf_window);
+                rotate_frame_window(&mut perf_window, ctx.sender);
                 continue;
             }
             frame = reader.read_pdu() => {
@@ -780,7 +784,6 @@ where
                     }
                     Err(error) => return Err(format!("read_pdu failed: {error}")),
                 };
-                #[cfg(feature = "performance-telemetry")]
                 {
                     perf_window.received_bytes = perf_window
                         .received_bytes
@@ -1066,14 +1069,33 @@ where
                     continue;
                 }
                 match command {
+                    RuntimeCommand::GraphicsAttach { id, sender } => {
+                        graphics_delivery.attach(id, sender);
+                        schedule_graphics_flush(&mut pending_flush_deadline, &mut pending_flush_started_at, GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_BASE_MS);
+                        Vec::new()
+                    }
+                    RuntimeCommand::GraphicsAck { id, generation, sequence } => {
+                        if let Some(wait) = graphics_delivery.acknowledge(id, generation, sequence) {
+                            perf_window.ack_count += 1;
+                            perf_window.ack_wait_us += u64::try_from(wait.as_micros()).unwrap_or(u64::MAX);
+                            if pending_flush_deadline.is_none() {
+                                flush_graphics_delivery(&mut graphics_delivery, &image, &mut perf_window);
+                            }
+                        }
+                        Vec::new()
+                    }
                     RuntimeCommand::Input(input) => {
+                        batch_input_responses = true;
                         let events = translate_input_event(&mut input_db, input);
                         if events.is_empty() {
                             Vec::new()
                         } else {
-                            active_stage
-                                .process_fastpath_input(&mut image, &events)
-                                .map_err(|error| format!("fastpath input failed: {error}"))?
+                            let mut outputs = Vec::new();
+                            for batch in events.chunks(255) {
+                                outputs.extend(active_stage.process_fastpath_input(&mut image, batch)
+                                    .map_err(|error| format!("fastpath input failed: {error}"))?);
+                            }
+                            outputs
                         }
                     }
                     RuntimeCommand::Resize { width, height } => {
@@ -1211,13 +1233,40 @@ where
             }
         };
 
+        let gfx = ctx.gfx.snapshot();
+        // 仅在首次成功解码时记录一次，发布包无需开发者工具也能确认实际编码。
+        if !logged_avc420 && gfx.avc420_frames > 0 {
+            logged_avc420 = true;
+            log_event!(
+                LogLevel::Info,
+                "rdp.runtime.codec.selected",
+                Some(ctx.operation_id),
+                json!({
+                    "sessionId": ctx.session_id,
+                    "codec": "avc420",
+                    "decoder": "openh264-software",
+                }),
+            );
+        }
+        let reset_generation = gfx.reset_generation;
+        if reset_generation != gfx_generation {
+            graphics_delivery.resize(image.width(), image.height());
+            gfx_generation = reset_generation;
+        }
         graphics_rects.clear();
+        let mut response_batch = Vec::new();
         for output in outputs {
             match output {
-                ActiveStageOutput::ResponseFrame(frame) => writer
-                    .write_all(&frame)
-                    .await
-                    .map_err(|error| format!("write response failed: {error}"))?,
+                ActiveStageOutput::ResponseFrame(frame) => {
+                    if batch_input_responses {
+                        response_batch.extend_from_slice(&frame);
+                    } else {
+                        writer
+                            .write_all(&frame)
+                            .await
+                            .map_err(|error| format!("write response failed: {error}"))?;
+                    }
+                }
                 ActiveStageOutput::GraphicsUpdate(_) => {
                     if !logged_first_frame {
                         logged_first_frame = true;
@@ -1279,8 +1328,18 @@ where
                         },
                     );
                 }
+                // 本产品使用单桌面画面；布局通知不替代服务器的桌面尺寸协商。
+                ActiveStageOutput::MonitorLayout(_)
+                | ActiveStageOutput::SaveSessionInfo { .. }
+                | ActiveStageOutput::AutoReconnectCookie(_) => {}
+                ActiveStageOutput::WindowingOrders(_) => {
+                    return Err("Unexpected RAIL window orders in desktop session".into());
+                }
+                ActiveStageOutput::AutoReconnectFailed => {
+                    return Err("Server rejected automatic reconnection".into());
+                }
                 ActiveStageOutput::DeactivateAll => {
-                    pending_graphics_rects.clear();
+                    graphics_rects.clear();
                     pending_flush_deadline = None;
                     pending_flush_started_at = None;
                     cursor_cache = CursorCache::default();
@@ -1297,19 +1356,16 @@ where
                     let height = reactivation.height;
                     user_channel_id = reactivation.user_channel_id;
                     io_channel_id = reactivation.io_channel_id;
-                    active_stage.set_fastpath_processor(
-                        fast_path::ProcessorBuilder {
-                            io_channel_id,
-                            user_channel_id,
-                            share_id: reactivation.share_id,
-                            enable_server_pointer: reactivation.enable_server_pointer,
-                            pointer_software_rendering: reactivation.pointer_software_rendering,
-                            bulk_decompressor: None,
-                        }
-                        .build(),
-                    );
-                    active_stage.set_share_id(reactivation.share_id);
-                    active_stage.set_enable_server_pointer(reactivation.enable_server_pointer);
+                    if !active_stage.reactivate(
+                        io_channel_id,
+                        user_channel_id,
+                        reactivation.share_id,
+                        reactivation.enable_server_pointer,
+                        reactivation.pointer_software_rendering,
+                        reactivation.static_channel_chunk_size,
+                    ) {
+                        return Err("Invalid static channel chunk size after reactivation".into());
+                    }
                     log_event!(
                         LogLevel::Debug,
                         "rdp.runtime.reactivated",
@@ -1321,6 +1377,12 @@ where
                         }),
                     );
                     image = DecodedImage::new(PixelFormat::RgbA32, width, height);
+                    graphics_delivery.resize(width, height);
+                    schedule_graphics_flush(
+                        &mut pending_flush_deadline,
+                        &mut pending_flush_started_at,
+                        GRAPHICS_FLUSH_INTERVAL_ADAPTIVE_BASE_MS,
+                    );
                     logged_first_frame = false;
                     activation_generation = activation_generation.saturating_add(1);
                     clipboard_channel_state = ClipboardChannelState::Initializing;
@@ -1386,17 +1448,24 @@ where
             }
         }
 
+        if !response_batch.is_empty() {
+            writer
+                .write_all(&response_batch)
+                .await
+                .map_err(|error| format!("write response batch failed: {error}"))?;
+        }
         if !graphics_rects.is_empty() {
             perf_window.cycles += 1;
             perf_window.raw_rects += u32::try_from(graphics_rects.len()).unwrap_or(u32::MAX);
-            pending_graphics_rects.append(&mut graphics_rects);
+            perf_window.raw_pixels += graphics_rects.iter().map(rect_area).sum::<u64>();
+            graphics_delivery.mark(&graphics_rects);
             let flush_interval_ms =
-                select_adaptive_flush_interval_ms(&perf_window, pending_graphics_rects.len());
+                select_adaptive_flush_interval_ms(&perf_window, graphics_delivery.pending_rects());
             #[cfg(feature = "performance-telemetry")]
             {
                 perf_window.max_pending_rects = perf_window
                     .max_pending_rects
-                    .max(pending_graphics_rects.len() as u64);
+                    .max(graphics_delivery.pending_rects() as u64);
                 perf_window.max_flush_interval_ms =
                     perf_window.max_flush_interval_ms.max(flush_interval_ms);
             }
@@ -1407,7 +1476,7 @@ where
             );
         }
 
-        rotate_frame_window(&mut perf_window);
+        rotate_frame_window(&mut perf_window, ctx.sender);
     }
 }
 
@@ -1431,11 +1500,14 @@ where
                 share_id,
                 enable_server_pointer,
                 pointer_software_rendering,
+                static_channel_chunk_size,
+                ..
             } => {
                 return Ok(Some(ReactivationResult {
                     width: desktop_size.width,
                     height: desktop_size.height,
                     share_id,
+                    static_channel_chunk_size,
                     user_channel_id: sequence.user_channel_id(),
                     io_channel_id: sequence.io_channel_id(),
                     enable_server_pointer,
@@ -1455,7 +1527,7 @@ where
                 .await
                 .map_err(|error| format!("read reactivation pdu failed: {error}"))?;
             sequence
-                .step(&pdu, &mut buffer)
+                .step(&pdu, None, &mut buffer)
                 .map_err(|error| format!("reactivation step failed: {error}"))?
         } else {
             sequence
@@ -1534,7 +1606,10 @@ fn merge_update_rects(rects: Vec<InclusiveRectangle>) -> Vec<InclusiveRectangle>
     while let Some(mut current) = pending.pop() {
         let mut index = 0;
         while index < pending.len() {
-            if rects_near_or_overlap(&current, &pending[index]) {
+            if rects_near_or_overlap(&current, &pending[index])
+                && rect_area(&union_rect(&current, &pending[index]))
+                    <= 2 * (rect_area(&current) + rect_area(&pending[index]))
+            {
                 current = union_rect(&current, &pending[index]);
                 pending.swap_remove(index);
                 index = 0;
@@ -1731,141 +1806,80 @@ fn maybe_collapse_rects(
 }
 
 /// 将累计的图形更新统一推送给前端，降低高频单矩形消息成本。
-fn flush_pending_graphics(
-    sender: &broadcast::Sender<Message>,
+fn encode_pending_graphics(
+    generation: u32,
+    sequence: u32,
     image: &DecodedImage,
-    pending_graphics_rects: &mut Vec<InclusiveRectangle>,
-    perf_window: &mut FramePerfWindow,
-) {
-    if pending_graphics_rects.is_empty() {
-        return;
-    }
-    #[cfg(feature = "performance-telemetry")]
-    {
-        perf_window.timeout_flushes = perf_window.timeout_flushes.saturating_add(1);
-    }
-
-    // 第一步：执行空间邻近合并（32px 阈值），将离散的小条带合并为较大的块。
-    let spatial_merged = merge_update_rects(std::mem::take(pending_graphics_rects));
-
-    // 第二步：在高压场景下进一步执行面积收敛，尝试将所有矩形强行塌陷为单块外接矩形。
-    let merged_rects = maybe_collapse_flush_rects(spatial_merged, perf_window);
-    #[cfg(feature = "performance-telemetry")]
-    {
-        perf_window.merged_rects = perf_window
-            .merged_rects
-            .saturating_add(u32::try_from(merged_rects.len()).unwrap_or(u32::MAX));
-        perf_window.sent_pixels = perf_window
-            .sent_pixels
-            .saturating_add(merged_rects.iter().map(rect_area).sum::<u64>());
-    }
-    #[cfg(feature = "performance-telemetry")]
-    let measure = perf_window.metrics_enabled();
-
-    if merged_rects.len() == 1 {
-        let rect = &merged_rects[0];
-        #[cfg(feature = "performance-telemetry")]
-        let encode_started_at = measure.then(StdInstant::now);
-        #[cfg(feature = "performance-telemetry")]
-        let mut copy_cpu_us = 0_u64;
-        let message = build_rgba_frame_message(
-            u32::from(rect.left),
-            u32::from(rect.top),
-            u32::from(rect.width()),
-            u32::from(rect.height()),
-            u32::from(image.width()),
-            u32::from(image.height()),
-            |dest| {
-                #[cfg(feature = "performance-telemetry")]
-                let copy_started_at = measure.then(StdInstant::now);
-                copy_rect_to_slice(image, rect, dest);
-                #[cfg(feature = "performance-telemetry")]
-                if let Some(started_at) = copy_started_at {
-                    copy_cpu_us =
-                        copy_cpu_us.saturating_add(elapsed_micros_u64(started_at.elapsed()));
-                }
-            },
-        );
-        #[cfg(feature = "performance-telemetry")]
-        {
-            perf_window.copy_cpu_us = perf_window.copy_cpu_us.saturating_add(copy_cpu_us);
-            if let Some(started_at) = encode_started_at {
-                perf_window.encode_cpu_us = perf_window
-                    .encode_cpu_us
-                    .saturating_add(elapsed_micros_u64(started_at.elapsed()));
-            }
-            perf_window.encoded_bytes = perf_window
-                .encoded_bytes
-                .saturating_add(message_payload_len(&message) as u64);
-            perf_window.messages = perf_window.messages.saturating_add(1);
-        }
-        #[cfg(feature = "performance-telemetry")]
-        let send_started_at = measure.then(StdInstant::now);
-        let _ = sender.send(message);
-        #[cfg(feature = "performance-telemetry")]
-        if let Some(started_at) = send_started_at {
-            perf_window.bridge_send_cpu_us = perf_window
-                .bridge_send_cpu_us
-                .saturating_add(elapsed_micros_u64(started_at.elapsed()));
-        }
+    pending: &mut Vec<InclusiveRectangle>,
+    perf: &mut FramePerfWindow,
+) -> Message {
+    let original = std::mem::take(pending);
+    let original_area: u64 = original.iter().map(rect_area).sum();
+    let candidate = maybe_collapse_flush_rects(merge_update_rects(original.clone()), perf);
+    let rects = if candidate.iter().map(rect_area).sum::<u64>() <= original_area * 2 {
+        candidate
     } else {
-        let rects_info = merged_rects
-            .iter()
-            .map(|rect| {
-                (
-                    u32::from(rect.left),
-                    u32::from(rect.top),
-                    u32::from(rect.width()),
-                    u32::from(rect.height()),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        #[cfg(feature = "performance-telemetry")]
-        let encode_started_at = measure.then(StdInstant::now);
-        #[cfg(feature = "performance-telemetry")]
-        let mut copy_cpu_us = 0_u64;
-        let message = build_rgba_frame_batch_message(
-            u32::from(image.width()),
-            u32::from(image.height()),
-            &rects_info,
-            |i, dest| {
-                #[cfg(feature = "performance-telemetry")]
-                let copy_started_at = measure.then(StdInstant::now);
-                copy_rect_to_slice(image, &merged_rects[i], dest);
-                #[cfg(feature = "performance-telemetry")]
-                if let Some(started_at) = copy_started_at {
-                    copy_cpu_us =
-                        copy_cpu_us.saturating_add(elapsed_micros_u64(started_at.elapsed()));
-                }
-            },
-        );
-        #[cfg(feature = "performance-telemetry")]
-        {
-            perf_window.copy_cpu_us = perf_window.copy_cpu_us.saturating_add(copy_cpu_us);
-            if let Some(started_at) = encode_started_at {
-                perf_window.encode_cpu_us = perf_window
-                    .encode_cpu_us
-                    .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+        original
+    };
+    let info = rects
+        .iter()
+        .map(|r| {
+            (
+                u32::from(r.left),
+                u32::from(r.top),
+                u32::from(r.width()),
+                u32::from(r.height()),
+            )
+        })
+        .collect::<Vec<_>>();
+    #[cfg(feature = "performance-telemetry")]
+    let started = perf.metrics_enabled().then(StdInstant::now);
+    #[cfg(feature = "performance-telemetry")]
+    let mut copy_us = 0;
+    let message = build_graphics_message(
+        generation,
+        sequence,
+        u32::from(image.width()),
+        u32::from(image.height()),
+        &info,
+        |index, dest| {
+            #[cfg(feature = "performance-telemetry")]
+            let copy_started = started.map(|_| StdInstant::now());
+            copy_rect_to_slice(image, &rects[index], dest);
+            #[cfg(feature = "performance-telemetry")]
+            if let Some(start) = copy_started {
+                copy_us += elapsed_micros_u64(start.elapsed());
             }
-            perf_window.encoded_bytes = perf_window
-                .encoded_bytes
-                .saturating_add(message_payload_len(&message) as u64);
-            perf_window.messages = perf_window.messages.saturating_add(1);
-        }
-        #[cfg(feature = "performance-telemetry")]
-        let send_started_at = measure.then(StdInstant::now);
-        let _ = sender.send(message);
-        #[cfg(feature = "performance-telemetry")]
-        if let Some(started_at) = send_started_at {
-            perf_window.bridge_send_cpu_us = perf_window
-                .bridge_send_cpu_us
-                .saturating_add(elapsed_micros_u64(started_at.elapsed()));
+        },
+    );
+    {
+        perf.merged_rects += rects.len() as u32;
+        perf.sent_pixels += rects.iter().map(rect_area).sum::<u64>();
+        perf.encoded_bytes += message_payload_len(&message) as u64;
+        perf.messages += 1;
+    }
+    #[cfg(feature = "performance-telemetry")]
+    {
+        perf.copy_cpu_us += copy_us;
+        if let Some(start) = started {
+            perf.encode_cpu_us += elapsed_micros_u64(start.elapsed());
         }
     }
+    message
 }
 
-#[cfg(feature = "performance-telemetry")]
+/// 消费发送信用并累计实际合并的更新数。
+fn flush_graphics_delivery(
+    delivery: &mut GraphicsDelivery,
+    image: &DecodedImage,
+    perf: &mut FramePerfWindow,
+) {
+    let coalesced = delivery.flush(|generation, sequence, rects| {
+        encode_pending_graphics(generation, sequence, image, rects, perf)
+    });
+    perf.coalesced_updates += coalesced;
+}
+
 fn message_payload_len(message: &Message) -> usize {
     match message {
         Message::Text(value) => value.len(),
@@ -1906,12 +1920,38 @@ fn send_cursor_if_changed(
 }
 
 /// 每秒轮换一次渲染调度窗口，使自适应算法只参考近期负载。
-fn rotate_frame_window(perf_window: &mut FramePerfWindow) {
+fn rotate_frame_window(perf_window: &mut FramePerfWindow, sender: &broadcast::Sender<Message>) {
     let elapsed = perf_window.started_at.elapsed();
     if elapsed.as_millis() < u128::from(perf_window.interval_ms) {
         return;
     }
 
+    let gfx = perf_window.gfx.snapshot();
+    let _ = sender.send(json_message(
+        "graphics-metrics",
+        json!({"window": {
+            "durationMs": elapsed.as_millis() as u64,
+            "gfxNegotiated": u8::from(gfx.negotiated),
+            "gfxAvc420Negotiated": u8::from(gfx.avc420_negotiated),
+            "gfxResetGeneration": gfx.reset_generation,
+            "gfxAvc420FramesTotal": gfx.avc420_frames,
+            "gfxAvc420BytesTotal": gfx.avc420_bytes,
+            "gfxDecodeUsTotal": gfx.decode_us,
+            "gfxRgbaConversionUsTotal": gfx.rgba_conversion_us,
+            "gfxDecodedPixelsTotal": gfx.decoded_pixels,
+            "gfxBitmapUpdatesTotal": gfx.bitmap_updates,
+            "coalescedUpdates": perf_window.coalesced_updates,
+            "receivedPduBytes": perf_window.received_bytes,
+            "bridgeBytes": perf_window.encoded_bytes,
+            "sentPixels": perf_window.sent_pixels,
+            "sentBatches": perf_window.messages,
+            "sentRects": perf_window.merged_rects,
+            "rawPixels": perf_window.raw_pixels,
+            "rawUpdates": perf_window.cycles,
+            "acknowledgedBatches": perf_window.ack_count,
+            "ackWaitUs": perf_window.ack_wait_us,
+        }}),
+    ));
     #[cfg(feature = "performance-telemetry")]
     emit_frame_window(perf_window);
     perf_window.reset();
@@ -1994,11 +2034,6 @@ fn emit_frame_window(perf_window: &FramePerfWindow) {
                 perf_window.encode_cpu_us,
                 MetricUnit::Microsecond,
             ),
-            rdp_counter(
-                "fluxterm.rdp.runtime.bridge_send_cpu",
-                perf_window.bridge_send_cpu_us,
-                MetricUnit::Microsecond,
-            ),
         ];
         let _ = record_performance_batch(MetricBatch {
             stream_id: stream_id.to_string(),
@@ -2043,7 +2078,14 @@ fn build_connector_config(connection: &PreparedConnection) -> connector::Config 
         domain: connection.domain.clone(),
         enable_tls: true,
         enable_credssp: true,
-        keyboard_type: ironrdp::pdu::gcc::KeyboardType::IbmEnhanced,
+        enable_standard_rdp_security: false,
+        support_dyn_vc_gfx_protocol: true,
+        monitor_layout: None,
+        connection_type: ironrdp::pdu::gcc::ConnectionType::Lan,
+        remote_application_mode: false,
+        rail_support_level: ironrdp::pdu::rdp::capability_sets::RailSupportLevel::empty(),
+        enable_audio_capture: false,
+        keyboard_type: ironrdp::pdu::gcc::KeyboardType::IBM_ENHANCED,
         keyboard_subtype: 0,
         keyboard_layout: 0,
         keyboard_functional_keys_count: 12,
@@ -2285,12 +2327,23 @@ fn translate_input_event(
                 x: clamp_coordinate(input.x.unwrap_or(0.0)),
                 y: clamp_coordinate(input.y.unwrap_or(0.0)),
             }));
-            let delta = -input.delta_y.unwrap_or(0.0);
-            if delta != 0.0 {
-                operations.push(Operation::WheelRotations(WheelRotations {
-                    is_vertical: true,
-                    rotation_units: delta.round().clamp(-240.0, 240.0) as i16,
-                }));
+            for (is_vertical, delta) in [
+                (true, -input.delta_y.unwrap_or(0.0)),
+                (false, input.delta_x.unwrap_or(0.0)),
+            ] {
+                if !delta.is_finite() {
+                    continue;
+                }
+                let mut remaining = delta.trunc() as i64;
+                while remaining != 0 {
+                    // RDP 滚轮使用带符号的 9 位增量；拆分而不是截断用户输入。
+                    let units = remaining.clamp(-256, 255) as i16;
+                    operations.push(Operation::WheelRotations(WheelRotations {
+                        is_vertical,
+                        rotation_units: units,
+                    }));
+                    remaining -= i64::from(units);
+                }
             }
         }
         "key_down" => {
@@ -2511,6 +2564,88 @@ mod tests {
         assert!(!failure.message.contains("read frame by hint"));
         assert!(failure.detail.contains("read frame by hint"));
         assert!(failure.detail.contains("caused by: not enough bytes"));
+    }
+
+    #[test]
+    fn preserves_large_and_horizontal_wheel_totals() {
+        let mut database = super::InputDatabase::new();
+        let input = serde_json::from_value(
+            serde_json::json!({"kind": "wheel", "deltaX": 100_000, "deltaY": 1200}),
+        )
+        .unwrap();
+        let events = super::translate_input_event(&mut database, input);
+        let mut vertical = 0_i64;
+        let mut horizontal = 0_i64;
+        for event in &events {
+            if let ironrdp::pdu::input::fast_path::FastPathInputEvent::MouseEvent(mouse) = event {
+                assert!((-256..=255).contains(&mouse.number_of_wheel_rotation_units));
+                if mouse
+                    .flags
+                    .contains(ironrdp::pdu::input::mouse::PointerFlags::VERTICAL_WHEEL)
+                {
+                    vertical += i64::from(mouse.number_of_wheel_rotation_units);
+                } else if mouse
+                    .flags
+                    .contains(ironrdp::pdu::input::mouse::PointerFlags::HORIZONTAL_WHEEL)
+                {
+                    horizontal += i64::from(mouse.number_of_wheel_rotation_units);
+                }
+            }
+        }
+        assert_eq!(vertical, -1200);
+        assert_eq!(horizontal, 100_000);
+        assert!(events.len() > 255);
+        for chunk in events.chunks(255) {
+            let packet =
+                ironrdp::pdu::input::fast_path::FastPathInput::new(chunk.to_vec()).unwrap();
+            assert!(!ironrdp::core::encode_vec(&packet).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn nearby_sparse_rectangles_do_not_expand_to_large_bounding_box() {
+        let rects = vec![
+            InclusiveRectangle {
+                left: 0,
+                top: 0,
+                right: 1,
+                bottom: 1,
+            },
+            InclusiveRectangle {
+                left: 100,
+                top: 100,
+                right: 101,
+                bottom: 101,
+            },
+        ];
+        assert_eq!(super::merge_update_rects(rects).len(), 2);
+    }
+
+    #[test]
+    fn encodes_latest_authoritative_pixels_with_generation_header() {
+        let image = super::DecodedImage::new(super::PixelFormat::RgbA32, 2, 2);
+        let mut rects = vec![InclusiveRectangle {
+            left: 0,
+            top: 0,
+            right: 1,
+            bottom: 1,
+        }];
+        let message = super::encode_pending_graphics(
+            7,
+            9,
+            &image,
+            &mut rects,
+            &mut super::FramePerfWindow::default(),
+        );
+        let axum::extract::ws::Message::Binary(bytes) = message else {
+            panic!()
+        };
+        assert_eq!(bytes.len(), 38 + 16);
+        assert_eq!(bytes[0], 3);
+        assert_eq!(u32::from_le_bytes(bytes[1..5].try_into().unwrap()), 7);
+        assert_eq!(u32::from_le_bytes(bytes[5..9].try_into().unwrap()), 9);
+        assert_eq!(&bytes[38..], image.data());
+        assert!(rects.is_empty());
     }
 
     #[test]

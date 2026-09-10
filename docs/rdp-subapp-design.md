@@ -13,7 +13,7 @@
 1. 主窗口负责 RDP Profile 管理与发起连接
 2. `RDP SubApp` 负责会话标签、画面显示、键鼠输入与会话状态展示
 3. `src-tauri` 负责 Profile 读取、安全解密、命令编排与会话快照代理
-4. `fluxterm-rdp-core`（目录为 `crates/rdp_core`）负责进程内 `IronRDP` 运行时、本地 WebSocket bridge、图像帧广播与输入转发
+4. `fluxterm-rdp-core`（目录为 `crates/rdp_core`）负责进程内 `IronRDP` 运行时、本地 WebSocket bridge、按消费确认分发图像与输入转发
 
 - `src-tauri` 与 `fluxterm-rdp-core` 运行在同一应用进程内
 - 高频画面数据不经过 Tauri 事件总线
@@ -93,7 +93,22 @@ RDP 子应用不负责：
 RDP 画面和高频状态通过 `fluxterm-rdp-core` 本地 WebSocket bridge 下发：
 
 - 文本消息：状态、光标、剪贴板、错误、输入确认
-- 二进制消息：单脏矩形帧或批量脏矩形帧
+- 二进制消息：类型 3 封装的 RGBA 批次，头部为小端 `u32 generation`、`u32 sequence`，随后为类型 2 的批量矩形布局
+- 入站文本消息：`{"type":"graphics-ack","generation":1,"sequence":1}`，仅表示纹理上传调用完成
+
+每个桥接连接最多一个未确认批次。等待期间协议任务只累计有界脏矩形，最多 256 个；超限后转为完整快照。收到准确确认后，从当前权威画面提取像素，不重放旧像素队列。新连接与尺寸变化首先发送完整快照。尺寸变化前的在途批次必须先完成消费，新代次快照才会发送；旧确认不能释放新批次的信用。
+
+控制事件仍使用广播，溢出时以 WebSocket 1013 关闭并由客户端在 250ms 后重新附着。图形不再经过该广播队列，因此不会因控制队列落后而静默丢失增量。
+
+### RDPEGFX / AVC420
+
+连接阶段声明 `SUPPORT_DYN_VC_GFX_PROTOCOL` 并注册 `Microsoft::Windows::RDS::Graphics` 动态通道。协商仅包含 V8.1 / AVC420 与 V8 回退，服务器没有打开 GFX 通道时仍使用传统画面更新。AVC444 和硬件解码尚未接入。
+
+GFX PDU 经 ZGFX 解压后进入 IronRDP 合成器。AVC420 的 Annex B 数据使用 OpenH264 软件解码，按 surfaceId 隔离预测帧状态，在删除表面和图形重置时释放。解码结果按协议区域掩码的表面坐标更新，保留掩码外像素；表面映射、拷贝和缓存由合成器统一处理。输出区域保持稀疏，由现有面积约束与聚合窗口决定本地传输。
+
+`ResetGraphics` 在应用增量前重建权威画面，包括尺寸未改变的情况；本地发送代次同步更新，以完整快照恢复桥接。RDP 图形帧确认在合成完成后发送，本地 WebSocket 消费确认在纹理提交后发送，两者独立：后台会话继续解码、合成和消费，仅活动会话呈现。
+
+诊断窗口增加实际 AVC420 帧数、码流字节、解码与 RGBA 转换时间累计值，用于区分“已协商”与“确实使用”。这些指标保存在既有有界诊断窗口中，不扩大 Pulse 指标目录或增加持续日志。
 
 这样做的原因：
 
@@ -106,9 +121,13 @@ RDP 画面和高频状态通过 `fluxterm-rdp-core` 本地 WebSocket bridge 下�
 当前渲染链为：
 
 1. `RdpSubApp.tsx` 创建 Worker 与 OffscreenCanvas
-2. `rdp.worker.ts` 维护每个会话对应的 WebSocket、纹理与待渲染帧队列
+2. `rdp.worker.ts` 维护每个会话对应的 WebSocket、纹理与批次序号，收到消息即验证并上传纹理
 3. `WebGLRenderer.ts` 负责脏矩形上传、纹理提交与最终绘制
 4. 主线程只消费关键状态和指标，不参与像素级解码
+5. Worker 与主线程回退路径共用 `graphicsProtocol.ts`；后台会话同样上传并确认，只有活动会话在 RAF 中呈现，不保留无限增长的待渲染队列
+6. 前端按浏览器 `deltaMode` 归一化滚轮，以不超过 8ms 的窗口聚合；同会话 IPC 顺序发送，后端拆分到 RDP 的 9 位滚轮范围及每个 FastPath 包最多 255 个事件
+
+性能验证与指标口径见 `rdp-performance-test.md`。
 
 ## 5. 当前状态模型
 

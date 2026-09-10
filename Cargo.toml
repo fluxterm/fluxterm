@@ -52,3 +52,9 @@ lto = false
 strip = false
 codegen-units = 256
 opt-level = 3
+
+[patch."https://github.com/Devolutions/IronRDP"]
+ironrdp-connector = { path = "vendor/ironrdp-connector" }
+ironrdp-egfx = { path = "vendor/ironrdp-egfx" }
+ironrdp-session = { path = "vendor/ironrdp-session" }
+ironrdp-graphics = { path = "vendor/ironrdp-graphics" }

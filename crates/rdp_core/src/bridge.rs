@@ -4,7 +4,7 @@
 //!
 //! 设计要点：
 //! 1. 安全令牌：每个会话连接必须携带启动时生成的 UUID 令牌。
-//! 2. 广播机制：利用 `tokio::sync::broadcast` 将 RDP 画面帧同时推送到所有已连接的桥接客户端。
+//! 2. 控制事件使用广播；图形由协议任务按连接独立发送并等待消费确认。
 //! 3. 自动扩缩容：通过 `axum` 提供轻量级的 HTTP/WS 路由。
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -19,11 +19,11 @@ use axum::routing::get;
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use uuid::Uuid;
 
 use crate::protocol::RuntimeSessionSnapshot;
-use crate::session_manager::{SessionManager, json_message};
+use crate::session_manager::{RuntimeCommand, SessionManager, json_message};
 use crate::{RuntimeError, RuntimeResult};
 use fluxterm_logging::{LogLevel, log_event};
 
@@ -234,7 +234,19 @@ async fn handle_bridge_ws(
             "height": snapshot.height,
         }),
     );
-    Ok(ws.on_upgrade(move |socket| run_bridge_socket(socket, snapshot, rx)))
+    Ok(
+        ws.on_upgrade(move |socket| {
+            run_bridge_socket(socket, snapshot, rx, state.sessions.clone())
+        }),
+    )
+}
+
+/// 前端完成纹理提交后返回的批次标识。
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", rename = "graphics-ack")]
+struct GraphicsAck {
+    generation: u32,
+    sequence: u32,
 }
 
 /// 单个 WebSocket 连接的消息循环任务。
@@ -242,6 +254,7 @@ async fn run_bridge_socket(
     mut socket: WebSocket,
     snapshot: RuntimeSessionSnapshot,
     mut rx: broadcast::Receiver<axum::extract::ws::Message>,
+    sessions: SessionManager,
 ) {
     log_event!(
         LogLevel::Debug,
@@ -254,6 +267,21 @@ async fn run_bridge_socket(
             "height": snapshot.height,
         }),
     );
+
+    let connection_id = Uuid::new_v4();
+    let (graphics_tx, mut graphics_rx) = mpsc::channel(1);
+    if sessions
+        .graphics_command(
+            &snapshot.session_id,
+            RuntimeCommand::GraphicsAttach {
+                id: connection_id,
+                sender: graphics_tx,
+            },
+        )
+        .is_err()
+    {
+        return;
+    }
 
     // 发送初始连接确认
     let _ = socket
@@ -280,6 +308,10 @@ async fn run_bridge_socket(
 
     loop {
         tokio::select! {
+            frame = graphics_rx.recv() => {
+                let Some(frame) = frame else { break; };
+                if socket.send(frame).await.is_err() { break; }
+            }
             // 从会话广播频道接收消息并推送到 WebSocket
             outbound = rx.recv() => {
                 match outbound {
@@ -301,7 +333,7 @@ async fn run_bridge_socket(
                         }
                     }
                     Err(RecvError::Lagged(count)) => {
-                        // 客户端消费太慢，跳过过期帧以维持实时性
+                        // 控制事件不可跳过：显式关闭并要求重建桥接与完整快照。
                         log_event!(
             LogLevel::Debug,
             "rdp.bridge.receiver.lagged",
@@ -311,7 +343,10 @@ async fn run_bridge_socket(
                                 "lagged": count,
                             }),
                         );
-                        continue;
+                        let _ = socket.send(axum::extract::ws::Message::Close(Some(axum::extract::ws::CloseFrame {
+                            code: 1013, reason: "RDP control stream overflow; reconnect bridge".into(),
+                        }))).await;
+                        break;
                     }
                     Err(RecvError::Closed) => {
                         log_event!(
@@ -340,6 +375,13 @@ async fn run_bridge_socket(
                         break;
                     }
                     None => break,
+                    Some(Ok(axum::extract::ws::Message::Text(text))) => {
+                        if let Ok(ack) = serde_json::from_str::<GraphicsAck>(&text) {
+                            let _ = sessions.graphics_command(&snapshot.session_id, RuntimeCommand::GraphicsAck {
+                                id: connection_id, generation: ack.generation, sequence: ack.sequence,
+                            });
+                        }
+                    }
                     Some(Ok(_)) => {}
                     Some(Err(error)) => {
                         log_event!(
@@ -396,4 +438,19 @@ fn io_error(err: std::io::Error) -> RuntimeError {
         "Failed to start the RDP bridge",
         err.to_string(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    /// 确认前端 JSON 控制消息能进入准确的批次确认路径。
+    #[test]
+    fn decodes_graphics_acknowledgement() {
+        let ack: super::GraphicsAck =
+            serde_json::from_str(r#"{"type":"graphics-ack","generation":2,"sequence":19}"#)
+                .unwrap();
+        assert_eq!((ack.generation, ack.sequence), (2, 19));
+        assert!(serde_json::from_str::<super::GraphicsAck>(
+            r#"{"type":"graphics-ack","generation":2}"#,
+        ).is_err());
+    }
 }

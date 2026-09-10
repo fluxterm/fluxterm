@@ -6,6 +6,8 @@
 mod audio;
 mod bridge;
 mod cliprdr;
+mod gfx;
+mod graphics_delivery;
 mod ironrdp_runtime;
 mod keyboard;
 mod protocol;

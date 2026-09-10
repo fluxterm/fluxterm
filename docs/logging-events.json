@@ -1214,6 +1214,14 @@
       "allowedFields": ["operationId", "reason", "sessionId"]
     },
     {
+      "name": "rdp.runtime.codec.selected",
+      "level": "info",
+      "owner": "rdp_core",
+      "message": "RDP runtime codec selected",
+      "requiredFields": ["codec", "decoder", "sessionId"],
+      "allowedFields": ["codec", "decoder", "operationId", "sessionId"]
+    },
+    {
       "name": "rdp.runtime.first.frame",
       "level": "debug",
       "owner": "rdp_core",

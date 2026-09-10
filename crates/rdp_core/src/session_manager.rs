@@ -26,6 +26,17 @@ const RGBA_BATCH_RECT_HEADER_LEN: usize = 16;
 /// 发送给 RDP 会话运行时的控制命令。
 #[derive(Debug)]
 pub enum RuntimeCommand {
+    /// 为桥接连接注册独立的有界图形通道。
+    GraphicsAttach {
+        id: uuid::Uuid,
+        sender: mpsc::Sender<Message>,
+    },
+    /// 确认该桥接连接已更新纹理。
+    GraphicsAck {
+        id: uuid::Uuid,
+        generation: u32,
+        sequence: u32,
+    },
     /// 转发键盘或鼠标输入。
     Input(RuntimeInputEvent),
     /// 请求调整桌面分辨率。
@@ -66,6 +77,20 @@ struct SessionRuntime {
 }
 
 impl SessionManager {
+    /// 将桥接图形控制交给持有权威画面的协议任务。
+    pub(crate) fn graphics_command(
+        &self,
+        session_id: &str,
+        command: RuntimeCommand,
+    ) -> RuntimeResult<()> {
+        let inner = self.inner.lock().expect("session manager lock poisoned");
+        let runtime = inner
+            .get(session_id)
+            .ok_or_else(|| RuntimeError::new("rdp_session_not_found", "RDP session not found"))?;
+        send_runtime_command(&runtime.command_tx, command);
+        Ok(())
+    }
+
     /// 初始化一个新的会话记录。
     ///
     /// 如果会话 ID 已存在，则返回现有会话的快照。
@@ -575,6 +600,42 @@ where
         }
     });
 
+    Message::Binary(bytes.into())
+}
+
+/// 一次分配最终带代次的批次缓冲，像素直接写入 WebSocket 消息。
+pub(crate) fn build_graphics_message(
+    generation: u32,
+    sequence: u32,
+    surface_width: u32,
+    surface_height: u32,
+    rects: &[(u32, u32, u32, u32)],
+    mut fill: impl FnMut(usize, &mut [u8]),
+) -> Message {
+    let len = 22
+        + rects
+            .iter()
+            .map(|(_, _, w, h)| 16 + (*w as usize) * (*h as usize) * 4)
+            .sum::<usize>();
+    let bytes = allocate_exact_message_buffer(len, |bytes| {
+        bytes[0] = 3;
+        bytes[1..5].copy_from_slice(&generation.to_le_bytes());
+        bytes[5..9].copy_from_slice(&sequence.to_le_bytes());
+        bytes[9] = 2;
+        bytes[10..14].copy_from_slice(&surface_width.to_le_bytes());
+        bytes[14..18].copy_from_slice(&surface_height.to_le_bytes());
+        bytes[18..22].copy_from_slice(&(rects.len() as u32).to_le_bytes());
+        let mut cursor = 22;
+        for (index, &(x, y, w, h)) in rects.iter().enumerate() {
+            for field in [x, y, w, h] {
+                bytes[cursor..cursor + 4].copy_from_slice(&field.to_le_bytes());
+                cursor += 4;
+            }
+            let size = (w as usize) * (h as usize) * 4;
+            fill(index, &mut bytes[cursor..cursor + size]);
+            cursor += size;
+        }
+    });
     Message::Binary(bytes.into())
 }
 
