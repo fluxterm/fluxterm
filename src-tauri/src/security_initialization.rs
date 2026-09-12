@@ -1,31 +1,22 @@
-//! 安全存储启动初始化与旧弱保护密钥迁移。
+//! 安全存储启动初始化。
 
 use std::collections::HashSet;
 
 use fluxterm_engine::EngineError;
 use tauri::AppHandle;
 
-use crate::ai_settings::{AiSettings, read_ai_settings, write_ai_settings};
+use crate::ai_settings::{AiSettings, read_ai_settings};
 use crate::config_key_store::{
     CONFIG_KEY_MISMATCH_CODE, CONFIG_KEY_MISSING_CODE, ConfigKey, create_config_key,
     read_config_key,
 };
-use crate::credential_store::{
-    CredentialStore, decrypt_credentials, encrypt_credentials, now_epoch, read_credentials,
-    write_credentials,
-};
-use crate::profile_secrets::{
-    decrypt_profile_secrets, decrypt_rdp_profile_secrets, encrypt_profile_secrets,
-    encrypt_rdp_profile_secrets,
-};
-use crate::rdp_profile_store::{RdpProfileStore, read_rdp_profiles, write_rdp_profiles};
-use crate::security::{CRYPTO_PROVIDER_INVALID_CODE, CryptoService, SecretStore};
+use crate::credential_store::{CredentialStore, read_credentials};
+use crate::rdp_profile_store::{RdpProfileStore, read_rdp_profiles};
+use crate::security::{CRYPTO_PROVIDER_INVALID_CODE, CryptoService};
 use crate::security_store::{SecretConfig, read_security_config, write_security_config};
-use crate::ssh_profile_store::{SshProfileStore, read_ssh_profiles, write_ssh_profiles};
+use crate::ssh_profile_store::{SshProfileStore, read_ssh_profiles};
 
-const LEGACY_EMBEDDED_KEY_ID: &str = "embedded-v1";
-
-/// 初始化当前配置目录的弱保护密钥，并迁移旧闭源版本密文。
+/// 初始化并校验当前配置目录的安全存储。
 pub fn initialize_security_storage(app: &AppHandle) -> Result<(), EngineError> {
     let security_config = read_security_config(app)?;
     let provider_name = security_config
@@ -36,7 +27,7 @@ pub fn initialize_security_storage(app: &AppHandle) -> Result<(), EngineError> {
     {
         return Err(EngineError::new(
             CRYPTO_PROVIDER_INVALID_CODE,
-            "Secret config is invalid or from an unsupported legacy version",
+            "Secret config is invalid or uses an unsupported version",
         ));
     }
 
@@ -80,29 +71,7 @@ pub fn initialize_security_storage(app: &AppHandle) -> Result<(), EngineError> {
         security_config.as_ref(),
         &encrypted_key_ids,
     )?;
-    if encrypted_key_ids
-        .iter()
-        .any(|key_id| !key_id.starts_with("config-") && key_id != LEGACY_EMBEDDED_KEY_ID)
-    {
-        return Err(EngineError::new(
-            CRYPTO_PROVIDER_INVALID_CODE,
-            "Encrypted data requires a different security provider",
-        ));
-    }
-    let needs_legacy_migration = encrypted_key_ids.contains(LEGACY_EMBEDDED_KEY_ID)
-        || configured_key_id == Some(LEGACY_EMBEDDED_KEY_ID);
-    if needs_legacy_migration {
-        migrate_embedded_data(
-            app,
-            security_config.as_ref(),
-            ssh_store,
-            rdp_store,
-            credential_store,
-            ai_settings,
-        )?;
-    }
-
-    if needs_legacy_migration || configured_key_id != Some(config_key.key_id.as_str()) {
+    if configured_key_id != Some(config_key.key_id.as_str()) {
         write_security_config(
             app,
             &CryptoService::build_embedded_config(&config_key.key_id),
@@ -157,54 +126,6 @@ fn validate_config_key_state(
         ));
     }
     Ok(Some(stored))
-}
-
-fn migrate_embedded_data(
-    app: &AppHandle,
-    security_config: Option<&SecretConfig>,
-    mut ssh_store: SshProfileStore,
-    mut rdp_store: RdpProfileStore,
-    mut credential_store: CredentialStore,
-    mut ai_settings: AiSettings,
-) -> Result<(), EngineError> {
-    // TODO(security): `0.10.0` 完成旧闭源版本迁移后，在 `0.11.0` 删除
-    // `embedded-v1` 迁移分支及对应测试；配置密钥初始化逻辑继续保留。
-    let crypto = CryptoService::load(app, security_config, None)?;
-    let secret_store = SecretStore::new(&crypto);
-
-    ssh_store.profiles = ssh_store
-        .profiles
-        .into_iter()
-        .map(|profile| {
-            let plain = decrypt_profile_secrets(profile, &secret_store)?;
-            encrypt_profile_secrets(plain, &secret_store)
-        })
-        .collect::<Result<_, _>>()?;
-    ssh_store.updated_at = now_epoch();
-    write_ssh_profiles(app, &ssh_store)?;
-
-    rdp_store.profiles = rdp_store
-        .profiles
-        .into_iter()
-        .map(|profile| {
-            let plain = decrypt_rdp_profile_secrets(profile, &secret_store)?;
-            encrypt_rdp_profile_secrets(plain, &secret_store)
-        })
-        .collect::<Result<_, _>>()?;
-    rdp_store.updated_at = now_epoch();
-    write_rdp_profiles(app, &rdp_store)?;
-
-    let plain_credentials = decrypt_credentials(credential_store.credentials, &secret_store)?;
-    credential_store.credentials = encrypt_credentials(plain_credentials, &secret_store)?;
-    credential_store.updated_at = now_epoch();
-    write_credentials(app, &credential_store)?;
-
-    for provider in &mut ai_settings.providers {
-        let plain = secret_store.reveal_optional_string(provider.api_key_ref.take())?;
-        provider.api_key_ref = secret_store.protect_optional_string(plain)?;
-    }
-    write_ai_settings(app, ai_settings)?;
-    Ok(())
 }
 
 fn collect_encrypted_key_ids(
@@ -298,10 +219,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_key_can_be_created_for_legacy_ciphertext() {
-        let encrypted_key_ids = HashSet::from(["embedded-v1".to_string()]);
-        let result = validate_config_key_state(None, None, &encrypted_key_ids)
-            .expect("legacy state should permit key creation");
+    fn unrelated_provider_ciphertext_does_not_block_config_key_creation() {
+        let config = embedded_config("retired-provider-key");
+        let encrypted_key_ids = HashSet::from(["retired-provider-key".to_string()]);
+        let result = validate_config_key_state(None, Some(&config), &encrypted_key_ids)
+            .expect("unrelated provider data should not block key creation");
         assert!(result.is_none());
     }
 }

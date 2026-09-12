@@ -16,7 +16,7 @@ pub mod rdp_profile_store;
 pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;
-pub mod security_migration;
+pub mod security_initialization;
 pub mod security_store;
 pub mod serial_profile_store;
 pub mod session_settings;
@@ -163,7 +163,7 @@ pub fn run() {
         let config_directory_state =
             crate::config_paths::initialize_config_directory_state(app.handle())?;
         app.manage(config_directory_state);
-        crate::security_migration::initialize_security_storage(app.handle())?;
+        crate::security_initialization::initialize_security_storage(app.handle())?;
         #[cfg(feature = "performance-telemetry")]
         {
             let service = match load_config(app.handle()) {
