@@ -10,7 +10,7 @@ V1 聚焦主窗口内的基础事件能力：
 2. 展示当前会话状态摘要。
 3. 展示会话与传输相关的最近活动。
 4. 支持主窗口与浮动 Widget 之间的快照同步。
-5. 为 Tunnel、Proxy、Remote Edit、RDP、AI、Security 等模块预留接入规范。
+5. 为 Tunnel、Proxy、Remote Edit、AI、Security 等模块预留接入规范。
 
 ## 2. 设计原则
 
@@ -31,7 +31,6 @@ export type AppEventScope =
   | "tunnel"
   | "proxy"
   | "remote-edit"
-  | "rdp"
   | "ai"
   | "security"
   | "system";
@@ -216,10 +215,8 @@ type FloatingTransfersSnapshot = {
 16. `proxy.stopped`
 17. `remote-edit.synced`
 18. `remote-edit.failed`
-19. `rdp.connected`
-20. `rdp.disconnected`
-21. `ai.failed`
-22. `security.state_changed`
+19. `ai.failed`
+20. `security.state_changed`
 
 ## 10. 后续扩展
 

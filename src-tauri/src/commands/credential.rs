@@ -1,4 +1,4 @@
-//! 分类型密码管理器命令。
+//! SSH 密码管理器命令。
 
 const CREDENTIAL_NOT_FOUND_CODE: &str = "credential_not_found";
 
@@ -11,7 +11,6 @@ use crate::credential_store::{
     Credential, CredentialKind, now_epoch, read_credentials, reveal_credential_password,
     write_credentials,
 };
-use crate::rdp_profile_store::{read_rdp_profiles, write_rdp_profiles};
 use crate::security::{CryptoService, SecretStore};
 use crate::security_store::read_security_config;
 use crate::ssh_profile_store::{read_ssh_profiles, write_ssh_profiles};
@@ -25,7 +24,6 @@ pub struct CredentialSummary {
     pub kind: CredentialKind,
     pub name: String,
     pub username: String,
-    pub domain: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -75,7 +73,6 @@ pub fn credential_list(
             kind: credential.kind,
             name: credential.name,
             username: credential.username,
-            domain: credential.domain,
             created_at: credential.created_at,
             updated_at: credential.updated_at,
         })
@@ -120,7 +117,6 @@ pub fn credential_save(
             name,
             username,
             password_ref,
-            domain: None,
             created_at: now,
             updated_at: now,
         }
@@ -200,45 +196,22 @@ pub fn credential_delete(
         .find(|credential| credential.id == input.credential_id)
         .cloned()
         .ok_or_else(|| EngineError::new(CREDENTIAL_NOT_FOUND_CODE, "Credential not found"))?;
-    match credential.kind {
-        CredentialKind::Ssh => {
-            let mut profiles = read_ssh_profiles(&app)?;
-            let referenced = profiles
-                .profiles
-                .iter()
-                .any(|profile| profile.credential_id.as_deref() == Some(credential.id.as_str()));
-            ensure_detach_allowed(referenced, input.detach_references)?;
-            if referenced {
-                for profile in &mut profiles.profiles {
-                    if profile.credential_id.as_deref() == Some(credential.id.as_str()) {
-                        profile.credential_id = None;
-                        profile.username.clear();
-                        profile.password_ref = None;
-                    }
-                }
-                profiles.updated_at = now_epoch();
-                write_ssh_profiles(&app, &profiles)?;
+    let mut profiles = read_ssh_profiles(&app)?;
+    let referenced = profiles
+        .profiles
+        .iter()
+        .any(|profile| profile.credential_id.as_deref() == Some(credential.id.as_str()));
+    ensure_detach_allowed(referenced, input.detach_references)?;
+    if referenced {
+        for profile in &mut profiles.profiles {
+            if profile.credential_id.as_deref() == Some(credential.id.as_str()) {
+                profile.credential_id = None;
+                profile.username.clear();
+                profile.password_ref = None;
             }
         }
-        CredentialKind::Rdp => {
-            let mut profiles = read_rdp_profiles(&app)?;
-            let referenced = profiles
-                .profiles
-                .iter()
-                .any(|profile| profile.credential_id.as_deref() == Some(credential.id.as_str()));
-            ensure_detach_allowed(referenced, input.detach_references)?;
-            if referenced {
-                for profile in &mut profiles.profiles {
-                    if profile.credential_id.as_deref() == Some(credential.id.as_str()) {
-                        profile.credential_id = None;
-                        profile.username.clear();
-                        profile.password_ref = None;
-                    }
-                }
-                profiles.updated_at = now_epoch();
-                write_rdp_profiles(&app, &profiles)?;
-            }
-        }
+        profiles.updated_at = now_epoch();
+        write_ssh_profiles(&app, &profiles)?;
     }
 
     credential_store
@@ -272,7 +245,6 @@ fn summary(credential: Credential) -> CredentialSummary {
         kind: credential.kind,
         name: credential.name,
         username: credential.username,
-        domain: credential.domain,
         created_at: credential.created_at,
         updated_at: credential.updated_at,
     }
@@ -340,16 +312,7 @@ fn ensure_kind(actual: CredentialKind, expected: CredentialKind) -> Result<(), E
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_detach_allowed, ensure_kind};
-    use crate::credential_store::CredentialKind;
-
-    #[test]
-    fn credential_kind_cannot_cross_protocols() {
-        assert!(ensure_kind(CredentialKind::Ssh, CredentialKind::Ssh).is_ok());
-        let error = ensure_kind(CredentialKind::Ssh, CredentialKind::Rdp)
-            .expect_err("SSH credential must not resolve as RDP");
-        assert_eq!(error.code, "credential_kind_mismatch");
-    }
+    use super::ensure_detach_allowed;
 
     #[test]
     fn referenced_credential_requires_explicit_detach() {

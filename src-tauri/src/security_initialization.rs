@@ -11,7 +11,6 @@ use crate::config_key_store::{
     read_config_key,
 };
 use crate::credential_store::{CredentialStore, read_credentials};
-use crate::rdp_profile_store::{RdpProfileStore, read_rdp_profiles};
 use crate::security::{CRYPTO_PROVIDER_INVALID_CODE, CryptoService};
 use crate::security_store::{SecretConfig, read_security_config, write_security_config};
 use crate::ssh_profile_store::{SshProfileStore, read_ssh_profiles};
@@ -60,11 +59,9 @@ pub fn initialize_security_storage(app: &AppHandle) -> Result<(), EngineError> {
     }
 
     let ssh_store = read_ssh_profiles(app)?;
-    let rdp_store = read_rdp_profiles(app)?;
     let credential_store = read_credentials(app)?;
     let ai_settings = read_ai_settings(app)?;
-    let encrypted_key_ids =
-        collect_encrypted_key_ids(&ssh_store, &rdp_store, &credential_store, &ai_settings)?;
+    let encrypted_key_ids = collect_encrypted_key_ids(&ssh_store, &credential_store, &ai_settings)?;
     let config_key = resolve_startup_config_key(
         app,
         stored_config_key,
@@ -130,7 +127,6 @@ fn validate_config_key_state(
 
 fn collect_encrypted_key_ids(
     ssh_store: &SshProfileStore,
-    rdp_store: &RdpProfileStore,
     credential_store: &CredentialStore,
     ai_settings: &AiSettings,
 ) -> Result<HashSet<String>, EngineError> {
@@ -146,9 +142,6 @@ fn collect_encrypted_key_ids(
         if let Some(proxy) = &profile.proxy_config {
             values.extend(proxy.password_ref.iter().map(String::as_str));
         }
-    }
-    for profile in &rdp_store.profiles {
-        values.extend(profile.password_ref.iter().map(String::as_str));
     }
     values.extend(
         credential_store

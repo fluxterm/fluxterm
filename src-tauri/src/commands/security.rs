@@ -12,12 +12,7 @@ use crate::credential_store::{
     Credential, CredentialStore, decrypt_credentials, encrypt_credentials, read_credentials,
     write_credentials,
 };
-use crate::profile_secrets::{
-    decrypt_profile_secrets, decrypt_rdp_profile_secrets, encrypt_profile_secrets,
-    encrypt_rdp_profile_secrets,
-};
-use crate::rdp::RdpProfile;
-use crate::rdp_profile_store::{RdpProfileStore, read_rdp_profiles, write_rdp_profiles};
+use crate::profile_secrets::{decrypt_profile_secrets, encrypt_profile_secrets};
 use crate::security::{CryptoService, SecretStore, SecurityStatus};
 use crate::security_store::{read_security_config, write_security_config};
 use crate::ssh_profile_store::{SshProfileStore, read_ssh_profiles, write_ssh_profiles};
@@ -105,7 +100,6 @@ pub fn security_enable_strong_protection(
     input: SecurityPasswordInput,
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
-    let mut rdp_store = read_rdp_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
@@ -120,7 +114,6 @@ pub fn security_enable_strong_protection(
     }
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
-    let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
     let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let (next_config, next_session) = CryptoService::build_user_password_config(&input.password)?;
@@ -128,12 +121,9 @@ pub fn security_enable_strong_protection(
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &next_crypto)?;
     ssh_store.updated_at = now_epoch();
-    rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &next_crypto)?;
-    rdp_store.updated_at = now_epoch();
     credential_store.credentials = encrypt_credential_store(credentials_plain, &next_crypto)?;
     credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
-    write_rdp_profiles(&app, &rdp_store)?;
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
@@ -149,7 +139,6 @@ pub fn security_change_password(
     input: SecurityPasswordChangeInput,
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
-    let mut rdp_store = read_rdp_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let config = current_config.as_ref().ok_or_else(|| {
@@ -170,7 +159,6 @@ pub fn security_change_password(
     let current_crypto =
         CryptoService::load(&app, current_config.as_ref(), Some(&current_session))?;
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
-    let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
     let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let (next_config, next_session) =
@@ -179,12 +167,9 @@ pub fn security_change_password(
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &next_crypto)?;
     ssh_store.updated_at = now_epoch();
-    rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &next_crypto)?;
-    rdp_store.updated_at = now_epoch();
     credential_store.credentials = encrypt_credential_store(credentials_plain, &next_crypto)?;
     credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
-    write_rdp_profiles(&app, &rdp_store)?;
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
@@ -199,7 +184,6 @@ pub fn security_enable_weak_protection(
     security: State<'_, SecurityState>,
 ) -> Result<SecurityStatus, EngineError> {
     let mut ssh_store = read_ssh_profiles(&app)?;
-    let mut rdp_store = read_rdp_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
     let current_session = security.current_session();
@@ -223,7 +207,6 @@ pub fn security_enable_weak_protection(
     }
 
     let ssh_profiles_plain = decrypt_ssh_profiles(&ssh_store, &current_crypto)?;
-    let rdp_profiles_plain = decrypt_rdp_profiles(&rdp_store, &current_crypto)?;
     let credentials_plain = decrypt_credential_store(&credential_store, &current_crypto)?;
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let weak_crypto = CryptoService::load(&app, None, None)?;
@@ -231,12 +214,9 @@ pub fn security_enable_weak_protection(
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &weak_crypto)?;
     ssh_store.updated_at = now_epoch();
-    rdp_store.profiles = encrypt_rdp_profiles(rdp_profiles_plain, &weak_crypto)?;
-    rdp_store.updated_at = now_epoch();
     credential_store.credentials = encrypt_credential_store(credentials_plain, &weak_crypto)?;
     credential_store.updated_at = now_epoch();
     write_ssh_profiles(&app, &ssh_store)?;
-    write_rdp_profiles(&app, &rdp_store)?;
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &weak_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &weak_crypto)?)?;
@@ -265,30 +245,6 @@ fn encrypt_ssh_profiles(
     profiles
         .into_iter()
         .map(|profile| encrypt_profile_secrets(profile, &secret_store))
-        .collect()
-}
-
-fn decrypt_rdp_profiles(
-    store: &RdpProfileStore,
-    crypto: &CryptoService,
-) -> Result<Vec<RdpProfile>, EngineError> {
-    let secret_store = SecretStore::new(crypto);
-    store
-        .profiles
-        .clone()
-        .into_iter()
-        .map(|profile| decrypt_rdp_profile_secrets(profile, &secret_store))
-        .collect()
-}
-
-fn encrypt_rdp_profiles(
-    profiles: Vec<RdpProfile>,
-    crypto: &CryptoService,
-) -> Result<Vec<RdpProfile>, EngineError> {
-    let secret_store = SecretStore::new(crypto);
-    profiles
-        .into_iter()
-        .map(|profile| encrypt_rdp_profile_secrets(profile, &secret_store))
         .collect()
 }
 

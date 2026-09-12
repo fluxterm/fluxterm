@@ -24,7 +24,6 @@ export function parseSubAppIdFromHash(hash: string): SubAppId | null {
   if (!match) return null;
   const raw = match[1]?.toLowerCase();
   if (raw === "proxy") return "proxy";
-  if (raw === "rdp") return "rdp";
   return null;
 }
 
@@ -90,13 +89,4 @@ export type SubAppLifecycleMessage =
       backgroundRenderMode: BackgroundRenderMode;
       backgroundVideoReplayMode: BackgroundVideoReplayMode;
       backgroundVideoReplayIntervalSec: number;
-    }
-  | {
-      type: "subapp:rdp-connect";
-      source: "main";
-      target: {
-        id: "rdp";
-        label: string;
-      };
-      profileId: string;
     };

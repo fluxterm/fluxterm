@@ -14,13 +14,12 @@ import type {
 
 type CredentialManagerSectionProps = {
   sshCredentials: CredentialSummary[];
-  rdpCredentials: CredentialSummary[];
   busy: boolean;
   locked: boolean;
   defaultReuseMode: CredentialReuseMode;
   onDefaultReuseModeChange: (value: CredentialReuseMode) => void;
   onSave?: (input: CredentialSaveInput) => Promise<CredentialSummary>;
-  onDelete?: (credentialId: string, kind: CredentialKind) => Promise<void>;
+  onDelete?: (credentialId: string) => Promise<void>;
   t: Translate;
 };
 
@@ -32,10 +31,9 @@ type CredentialDraft = {
   password: string;
 };
 
-/** 密码管理器配置分区，负责分类型凭据的检索与维护。 */
+/** 密码管理器配置分区，负责 SSH 凭据的检索与维护。 */
 export default function CredentialManagerSection({
   sshCredentials,
-  rdpCredentials,
   busy,
   locked,
   defaultReuseMode,
@@ -45,7 +43,6 @@ export default function CredentialManagerSection({
   t,
 }: CredentialManagerSectionProps) {
   const formId = useId();
-  const [kind, setKind] = useState<CredentialKind>("ssh");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CredentialSummary | null>(
@@ -53,7 +50,7 @@ export default function CredentialManagerSection({
   );
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
-  const source = kind === "ssh" ? sshCredentials : rdpCredentials;
+  const source = sshCredentials;
   const filtered = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
     if (!keyword) return source;
@@ -66,7 +63,7 @@ export default function CredentialManagerSection({
 
   function openCreate() {
     setActionError("");
-    setDraft({ id: "", kind, name: "", username: "", password: "" });
+    setDraft({ id: "", kind: "ssh", name: "", username: "", password: "" });
   }
 
   function openEdit(credential: CredentialSummary) {
@@ -110,7 +107,7 @@ export default function CredentialManagerSection({
     setActionBusy(true);
     setActionError("");
     try {
-      await onDelete(deleteTarget.id, deleteTarget.kind);
+      await onDelete(deleteTarget.id);
       setDeleteTarget(null);
     } catch (error) {
       setActionError(extractErrorMessage(error));
@@ -172,21 +169,6 @@ export default function CredentialManagerSection({
       ) : null}
 
       <div className="credential-manager-toolbar">
-        <div className="credential-kind-tabs" role="tablist">
-          {(["ssh", "rdp"] as const).map((item) => (
-            <button
-              key={item}
-              type="button"
-              role="tab"
-              aria-selected={kind === item}
-              className={kind === item ? "active" : ""}
-              onClick={() => setKind(item)}
-              data-ui={`credential-kind-${item}`}
-            >
-              {item.toUpperCase()}
-            </button>
-          ))}
-        </div>
         <label className="credential-search">
           <FiSearch aria-hidden="true" />
           <input

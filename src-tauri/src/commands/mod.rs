@@ -8,7 +8,6 @@ pub mod local_shell;
 pub mod lock_screen;
 pub mod profile;
 pub mod proxy;
-pub mod rdp;
 pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;

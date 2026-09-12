@@ -1,4 +1,4 @@
-//! SSH 与 RDP 分类型凭据存储。
+//! SSH 凭据存储。
 
 pub(crate) const CREDENTIAL_PASSWORD_REQUIRED_CODE: &str = "credential_password_required";
 
@@ -18,7 +18,6 @@ use crate::utils::write_atomic;
 #[serde(rename_all = "lowercase")]
 pub enum CredentialKind {
     Ssh,
-    Rdp,
 }
 
 /// 持久化凭据；仅密码字段属于密文。
@@ -30,8 +29,6 @@ pub struct Credential {
     pub name: String,
     pub username: String,
     pub password_ref: String,
-    #[serde(default)]
-    pub domain: Option<String>,
     pub created_at: u64,
     pub updated_at: u64,
 }
@@ -163,7 +160,6 @@ mod tests {
             name: "Administrator".to_string(),
             username: "admin".to_string(),
             password_ref: "secret".to_string(),
-            domain: None,
             created_at: 1,
             updated_at: 1,
         }
@@ -182,13 +178,5 @@ mod tests {
             decrypt_credentials(encrypted, &secret_store).expect("credential should decrypt");
         assert_eq!(decrypted[0].password_ref, "secret");
         assert_eq!(decrypted[0].kind, CredentialKind::Ssh);
-    }
-
-    #[test]
-    fn rdp_domain_is_reserved_and_serializes_as_empty() {
-        let credential = sample_credential(CredentialKind::Rdp);
-        let value = serde_json::to_value(credential).expect("credential should serialize");
-        assert_eq!(value["kind"], "rdp");
-        assert!(value["domain"].is_null());
     }
 }

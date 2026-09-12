@@ -10,7 +10,6 @@ import {
   CommandHistoryWidget,
   EventsWidget,
   HostWidget,
-  RdpWidget,
   SerialWidget,
   SftpWidget,
   TransfersWidget,
@@ -25,11 +24,9 @@ import type { Locale, Translate } from "@/i18n";
 import type {
   CommandHistoryItem,
   CommandHistoryLiveCapture,
-  ConnectingProfileMap,
   HostProfile,
   LocalShellProfile,
   AppEvent,
-  RdpProfile,
   SerialProfile,
   SshConnectStateMap,
   WidgetKey,
@@ -44,16 +41,12 @@ import type {
 
 type buildWidgetsProps = {
   profiles: HostProfile[];
-  rdpProfiles: RdpProfile[];
-  rdpGroups: string[];
   serialProfiles: SerialProfile[];
   serialGroups: string[];
   connectingSerialProfileIds: string[];
   sshGroups: string[];
   activeProfileId: string | null;
   sshConnectingProfiles: SshConnectStateMap;
-  activeRdpProfileId: string | null;
-  rdpConnectingProfiles: ConnectingProfileMap;
   availableShells: LocalShellProfile[];
   activeSessionId: string | null;
   broadcastActiveSessionId: string | null;
@@ -90,10 +83,8 @@ type buildWidgetsProps = {
   locale: Locale;
   t: Translate;
   pickProfile: (profileId: string) => void;
-  pickRdpProfile: (profileId: string) => void;
   onConnectProfile: (profileInput: HostProfile) => Promise<void>;
   onCancelSshConnectProfile: (profileId: string) => Promise<void>;
-  onConnectRdpProfile: (profile: RdpProfile) => Promise<void>;
   onConnectSerialProfile: (profile: SerialProfile) => void;
   onCancelSerialConnect: (profileId: string) => void;
   onPickSerialProfile: (profileId: string) => void;
@@ -103,16 +94,6 @@ type buildWidgetsProps = {
   onRemoveSerialProfile: (profile: SerialProfile) => void;
   onSaveSerialGroups: (groups: string[]) => Promise<string[]>;
   onMoveSerialProfileToGroup: (
-    profileId: string,
-    targetGroup: string | null,
-  ) => Promise<boolean>;
-  onOpenNewRdpProfile: (defaultGroup?: string | null) => void;
-  onOpenEditRdpProfile: (profile: RdpProfile) => void;
-  onRemoveRdpProfile: (profile: RdpProfile) => Promise<void>;
-  onAddRdpGroup: (groupName: string) => boolean;
-  onRenameRdpGroup: (from: string, to: string) => Promise<boolean>;
-  onRemoveRdpGroup: (groupName: string) => Promise<boolean>;
-  onMoveRdpProfileToGroup: (
     profileId: string,
     targetGroup: string | null,
   ) => Promise<boolean>;
@@ -170,16 +151,12 @@ export function buildWidgets(
 ): Record<WidgetKey, React.ReactNode> {
   const {
     profiles,
-    rdpProfiles,
-    rdpGroups,
     serialProfiles,
     serialGroups,
     connectingSerialProfileIds,
     sshGroups,
     activeProfileId,
     sshConnectingProfiles,
-    activeRdpProfileId,
-    rdpConnectingProfiles,
     availableShells,
     activeSessionId,
     broadcastActiveSessionId,
@@ -211,10 +188,8 @@ export function buildWidgets(
     locale,
     t,
     pickProfile,
-    pickRdpProfile,
     onConnectProfile,
     onCancelSshConnectProfile,
-    onConnectRdpProfile,
     onConnectSerialProfile,
     onCancelSerialConnect,
     onPickSerialProfile,
@@ -224,13 +199,6 @@ export function buildWidgets(
     onRemoveSerialProfile,
     onSaveSerialGroups,
     onMoveSerialProfileToGroup,
-    onOpenNewRdpProfile,
-    onOpenEditRdpProfile,
-    onRemoveRdpProfile,
-    onAddRdpGroup,
-    onRenameRdpGroup,
-    onRemoveRdpGroup,
-    onMoveRdpProfileToGroup,
     onOpenNewProfile,
     onImportOpenSshConfig,
     onOpenEditProfile,
@@ -301,26 +269,6 @@ export function buildWidgets(
           onConnectLocalShell={onConnectLocalShell}
           onOpenLocalShellProfile={onOpenLocalShellProfile}
           onRefreshLocalShells={onRefreshLocalShells}
-          t={t}
-        />
-      </Suspense>
-    ),
-    rdp: (
-      <Suspense fallback={null}>
-        <RdpWidget
-          profiles={rdpProfiles}
-          groups={rdpGroups}
-          activeProfileId={activeRdpProfileId}
-          connectingProfiles={rdpConnectingProfiles}
-          onPick={pickRdpProfile}
-          onConnectProfile={onConnectRdpProfile}
-          onOpenNewProfile={onOpenNewRdpProfile}
-          onOpenEditProfile={onOpenEditRdpProfile}
-          onRemoveProfile={onRemoveRdpProfile}
-          onAddGroup={onAddRdpGroup}
-          onRenameGroup={onRenameRdpGroup}
-          onRemoveGroup={onRemoveRdpGroup}
-          onMoveProfileToGroup={onMoveRdpProfileToGroup}
           t={t}
         />
       </Suspense>

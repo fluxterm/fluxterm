@@ -6,7 +6,6 @@ use std::{collections::BTreeMap, fmt};
 const AI_OPERATION_FAILED_KEY: &str = "error.ai.operationFailed";
 const BACKEND_OPERATION_FAILED_KEY: &str = "error.backend.operationFailed";
 const PROXY_OPERATION_FAILED_KEY: &str = "error.proxy.operationFailed";
-const RDP_OPERATION_FAILED_KEY: &str = "error.rdp.operationFailed";
 const REMOTE_EDIT_OPERATION_FAILED_KEY: &str = "error.remoteEdit.operationFailed";
 const SECURITY_OPERATION_FAILED_KEY: &str = "error.security.operationFailed";
 const SERIAL_OPERATION_FAILED_KEY: &str = "error.serial.operationFailed";
@@ -176,8 +175,6 @@ fn default_message_key(code: &str) -> &'static str {
         SSH_OPERATION_FAILED_KEY
     } else if code.starts_with("proxy_") {
         PROXY_OPERATION_FAILED_KEY
-    } else if code.starts_with("rdp_") {
-        RDP_OPERATION_FAILED_KEY
     } else if code.starts_with("remote_edit_") {
         REMOTE_EDIT_OPERATION_FAILED_KEY
     } else if code.starts_with("ai_") {

@@ -1,11 +1,11 @@
-# FluxTerm SFTP/RDP 性能遥测规范
+# FluxTerm SFTP 性能遥测规范
 
 ## 1. 系统定位
 
-性能遥测用于观察 SFTP 传输和 RDP 会话的运行表现，与结构化日志保持独立。完整系统由三部分组成：
+性能遥测用于观察 SFTP 传输的运行表现，与结构化日志保持独立。完整系统由三部分组成：
 
 - FluxTerm 遥测构建负责采集和发送指标。
-- [fluxterm-pulse-protocol 0.1.0](https://github.com/fluxterm/fluxterm-pulse-protocol/tree/0.1.0) 定义线协议、流模型和指标目录。
+- [fluxterm-pulse-protocol 0.2.0](https://github.com/fluxterm/fluxterm-pulse-protocol/tree/0.2.0) 定义线协议、流模型和指标目录。
 - [FluxTerm Pulse Server](https://github.com/fluxterm/fluxterm-pulse-server) 负责接收、持久化、Dashboard 展示和分析导出。
 
 标准 FluxTerm 构建不包含遥测功能。开发者使用以下命令生成遥测构建：
@@ -26,14 +26,14 @@ pnpm build:fast:telemetry
   "enabled": true,
   "destination": "192.168.1.20:43190",
   "intervalMs": 1000,
-  "domains": ["sftp", "rdp"]
+  "domains": ["sftp"]
 }
 ```
 
 - 配置文件不存在或 `enabled` 为 `false` 时，遥测保持关闭。
 - 配置仅在启动时读取，修改后重启 FluxTerm 生效。
 - `intervalMs` 支持 `250–60000` 毫秒。
-- `domains` 可以启用 `sftp`、`rdp` 或两者。
+- `domains` 仅支持启用 `sftp`。
 - `destination` 使用数字形式的回环地址、RFC1918 IPv4 或 ULA IPv6 地址。
 - 配置采用严格 JSON，字段或取值无效时记录一次告警并继续启动应用。
 
@@ -41,7 +41,7 @@ pnpm build:fast:telemetry
 
 ## 3. 性能流模型
 
-每个 SFTP 任务或 RDP 会话对应一条独立性能流：
+每个 SFTP 任务对应一条独立性能流：
 
 | 流类型                  | 业务含义             |
 | ----------------------- | -------------------- |
@@ -50,7 +50,6 @@ pnpm build:fast:telemetry
 | `sftpUploadBatch`       | 两个及以上根路径上传 |
 | `sftpDownloadFile`      | 单个文件下载         |
 | `sftpDownloadDirectory` | 目录下载             |
-| `rdpSession`            | RDP 会话             |
 
 SFTP 流使用三个性能参数：
 
@@ -58,7 +57,7 @@ SFTP 流使用三个性能参数：
 - `requestWindow`：任务允许的在途请求窗口。
 - `workerCount`：任务使用的文件 Worker 数。
 
-RDP 流记录初始分辨率和八项体验开关。流类型本身已经表达 SFTP 的方向和任务形态。
+流类型本身已经表达 SFTP 的方向和任务形态。
 
 流关闭结果包括 `succeeded`、`failed`、`cancelled`、`partial` 和 `disconnected`。
 
@@ -86,7 +85,7 @@ RDP 流记录初始分辨率和八项体验开关。流类型本身已经表达 
 
 - 安装级 `deviceId`、可选设备名和进程级 `instanceId`。
 - 目标 host 和 port。
-- SSH 或 RDP 业务 `sessionId`。
+- SSH 业务 `sessionId`。
 - SFTP 任务的 `transferId`。
 
 指标属性只使用低基数运行分类。遥测内容聚焦于性能数字，不采集用户名、凭据、路径、文件名、终端内容、剪贴板内容或 AI 内容。
@@ -97,4 +96,4 @@ RDP 流记录初始分辨率和八项体验开关。流类型本身已经表达 
 
 发送端使用无确认、无重试的 UDP 尽力投递，适合开发者控制的受信任网络。Pulse Server 未启动、队列已满、单批数据无效或 UDP 发送失败时，FluxTerm 业务继续正常运行；发送状态可通过内部状态命令和结构化运行日志观察。
 
-Pulse Server 按窗口原样存储有效指标，并提供设备、目标、业务域筛选，以及 SFTP 与 RDP 的独立分析导出。丢失或乱序窗口保持为数据空洞，不自动补零。
+Pulse Server 按窗口原样存储有效指标，并提供设备、目标和业务域筛选，以及 SFTP 分析导出。丢失或乱序窗口保持为数据空洞，不自动补零。

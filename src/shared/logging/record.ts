@@ -115,7 +115,6 @@ function messageFromEvent(event: string): string {
   const acronyms: Record<string, string> = {
     ai: "AI",
     api: "API",
-    rdp: "RDP",
     sftp: "SFTP",
     ssh: "SSH",
     tls: "TLS",

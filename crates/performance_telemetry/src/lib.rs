@@ -145,19 +145,26 @@ mod tests {
     #[test]
     fn creates_protocol_stream_descriptor() {
         let descriptor = create_stream_descriptor(
-            StreamKind::RdpSession,
+            StreamKind::SftpUploadFile,
             1,
-            BTreeMap::from([("width".into(), StreamParameter::Unsigned(1920))]),
+            BTreeMap::from([
+                (
+                    "chunkSizeBytes".into(),
+                    StreamParameter::Unsigned(32 * 1024),
+                ),
+                ("requestWindow".into(), StreamParameter::Unsigned(8)),
+                ("workerCount".into(), StreamParameter::Unsigned(1)),
+            ]),
             StreamTarget {
-                host: "rdp.internal".into(),
-                port: 3389,
+                host: "sftp.internal".into(),
+                port: 22,
             },
             StreamCorrelation {
                 session_id: "31a0ae31-4116-4909-95be-0b81c1ab2ad9".into(),
-                transfer_id: None,
+                transfer_id: Some("sftp-1".into()),
             },
         );
-        assert_eq!(descriptor.domain, PerformanceDomain::Rdp);
+        assert_eq!(descriptor.domain, PerformanceDomain::Sftp);
         assert!(Uuid::parse_str(&descriptor.id).is_ok());
     }
 }

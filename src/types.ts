@@ -5,7 +5,7 @@ import type { BackendErrorPayload } from "./shared/errors/appError";
 export type AuthType = "password" | "privateKey" | "agent";
 
 /** 密码管理器凭据所属协议。 */
-export type CredentialKind = "ssh" | "rdp";
+export type CredentialKind = "ssh";
 
 /** 会话选择凭据时的复用方式。 */
 export type CredentialReuseMode = "reference" | "copy";
@@ -16,7 +16,6 @@ export type CredentialSummary = {
   kind: CredentialKind;
   name: string;
   username: string;
-  domain?: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -340,113 +339,6 @@ export type ProxyRuntime = {
   lastError?: BackendErrorPayload | null;
 };
 
-/** RDP 分辨率模式。 */
-export type RdpDisplayMode = "fixed" | "window_sync";
-
-/** RDP 本地显示策略。 */
-export type RdpDisplayStrategy = "fit" | "cover" | "stretch";
-
-/** RDP 剪贴板模式。 */
-export type RdpClipboardMode = "disabled" | "text";
-
-/** RDP 重连策略。 */
-export type RdpReconnectPolicy = {
-  enabled: boolean;
-  maxAttempts: number;
-};
-
-/** RDP 远端体验标志。 */
-export type RdpPerformanceFlags = {
-  wallpaper: boolean;
-  fullWindowDrag: boolean;
-  menuAnimations: boolean;
-  theming: boolean;
-  cursorShadow: boolean;
-  cursorSettings: boolean;
-  fontSmoothing: boolean;
-  desktopComposition: boolean;
-};
-
-/** RDP Profile。 */
-export type RdpProfile = {
-  id: string;
-  name: string;
-  credentialId?: string | null;
-  host: string;
-  port: number;
-  username: string;
-  tags?: string[] | null;
-  passwordRef?: string | null;
-  domain?: string | null;
-  ignoreCertificate: boolean;
-  resolutionMode: RdpDisplayMode;
-  displayStrategy: RdpDisplayStrategy;
-  width?: number | null;
-  height?: number | null;
-  clipboardMode: RdpClipboardMode;
-  reconnectPolicy: RdpReconnectPolicy;
-  performanceFlags: RdpPerformanceFlags;
-};
-
-/** RDP 证书确认信息。 */
-export type RdpCertificatePrompt = {
-  fingerprint: string;
-  subject: string;
-  issuer: string;
-};
-
-/** RDP 会话状态。 */
-export type RdpSessionState =
-  | "idle"
-  | "connecting"
-  | "connected"
-  | "reconnecting"
-  | "disconnected"
-  | "error"
-  | "certificate_prompt";
-
-/** RDP 会话音频状态。 */
-export type RdpSessionAudioState =
-  | "idle"
-  | "negotiating"
-  | "playing"
-  | "muted"
-  | "error";
-
-/** RDP 会话快照。 */
-export type RdpSessionSnapshot = {
-  sessionId: string;
-  profileId: string;
-  state: RdpSessionState;
-  createdAt: number;
-  width: number;
-  height: number;
-  wsUrl?: string | null;
-  audioEnabled: boolean;
-  audioMuted: boolean;
-  audioState: RdpSessionAudioState;
-  lastError?: BackendErrorPayload | null;
-  certificatePrompt?: RdpCertificatePrompt | null;
-  /** 匿名性能数据流 ID；未启用遥测时为空。 */
-  performanceStreamId?: string | null;
-};
-
-/** RDP 输入事件。 */
-export type RdpInputEvent = {
-  kind: string;
-  x?: number;
-  y?: number;
-  button?: number;
-  deltaX?: number;
-  deltaY?: number;
-  text?: string;
-  code?: string;
-  ctrlKey?: boolean;
-  shiftKey?: boolean;
-  altKey?: boolean;
-  metaKey?: boolean;
-};
-
 /** SFTP 可用性状态。 */
 export type SftpAvailability =
   | "ready"
@@ -534,7 +426,6 @@ export type AppEventScope =
   | "tunnel"
   | "proxy"
   | "remote-edit"
-  | "rdp"
   | "ai"
   | "security"
   | "system";
@@ -617,7 +508,6 @@ export type CommandHistoryStore = {
 /** 功能面板类型。 */
 export type WidgetKey =
   | "profiles"
-  | "rdp"
   | "serial"
   | "files"
   | "transfers"

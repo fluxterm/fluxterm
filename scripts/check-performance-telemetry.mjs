@@ -10,16 +10,12 @@ const catalog = JSON.parse(
 let metricsSource = "";
 try {
   const metadata = JSON.parse(
-    execFileSync(
-      "cargo",
-      ["metadata", "--format-version", "1", "--locked"],
-      {
-        cwd: root,
-        encoding: "utf8",
-        maxBuffer: 64 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "inherit"],
-      },
-    ),
+    execFileSync("cargo", ["metadata", "--format-version", "1", "--locked"], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "inherit"],
+    }),
   );
   const protocolPackage = metadata.packages.find(
     (candidate) => candidate.name === "fluxterm-pulse-protocol",
@@ -43,10 +39,6 @@ const configSource = readFileSync(
   join(root, "src-tauri", "src", "config_paths.rs"),
   "utf8",
 );
-const frontendSource = readFileSync(
-  join(root, "src", "subapps", "rdp", "performanceTelemetry.ts"),
-  "utf8",
-);
 
 function fail(message) {
   failures.push(message);
@@ -60,7 +52,7 @@ const catalogNames = new Set();
 for (const metric of catalog.metrics ?? []) {
   if (
     typeof metric.name !== "string" ||
-    !/^fluxterm\.(?:sftp|rdp)\.[a-z0-9_.]+$/u.test(metric.name)
+    !/^fluxterm\.sftp\.[a-z0-9_.]+$/u.test(metric.name)
   ) {
     fail(`invalid metric name: ${String(metric.name)}`);
   }
@@ -74,7 +66,7 @@ for (const metric of catalog.metrics ?? []) {
 }
 
 const sourceNames = new Set(
-  [...metricsSource.matchAll(/metric!\(\s*"([^"]+)"/gu)].map(
+  [...metricsSource.matchAll(/metric!\(\s*"(fluxterm\.sftp\.[^"]+)"/gu)].map(
     (match) => match[1],
   ),
 );
@@ -96,7 +88,9 @@ if (
   !/StreamTarget/u.test(crateSource) ||
   !/StreamCorrelation/u.test(crateSource)
 ) {
-  fail("performance telemetry device and connection identity contract is missing");
+  fail(
+    "performance telemetry device and connection identity contract is missing",
+  );
 }
 if (
   /resolve_performance_telemetry_config_path[\s\S]*?app_data_dir\(\)/u.test(
@@ -105,10 +99,6 @@ if (
 ) {
   fail("performance telemetry config must not use app_data_dir");
 }
-if (/\bsetInterval\s*\(|\brequestAnimationFrame\s*\(/u.test(frontendSource)) {
-  fail("RDP telemetry collector must reuse the existing RAF");
-}
-
 if (failures.length > 0) {
   process.stderr.write(
     `Performance telemetry check failed:\n- ${failures.join("\n- ")}\n`,

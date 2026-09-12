@@ -7,9 +7,6 @@ import { lazy } from "react";
 export const HostWidget = lazy(
   () => import("@/widgets/profiles/components/HostWidget"),
 );
-export const RdpWidget = lazy(
-  () => import("@/widgets/rdp/components/RdpWidget"),
-);
 export const SerialWidget = lazy(
   () => import("@/widgets/serial/components/SerialWidget"),
 );

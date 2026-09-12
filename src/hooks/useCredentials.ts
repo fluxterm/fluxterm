@@ -7,12 +7,11 @@ import {
 } from "@/features/credential/core/commands";
 import { extractErrorMessage } from "@/shared/errors/appError";
 import { scheduleDeferredTask } from "@/hooks/useDeferredEffect";
-import type { CredentialKind, CredentialSummary } from "@/types";
+import type { CredentialSummary } from "@/types";
 
-/** 分类型凭据状态与持久化操作。 */
+/** SSH 凭据状态与持久化操作。 */
 export default function useCredentials() {
   const [sshCredentials, setSshCredentials] = useState<CredentialSummary[]>([]);
-  const [rdpCredentials, setRdpCredentials] = useState<CredentialSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,12 +19,8 @@ export default function useCredentials() {
   const reload = useCallback(async () => {
     setBusy(true);
     try {
-      const [ssh, rdp] = await Promise.all([
-        listCredentials("ssh"),
-        listCredentials("rdp"),
-      ]);
+      const ssh = await listCredentials("ssh");
       setSshCredentials(ssh);
-      setRdpCredentials(rdp);
       setError(null);
     } catch (loadError) {
       setError(extractErrorMessage(loadError));
@@ -46,9 +41,7 @@ export default function useCredentials() {
     setBusy(true);
     try {
       const saved = await saveCredential(input);
-      const setter =
-        saved.kind === "ssh" ? setSshCredentials : setRdpCredentials;
-      setter((current) => {
+      setSshCredentials((current) => {
         const exists = current.some((item) => item.id === saved.id);
         return exists
           ? current.map((item) => (item.id === saved.id ? saved : item))
@@ -64,12 +57,13 @@ export default function useCredentials() {
     }
   }
 
-  async function remove(credentialId: string, kind: CredentialKind) {
+  async function remove(credentialId: string) {
     setBusy(true);
     try {
       await deleteCredential(credentialId, true);
-      const setter = kind === "ssh" ? setSshCredentials : setRdpCredentials;
-      setter((current) => current.filter((item) => item.id !== credentialId));
+      setSshCredentials((current) =>
+        current.filter((item) => item.id !== credentialId),
+      );
       setError(null);
     } catch (deleteError) {
       setError(extractErrorMessage(deleteError));
@@ -81,7 +75,6 @@ export default function useCredentials() {
 
   return {
     sshCredentials,
-    rdpCredentials,
     loaded,
     busy,
     error,

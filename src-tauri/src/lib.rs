@@ -11,8 +11,6 @@ pub mod local_shell;
 #[cfg(feature = "performance-telemetry")]
 pub mod performance_telemetry;
 pub mod profile_secrets;
-pub mod rdp;
-pub mod rdp_profile_store;
 pub mod remote_edit;
 pub mod resource_monitor;
 pub mod security;
@@ -33,7 +31,6 @@ use fluxterm_logging::{LogLevel, log_event};
 #[cfg(feature = "performance-telemetry")]
 use fluxterm_performance_telemetry::install_global_sink;
 use log::LevelFilter;
-use rustls::crypto::aws_lc_rs;
 use serde_json::json;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
@@ -62,12 +59,6 @@ use crate::commands::profile::{
     ssh_import_openssh_config,
 };
 use crate::commands::proxy::{proxy_close, proxy_close_all, proxy_list, proxy_open};
-use crate::commands::rdp::{
-    rdp_profile_delete, rdp_profile_groups_list, rdp_profile_groups_save, rdp_profile_list,
-    rdp_profile_save, rdp_session_cert_decide, rdp_session_connect, rdp_session_create,
-    rdp_session_disconnect, rdp_session_resize, rdp_session_send_input,
-    rdp_session_set_audio_muted, rdp_session_set_clipboard,
-};
 use crate::commands::remote_edit::{
     remote_edit_confirm_upload, remote_edit_dismiss_pending, remote_edit_list, remote_edit_open,
 };
@@ -100,10 +91,8 @@ use crate::commands::tunnel::{
 use crate::local_shell::LocalShellState;
 #[cfg(feature = "performance-telemetry")]
 use crate::performance_telemetry::{
-    ConfigLoadResult, PerformanceTelemetryService, load_config,
-    performance_telemetry_record_rdp_batch, performance_telemetry_status_get,
+    ConfigLoadResult, PerformanceTelemetryService, load_config, performance_telemetry_status_get,
 };
-use crate::rdp::RdpState;
 use crate::remote_edit::RemoteEditState;
 use crate::resource_monitor::ResourceMonitorState;
 use crate::state::{EngineState, SecurityState, SerialState};
@@ -125,21 +114,12 @@ fn resolve_log_level() -> (LevelFilter, Option<String>) {
     (level, None)
 }
 
-/// 在应用启动早期固定安装 rustls 的全局加密提供者。
-///
-/// 当前依赖图会同时带入 `aws-lc-rs` 与 `ring` 相关特性，若不显式选择，
-/// `IronRDP` 在 TLS 升级阶段会触发进程级 panic。
-fn install_rustls_crypto_provider() {
-    let _ = aws_lc_rs::default_provider().install_default();
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     if let Err(message) = crate::config_paths::load_dotenv_strict() {
         eprintln!("{message}");
         std::process::exit(1);
     }
-    install_rustls_crypto_provider();
     let (log_level, invalid_log_level) = resolve_log_level();
     let log_targets = vec![
         Target::new(TargetKind::Stdout),
@@ -206,7 +186,6 @@ pub fn run() {
         })
         .manage(LocalShellState::default())
         .manage(ResourceMonitorState::default())
-        .manage(RdpState::default())
         .manage(RemoteEditState::default())
         .manage(ai::AiRuntimeState::default())
         .plugin(tauri_plugin_dialog::init())
@@ -316,27 +295,12 @@ pub fn run() {
             proxy_close,
             proxy_list,
             proxy_close_all,
-            rdp_profile_groups_list,
-            rdp_profile_groups_save,
-            rdp_profile_list,
-            rdp_profile_save,
-            rdp_profile_delete,
-            rdp_session_create,
-            rdp_session_connect,
-            rdp_session_disconnect,
-            rdp_session_send_input,
-            rdp_session_resize,
-            rdp_session_set_clipboard,
-            rdp_session_set_audio_muted,
-            rdp_session_cert_decide,
             remote_edit_open,
             remote_edit_list,
             remote_edit_confirm_upload,
             remote_edit_dismiss_pending,
             #[cfg(feature = "performance-telemetry")]
             performance_telemetry_status_get,
-            #[cfg(feature = "performance-telemetry")]
-            performance_telemetry_record_rdp_batch,
         ]);
 
     let app = builder
@@ -355,12 +319,10 @@ pub fn run() {
             }),
         );
     }
-    app.run(|app, event| {
+    app.run(|_app, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            let rdp = app.state::<RdpState>();
-            let _ = rdp.shutdown_runtime();
             #[cfg(feature = "performance-telemetry")]
-            if let Some(service) = app.try_state::<Arc<PerformanceTelemetryService>>() {
+            if let Some(service) = _app.try_state::<Arc<PerformanceTelemetryService>>() {
                 service.shutdown();
             }
         }

@@ -199,7 +199,6 @@ let error = EngineError::with_detail(
 | `sftp_` | `error.sftp.operationFailed` |
 | `ssh_` | `error.ssh.operationFailed` |
 | `proxy_` | `error.proxy.operationFailed` |
-| `rdp_` | `error.rdp.operationFailed` |
 | `remote_edit_` | `error.remoteEdit.operationFailed` |
 | `ai_` | `error.ai.operationFailed` |
 | `security_`、`crypto_`、`secret_` | `error.security.operationFailed` |

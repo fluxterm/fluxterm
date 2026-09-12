@@ -570,11 +570,6 @@ pub fn resolve_ssh_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineErr
     Ok(resolve_connections_config_dir(app)?.join("ssh"))
 }
 
-/// 解析 RDP 连接配置目录。
-pub fn resolve_rdp_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
-    Ok(resolve_connections_config_dir(app)?.join("rdp"))
-}
-
 /// 解析串口连接配置目录。
 pub fn resolve_serial_connections_dir(app: &AppHandle) -> Result<PathBuf, EngineError> {
     Ok(resolve_connections_config_dir(app)?.join("serial"))
@@ -618,16 +613,6 @@ pub fn resolve_ssh_profiles_path(app: &AppHandle) -> Result<PathBuf, EngineError
 /// 解析 SSH 分组配置文件路径。
 pub fn resolve_ssh_groups_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
     Ok(resolve_ssh_connections_dir(app)?.join("groups.json"))
-}
-
-/// 解析 RDP 配置文件路径。
-pub fn resolve_rdp_profiles_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
-    Ok(resolve_rdp_connections_dir(app)?.join("profiles.json"))
-}
-
-/// 解析 RDP 分组配置文件路径。
-pub fn resolve_rdp_groups_path(app: &AppHandle) -> Result<PathBuf, EngineError> {
-    Ok(resolve_rdp_connections_dir(app)?.join("groups.json"))
 }
 
 /// 解析串口 Profile 配置文件路径。

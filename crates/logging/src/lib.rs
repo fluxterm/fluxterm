@@ -171,7 +171,6 @@ fn message_from_event(event: &str) -> String {
         .map(|segment| match segment {
             "ai" => "AI".to_string(),
             "api" => "API".to_string(),
-            "rdp" => "RDP".to_string(),
             "sftp" => "SFTP".to_string(),
             "ssh" => "SSH".to_string(),
             "tls" => "TLS".to_string(),

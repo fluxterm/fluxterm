@@ -113,7 +113,6 @@ function messageFromEvent(event) {
   const acronyms = new Map([
     ["ai", "AI"],
     ["api", "API"],
-    ["rdp", "RDP"],
     ["sftp", "SFTP"],
     ["ssh", "SSH"],
     ["tls", "TLS"],
@@ -167,23 +166,6 @@ function sourceLogCalls(name, text) {
       calls.push({
         ...block,
         level: parsed ? directLevels[parsed[1]] : null,
-        event: parsed?.[2] ?? null,
-      });
-    }
-    for (const block of findCallBlocks(text, /\blogRdpSubAppEvent\s*\(/gu)) {
-      if (
-        /function\s*$/u.test(
-          text.slice(Math.max(0, block.start - 20), block.start),
-        )
-      ) {
-        continue;
-      }
-      const parsed = block.text.match(
-        /^\s*logRdpSubAppEvent\s*\(\s*["'](debug|info|warn|error)["']\s*,\s*["']([a-z0-9]+(?:\.[a-z0-9]+)+)["']/u,
-      );
-      calls.push({
-        ...block,
-        level: parsed?.[1] ?? null,
         event: parsed?.[2] ?? null,
       });
     }

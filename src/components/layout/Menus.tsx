@@ -100,7 +100,7 @@ export default function Menus({
 
   const menuItems = useMemo<MenuItem[]>(() => {
     const configNavigation = buildConfigNavigation(t);
-    const launchableSubApps = subApps.filter((subApp) => subApp.id !== "rdp");
+    const launchableSubApps = subApps;
     const items: MenuItem[] = [
       {
         id: "config",

@@ -4,7 +4,7 @@
 
 ![Preview](https://github.com/fluxterm/fluxterm/blob/main/docs/assets/preview.png)
 
-**FluxTerm** 是一个基于 `Tauri + Rust + React` 构建的现代桌面终端，统一提供本地 Shell、SSH、SFTP、RDP 远程桌面与终端 AI 协作能力。
+**FluxTerm** 是一个基于 `Tauri + Rust + React` 构建的现代桌面终端，统一提供本地 Shell、SSH、SFTP、串口会话与终端 AI 协作能力。
 
 ## 设计参考
 
@@ -14,7 +14,7 @@ FluxTerm 并不以复刻既有产品为目标，而是在 `Tauri`、`Rust` 与 `
 
 ## 致谢
 
-FluxTerm 的桌面窗口、终端、SSH/SFTP、RDP 与安全认证能力建立在多个开源项目之上。项目致谢见 [Acknowledgements](./docs/acknowledgements.md)。
+FluxTerm 的桌面窗口、终端、SSH/SFTP 与安全认证能力建立在多个开源项目之上。项目致谢见 [Acknowledgements](./docs/acknowledgements.md)。
 
 ## 贡献
 

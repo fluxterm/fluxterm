@@ -14,7 +14,6 @@ export const MAX_SIDE_SLOTS = 10;
 /** 所有可用组件键。 */
 export const widgetKeys: WidgetKey[] = [
   "profiles",
-  "rdp",
   "serial",
   "files",
   "transfers",
@@ -314,7 +313,6 @@ function clampNumber(
 
 function normalizeWidgetKey(value: unknown): WidgetKey | null {
   if (value === "profiles") return "profiles";
-  if (value === "rdp") return "rdp";
   if (value === "serial") return "serial";
   if (value === "files") return "files";
   if (value === "transfers") return "transfers";

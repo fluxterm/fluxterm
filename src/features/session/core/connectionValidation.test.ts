@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { HostProfile, RdpProfile } from "../../../types.ts";
-import {
-  getMissingRdpConnectionFields,
-  getMissingSshConnectionFields,
-} from "./connectionValidation.ts";
+import type { HostProfile } from "../../../types.ts";
+import { getMissingSshConnectionFields } from "./connectionValidation.ts";
 
 function createSshProfile(overrides: Partial<HostProfile> = {}): HostProfile {
   return {
@@ -15,36 +12,6 @@ function createSshProfile(overrides: Partial<HostProfile> = {}): HostProfile {
     username: "user",
     authType: "password",
     passwordRef: "secret",
-    ...overrides,
-  };
-}
-
-function createRdpProfile(overrides: Partial<RdpProfile> = {}): RdpProfile {
-  return {
-    id: "rdp-profile",
-    name: "RDP",
-    host: "server.example.com",
-    port: 3389,
-    username: "user",
-    passwordRef: "secret",
-    ignoreCertificate: false,
-    resolutionMode: "window_sync",
-    displayStrategy: "fit",
-    clipboardMode: "text",
-    reconnectPolicy: {
-      enabled: true,
-      maxAttempts: 3,
-    },
-    performanceFlags: {
-      wallpaper: true,
-      fullWindowDrag: true,
-      menuAnimations: true,
-      theming: true,
-      cursorShadow: true,
-      cursorSettings: true,
-      fontSmoothing: true,
-      desktopComposition: true,
-    },
     ...overrides,
   };
 }
@@ -88,28 +55,5 @@ void test("动态凭据只在前端校验主机", () => {
       }),
     ),
     ["host"],
-  );
-  assert.deepEqual(
-    getMissingRdpConnectionFields(
-      createRdpProfile({
-        username: "",
-        passwordRef: null,
-        credentialId: "rdp-credential",
-      }),
-    ),
-    [],
-  );
-});
-
-void test("RDP 一次返回全部缺失字段且保留空格密码语义", () => {
-  assert.deepEqual(
-    getMissingRdpConnectionFields(
-      createRdpProfile({ host: " ", username: " ", passwordRef: "" }),
-    ),
-    ["host", "username", "password"],
-  );
-  assert.deepEqual(
-    getMissingRdpConnectionFields(createRdpProfile({ passwordRef: " " })),
-    [],
   );
 });

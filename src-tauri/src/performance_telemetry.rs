@@ -1,4 +1,4 @@
-//! SFTP/RDP 性能遥测配置和 UDP 发送服务。
+//! SFTP 性能遥测配置和 UDP 发送服务。
 
 use std::collections::{BTreeSet, HashMap};
 use std::fs::{self, OpenOptions};
@@ -64,7 +64,7 @@ const fn default_interval_ms() -> u64 {
 }
 
 fn default_domains() -> BTreeSet<PerformanceDomain> {
-    BTreeSet::from([PerformanceDomain::Sftp, PerformanceDomain::Rdp])
+    BTreeSet::from([PerformanceDomain::Sftp])
 }
 
 /// 已验证的启动配置。
@@ -180,11 +180,11 @@ fn load_config_path(path: &Path) -> ConfigLoadResult {
             "intervalMs must be between 250 and 60000",
         ));
     }
-    if raw.domains.is_empty() {
+    if raw.domains != BTreeSet::from([PerformanceDomain::Sftp]) {
         return ConfigLoadResult::Invalid(config_error(
             "performance_telemetry_domains_invalid",
             "Performance telemetry domains are invalid",
-            "domains must contain sftp or rdp",
+            "domains must contain only sftp",
         ));
     }
     let destination = match parse_private_destination(&raw.destination) {
@@ -497,10 +497,9 @@ impl PerformanceTelemetrySink for ChannelSink {
     }
 }
 
-fn domain_prefix(domain: PerformanceDomain) -> &'static str {
+const fn domain_prefix(domain: PerformanceDomain) -> &'static str {
     match domain {
         PerformanceDomain::Sftp => "fluxterm.sftp.",
-        PerformanceDomain::Rdp => "fluxterm.rdp.",
     }
 }
 
@@ -805,60 +804,6 @@ pub fn performance_telemetry_status_get(
     service.status()
 }
 
-/// 提交一批已经在 RDP Webview 聚合的指标。
-#[tauri::command]
-pub fn performance_telemetry_record_rdp_batch(
-    service: tauri::State<'_, Arc<PerformanceTelemetryService>>,
-    batch: FrontendMetricBatch,
-) -> RecordOutcomeDto {
-    let outcome = service
-        .sink
-        .as_ref()
-        .map_or(RecordOutcome::Disabled, |sink| {
-            sink.record_batch(batch.into_metric_batch())
-        });
-    outcome.into()
-}
-
-/// Webview 指标批次。
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct FrontendMetricBatch {
-    stream_id: String,
-    window: fluxterm_performance_telemetry::MetricWindow,
-    metrics: Vec<fluxterm_performance_telemetry::MetricPoint>,
-}
-
-impl FrontendMetricBatch {
-    fn into_metric_batch(self) -> MetricBatch {
-        MetricBatch {
-            stream_id: self.stream_id,
-            window: self.window,
-            metrics: self.metrics,
-        }
-    }
-}
-
-/// 可序列化记录结果。
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RecordOutcomeDto {
-    outcome: &'static str,
-}
-
-impl From<RecordOutcome> for RecordOutcomeDto {
-    fn from(value: RecordOutcome) -> Self {
-        Self {
-            outcome: match value {
-                RecordOutcome::Accepted => "accepted",
-                RecordOutcome::Dropped => "dropped",
-                RecordOutcome::Invalid => "invalid",
-                RecordOutcome::Disabled => "disabled",
-            },
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -888,44 +833,25 @@ mod tests {
     }
 
     fn test_stream(kind: StreamKind) -> StreamDescriptor {
-        let parameters = if kind == StreamKind::RdpSession {
-            BTreeMap::from([
-                ("width".into(), StreamParameter::Unsigned(1920)),
-                ("height".into(), StreamParameter::Unsigned(1080)),
-                ("wallpaper".into(), StreamParameter::Bool(false)),
-                ("fullWindowDrag".into(), StreamParameter::Bool(false)),
-                ("menuAnimations".into(), StreamParameter::Bool(false)),
-                ("theming".into(), StreamParameter::Bool(true)),
-                ("cursorShadow".into(), StreamParameter::Bool(false)),
-                ("cursorSettings".into(), StreamParameter::Bool(true)),
-                ("fontSmoothing".into(), StreamParameter::Bool(true)),
-                ("desktopComposition".into(), StreamParameter::Bool(true)),
-            ])
-        } else {
-            BTreeMap::from([
-                (
-                    "chunkSizeBytes".into(),
-                    StreamParameter::Unsigned(32 * 1024),
-                ),
-                ("requestWindow".into(), StreamParameter::Unsigned(8)),
-                ("workerCount".into(), StreamParameter::Unsigned(1)),
-            ])
-        };
+        let parameters = BTreeMap::from([
+            (
+                "chunkSizeBytes".into(),
+                StreamParameter::Unsigned(32 * 1024),
+            ),
+            ("requestWindow".into(), StreamParameter::Unsigned(8)),
+            ("workerCount".into(), StreamParameter::Unsigned(1)),
+        ]);
         create_stream_descriptor(
             kind,
             unix_time_ms(),
             parameters,
             StreamTarget {
                 host: "server.internal".into(),
-                port: if kind == StreamKind::RdpSession {
-                    3389
-                } else {
-                    22
-                },
+                port: 22,
             },
             StreamCorrelation {
                 session_id: "31a0ae31-4116-4909-95be-0b81c1ab2ad9".into(),
-                transfer_id: (kind != StreamKind::RdpSession).then(|| "sftp-1780000000000".into()),
+                transfer_id: Some("sftp-1780000000000".into()),
             },
         )
     }
@@ -1000,17 +926,17 @@ mod tests {
         let sink = ChannelSink {
             sender,
             source: test_source(),
-            domains: BTreeSet::from([PerformanceDomain::Rdp]),
+            domains: BTreeSet::from([PerformanceDomain::Sftp]),
             interval_ms: 1000,
             streams: Arc::new(Mutex::new(HashMap::new())),
             counters: Arc::clone(&counters),
         };
         let first = sink.try_send(WorkerMessage::Open {
-            stream: test_stream(StreamKind::RdpSession),
+            stream: test_stream(StreamKind::SftpDownloadFile),
             datagram: Vec::new(),
         });
         let second = sink.try_send(WorkerMessage::Open {
-            stream: test_stream(StreamKind::RdpSession),
+            stream: test_stream(StreamKind::SftpDownloadFile),
             datagram: Vec::new(),
         });
         assert_eq!(first, RecordOutcome::Accepted);
@@ -1026,12 +952,12 @@ mod tests {
         let sink = ChannelSink {
             sender,
             source: test_source(),
-            domains: BTreeSet::from([PerformanceDomain::Rdp]),
+            domains: BTreeSet::from([PerformanceDomain::Sftp]),
             interval_ms: 1000,
             streams: Arc::clone(&streams),
             counters,
         };
-        let stream = test_stream(StreamKind::RdpSession);
+        let stream = test_stream(StreamKind::SftpDownloadFile);
         let stream_id = stream.id.clone();
         assert_eq!(sink.open_stream(stream), RecordOutcome::Accepted);
         assert_eq!(
@@ -1051,19 +977,19 @@ mod tests {
             PerformanceTelemetryConfig {
                 destination: receiver.local_addr().expect("address"),
                 interval_ms: 250,
-                domains: BTreeSet::from([PerformanceDomain::Rdp]),
+                domains: BTreeSet::from([PerformanceDomain::Sftp]),
             },
             test_device(),
         )
         .expect("service");
         let sink = service.sink().expect("sink");
-        let stream = test_stream(StreamKind::RdpSession);
+        let stream = test_stream(StreamKind::SftpDownloadFile);
         let stream_id = stream.id.clone();
         assert_eq!(sink.open_stream(stream), RecordOutcome::Accepted);
 
-        let fps = gauge_metric(
-            "fluxterm.rdp.renderer.fps",
-            MetricUnit::FramePerSecond,
+        let throughput = gauge_metric(
+            "fluxterm.sftp.transfer.throughput",
+            MetricUnit::BytePerSecond,
             60.0,
         );
         assert_eq!(
@@ -1073,7 +999,7 @@ mod tests {
                     started_at_unix_ms: unix_time_ms().saturating_sub(1000),
                     duration_ms: 1000,
                 },
-                metrics: vec![fps],
+                metrics: vec![throughput],
             }),
             RecordOutcome::Accepted
         );
@@ -1092,29 +1018,5 @@ mod tests {
         assert!(matches!(messages[1], Message::MetricsSnapshot(_)));
         assert!(matches!(messages[2], Message::StreamClosed(_)));
         service.shutdown();
-    }
-
-    #[test]
-    fn deserializes_frontend_metric_shape() {
-        let batch: FrontendMetricBatch = serde_json::from_value(json!({
-            "streamId": Uuid::new_v4().to_string(),
-            "window": {
-                "startedAtUnixMs": 1,
-                "durationMs": 1000
-            },
-            "metrics": [{
-                "name": "fluxterm.rdp.renderer.fps",
-                "kind": "gauge",
-                "unit": "{frame}/s",
-                "value": 60,
-                "attributes": {
-                    "rendererMode": "worker",
-                    "visibility": "visible",
-                    "resolutionClass": "fullHd"
-                }
-            }]
-        }))
-        .expect("frontend batch");
-        assert_eq!(batch.metrics.len(), 1);
     }
 }

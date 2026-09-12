@@ -184,10 +184,9 @@ pub fn encode_stream_snapshot(
     })
 }
 
-fn domain_prefix(domain: crate::PerformanceDomain) -> &'static str {
+const fn domain_prefix(domain: crate::PerformanceDomain) -> &'static str {
     match domain {
         crate::PerformanceDomain::Sftp => "fluxterm.sftp.",
-        crate::PerformanceDomain::Rdp => "fluxterm.rdp.",
     }
 }
 
@@ -288,40 +287,21 @@ mod tests {
         create_stream_descriptor(
             kind,
             1,
-            if kind == StreamKind::RdpSession {
-                BTreeMap::from([
-                    ("width".into(), StreamParameter::Unsigned(1920)),
-                    ("height".into(), StreamParameter::Unsigned(1080)),
-                    ("wallpaper".into(), StreamParameter::Bool(false)),
-                    ("fullWindowDrag".into(), StreamParameter::Bool(false)),
-                    ("menuAnimations".into(), StreamParameter::Bool(false)),
-                    ("theming".into(), StreamParameter::Bool(true)),
-                    ("cursorShadow".into(), StreamParameter::Bool(false)),
-                    ("cursorSettings".into(), StreamParameter::Bool(true)),
-                    ("fontSmoothing".into(), StreamParameter::Bool(true)),
-                    ("desktopComposition".into(), StreamParameter::Bool(true)),
-                ])
-            } else {
-                BTreeMap::from([
-                    (
-                        "chunkSizeBytes".into(),
-                        StreamParameter::Unsigned(32 * 1024),
-                    ),
-                    ("requestWindow".into(), StreamParameter::Unsigned(8)),
-                    ("workerCount".into(), StreamParameter::Unsigned(1)),
-                ])
-            },
+            BTreeMap::from([
+                (
+                    "chunkSizeBytes".into(),
+                    StreamParameter::Unsigned(32 * 1024),
+                ),
+                ("requestWindow".into(), StreamParameter::Unsigned(8)),
+                ("workerCount".into(), StreamParameter::Unsigned(1)),
+            ]),
             StreamTarget {
                 host: "server.internal".into(),
-                port: if kind == StreamKind::RdpSession {
-                    3389
-                } else {
-                    22
-                },
+                port: 22,
             },
             StreamCorrelation {
                 session_id: "31a0ae31-4116-4909-95be-0b81c1ab2ad9".into(),
-                transfer_id: (kind != StreamKind::RdpSession).then(|| "sftp-1".into()),
+                transfer_id: Some("sftp-1".into()),
             },
         )
     }
@@ -344,12 +324,12 @@ mod tests {
 
     #[test]
     fn snapshot_is_split_bounded_and_round_trips() {
-        let stream = stream(StreamKind::RdpSession);
+        let stream = stream(StreamKind::SftpDownloadFile);
         let metrics = (0..20)
             .map(|_| {
                 gauge_metric(
-                    "fluxterm.rdp.renderer.fps",
-                    MetricUnit::FramePerSecond,
+                    "fluxterm.sftp.transfer.throughput",
+                    MetricUnit::BytePerSecond,
                     60.0,
                 )
             })
@@ -387,11 +367,12 @@ mod tests {
         let mut invalid_source = source();
         invalid_source.application = "other".into();
         assert!(
-            encode_stream_opened(&invalid_source, &stream(StreamKind::RdpSession), 0, 1).is_err()
+            encode_stream_opened(&invalid_source, &stream(StreamKind::SftpDownloadFile), 0, 1)
+                .is_err()
         );
 
-        let mut invalid_stream = stream(StreamKind::RdpSession);
-        invalid_stream.target.host = "https://rdp.internal/path".into();
+        let mut invalid_stream = stream(StreamKind::SftpDownloadFile);
+        invalid_stream.target.host = "https://sftp.internal/path".into();
         assert!(encode_stream_opened(&source(), &invalid_stream, 0, 1).is_err());
 
         let mut invalid_parameters = stream(StreamKind::SftpUploadFile);
@@ -400,7 +381,7 @@ mod tests {
             .insert("path".into(), StreamParameter::Text("sensitive".into()));
         assert!(encode_stream_opened(&source(), &invalid_parameters, 0, 1).is_err());
 
-        let stream = stream(StreamKind::RdpSession);
+        let stream = stream(StreamKind::SftpDownloadFile);
         let batch_id = format!("{}:0", stream.id);
         let encoded = encode_stream_snapshot(
             &source(),
@@ -409,7 +390,7 @@ mod tests {
                 started_at_unix_ms: 1,
                 duration_ms: 1000,
             },
-            vec![gauge_metric("fluxterm.unknown", MetricUnit::Count, 1.0)],
+            vec![gauge_metric("fluxterm.unknown", MetricUnit::Byte, 1.0)],
             1,
             &batch_id,
             1001,

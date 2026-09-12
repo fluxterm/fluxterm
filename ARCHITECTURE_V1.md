@@ -81,4 +81,4 @@ React 前端采用“领域能力 + 运行单元壳层”结构：
 - 配置根目录由 `src-tauri/src/config_paths.rs` 解析
 - 应用运行数据存放于 `app_data_dir`
 - 凭据采用本地 Provider 加密存储
-- SSH 与 RDP 可复用凭据按协议类型隔离保存在统一密码管理器中，Profile 通过 `credentialId` 动态引用
+- SSH 可复用凭据保存在统一密码管理器中，Profile 通过 `credentialId` 动态引用

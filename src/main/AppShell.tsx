@@ -69,7 +69,6 @@ import type {
   HostProfile,
   LocalShellConfig,
   LocalShellProfile,
-  RdpProfile,
   SerialProfile,
   Session,
   SshConnectStateMap,
@@ -90,13 +89,6 @@ import useCommandHistoryState from "@/hooks/useCommandHistoryState";
 import useAiState from "@/hooks/useAiState";
 import useSshTunnelState from "@/hooks/useSshTunnelState";
 import {
-  deleteRdpProfile,
-  listRdpProfileGroups,
-  listRdpProfiles,
-  saveRdpProfile,
-  saveRdpProfileGroups,
-} from "@/features/rdp/core/commands";
-import {
   WIDGET_AI_CHANNEL,
   type FloatingAiMessage,
   type FloatingAiSnapshot,
@@ -114,7 +106,6 @@ import {
   type FloatingEventsSnapshot,
 } from "@/features/session/core/widgetEventsSync";
 import {
-  getMissingRdpConnectionFields,
   getMissingSshConnectionFields,
   type ConnectionRequiredField,
 } from "@/features/session/core/connectionValidation";
@@ -181,7 +172,6 @@ import {
 
 const widgetLabelKeys: Record<WidgetKey, TranslationKey> = {
   profiles: "widget.profiles",
-  rdp: "widget.rdp",
   serial: "widget.serial",
   files: "widget.files",
   transfers: "widget.transfers",
@@ -199,9 +189,6 @@ const ProfileModal = lazy(
 );
 const LocalShellProfileModal = lazy(
   () => import("@/main/components/modals/LocalShellProfileModal"),
-);
-const RdpProfileModal = lazy(
-  () => import("@/main/components/modals/RdpProfileModal"),
 );
 const SerialProfileModal = lazy(
   () => import("@/main/components/modals/SerialProfileModal"),
@@ -249,24 +236,6 @@ type PendingSerialConnectRuntime = {
   operationId: string;
   cancelled: boolean;
 };
-
-function normalizeRdpGroupName(value: string) {
-  return value.trim();
-}
-
-function dedupeRdpGroups(values: string[]) {
-  const seen = new Set<string>();
-  const list: string[] = [];
-  values.forEach((item) => {
-    const normalized = normalizeRdpGroupName(item);
-    if (!normalized) return;
-    const key = normalized.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    list.push(normalized);
-  });
-  return list.sort((a, b) => a.localeCompare(b));
-}
 
 function formatOpenSshImportToast(
   t: Translate,
@@ -541,20 +510,6 @@ export default function AppShell() {
   const [profileModalMode, setProfileModalMode] = useState<"new" | "edit">(
     "new",
   );
-  const [rdpProfileModalOpen, setRdpProfileModalOpen] = useState(false);
-  const [rdpProfileModalMode, setRdpProfileModalMode] = useState<
-    "new" | "edit"
-  >("new");
-  const [rdpProfileModalProfileId, setRdpProfileModalProfileId] = useState<
-    string | null
-  >(null);
-  const [rdpProfileModalDefaultGroup, setRdpProfileModalDefaultGroup] =
-    useState<string | null>(null);
-  const [rdpProfiles, setRdpProfiles] = useState<RdpProfile[]>([]);
-  const [rdpGroups, setRdpGroups] = useState<string[]>([]);
-  const [activeRdpProfileId, setActiveRdpProfileId] = useState<string | null>(
-    null,
-  );
   const [serialProfileModalOpen, setSerialProfileModalOpen] = useState(false);
   const [activeSerialProfileId, setActiveSerialProfileId] = useState<
     string | null
@@ -588,7 +543,6 @@ export default function AppShell() {
     setQuickbarManagerOpen(false);
     setConfigModalOpen(false);
     setProfileModalOpen(false);
-    setRdpProfileModalOpen(false);
     setSerialProfileModalOpen(false);
     setLocalShellProfileModalOpen(false);
     dialogs.forEach((dialog) => closeDialog(dialog.id));
@@ -672,7 +626,6 @@ export default function AppShell() {
     if (!match) return null;
     const value = match[1];
     if (value === "profiles") return "profiles";
-    if (value === "rdp") return "rdp";
     if (value === "serial") return "serial";
     if (value === "files") return "files";
     if (value === "transfers") return "transfers";
@@ -752,61 +705,6 @@ export default function AppShell() {
     setProfileModalOpen(false);
   }
 
-  const refreshRdpProfiles = useCallback(async () => {
-    const [next, persistedGroups] = await Promise.all([
-      listRdpProfiles(),
-      listRdpProfileGroups(),
-    ]);
-    setRdpProfiles(next);
-    const discoveredGroups = next
-      .map((item) => normalizeRdpGroupName(item.tags?.[0] ?? ""))
-      .filter(Boolean);
-    setRdpGroups(dedupeRdpGroups([...persistedGroups, ...discoveredGroups]));
-    setActiveRdpProfileId((current) => {
-      if (current && next.some((item) => item.id === current)) {
-        return current;
-      }
-      return next[0]?.id ?? null;
-    });
-    return next;
-  }, []);
-
-  const openNewRdpProfileModal = useCallback((defaultGroup?: string | null) => {
-    setRdpProfileModalMode("new");
-    setRdpProfileModalProfileId(null);
-    setRdpProfileModalDefaultGroup(defaultGroup?.trim() || null);
-    setRdpProfileModalOpen(true);
-  }, []);
-
-  const openEditRdpProfileModal = useCallback((profile: RdpProfile) => {
-    setActiveRdpProfileId(profile.id);
-    setRdpProfileModalMode("edit");
-    setRdpProfileModalProfileId(profile.id);
-    setRdpProfileModalDefaultGroup(null);
-    setRdpProfileModalOpen(true);
-  }, []);
-
-  function closeRdpProfileModal() {
-    setRdpProfileModalOpen(false);
-    setRdpProfileModalProfileId(null);
-    setRdpProfileModalDefaultGroup(null);
-  }
-
-  useEffect(() => {
-    const cancel = scheduleDeferredTask(() => {
-      void refreshRdpProfiles().catch(() => {});
-    });
-    return cancel;
-  }, [refreshRdpProfiles]);
-
-  useEffect(() => {
-    const handleFocus = () => {
-      void refreshRdpProfiles().catch(() => {});
-    };
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [refreshRdpProfiles]);
-
   const openLocalShellProfile = useCallback(
     (shell: LocalShellProfile) => {
       setActiveLocalShellProfile(shell);
@@ -873,7 +771,6 @@ export default function AppShell() {
   const widgetLabels = useMemo(
     () => ({
       profiles: t(widgetLabelKeys.profiles),
-      rdp: t(widgetLabelKeys.rdp),
       serial: t(widgetLabelKeys.serial),
       files: t(widgetLabelKeys.files),
       transfers: t(widgetLabelKeys.transfers),
@@ -1356,7 +1253,6 @@ export default function AppShell() {
     launchSubApp,
     focusSubApp,
     closeSubApp,
-    connectRdpProfile,
     openAllDevtools: openAllSubAppDevtools,
     notifyMainShutdown,
   } = useSubApps({
@@ -2393,32 +2289,6 @@ export default function AppShell() {
     ],
   );
 
-  const handleConnectRdpProfile = useCallback(
-    async (profile: RdpProfile) => {
-      if (securityStatus.locked) {
-        openDialog({
-          title: t("dialog.sshErrorTitle"),
-          message: t("error.securityLocked"),
-        });
-        return;
-      }
-      const missingFields = getMissingRdpConnectionFields(profile);
-      if (missingFields.length > 0) {
-        openIncompleteConnectionDialog(missingFields);
-        return;
-      }
-      setActiveRdpProfileId(profile.id);
-      await connectRdpProfile(profile.id);
-    },
-    [
-      connectRdpProfile,
-      openDialog,
-      openIncompleteConnectionDialog,
-      securityStatus.locked,
-      t,
-    ],
-  );
-
   const handleCancelConnectProfile = useCallback(
     async (profileId: string) => {
       const runtime = sshConnectRuntimeRef.current[profileId];
@@ -2434,173 +2304,6 @@ export default function AppShell() {
         .catch(() => {});
     },
     [sessionActions, setSshConnectingState, t],
-  );
-
-  const handleRemoveRdpProfile = useCallback(
-    async (profile: RdpProfile) => {
-      await deleteRdpProfile(profile.id);
-      const next = await refreshRdpProfiles();
-      if (!next.length) {
-        setActiveRdpProfileId(null);
-        return;
-      }
-      if (activeRdpProfileId !== profile.id) {
-        return;
-      }
-      const removedIndex = rdpProfiles.findIndex(
-        (item) => item.id === profile.id,
-      );
-      const fallbackProfile =
-        next[Math.min(removedIndex, next.length - 1)] ?? next[0] ?? null;
-      setActiveRdpProfileId(fallbackProfile?.id ?? null);
-    },
-    [activeRdpProfileId, rdpProfiles, refreshRdpProfiles],
-  );
-
-  const persistRdpGroups = useCallback((nextGroups: string[]) => {
-    setRdpGroups(nextGroups);
-    return saveRdpProfileGroups(nextGroups);
-  }, []);
-
-  const addRdpGroup = useCallback(
-    (groupName: string) => {
-      const normalized = normalizeRdpGroupName(groupName);
-      if (!normalized) return false;
-      if (
-        rdpGroups.some(
-          (item) => item.toLowerCase() === normalized.toLowerCase(),
-        )
-      ) {
-        return false;
-      }
-      const nextGroups = dedupeRdpGroups([...rdpGroups, normalized]);
-      persistRdpGroups(nextGroups).catch(() => {});
-      return true;
-    },
-    [persistRdpGroups, rdpGroups],
-  );
-
-  const renameRdpGroup = useCallback(
-    async (from: string, to: string) => {
-      const source = normalizeRdpGroupName(from);
-      const target = normalizeRdpGroupName(to);
-      if (!source || !target) return false;
-      if (source.toLowerCase() === target.toLowerCase()) return false;
-      if (
-        rdpGroups.some((item) => item.toLowerCase() === target.toLowerCase())
-      ) {
-        return false;
-      }
-      const affected = rdpProfiles.filter(
-        (item) =>
-          normalizeRdpGroupName(item.tags?.[0] ?? "").toLowerCase() ===
-          source.toLowerCase(),
-      );
-      if (!affected.length) {
-        const nextGroups = dedupeRdpGroups(
-          rdpGroups.map((item) =>
-            item.toLowerCase() === source.toLowerCase() ? target : item,
-          ),
-        );
-        await persistRdpGroups(nextGroups);
-        return true;
-      }
-      try {
-        const savedProfiles = await Promise.all(
-          affected.map((item) =>
-            saveRdpProfile({
-              ...item,
-              tags: [target],
-            }),
-          ),
-        );
-        const savedMap = new Map(
-          savedProfiles.map((item) => [item.id, item] as const),
-        );
-        const nextGroups = dedupeRdpGroups(
-          rdpGroups.map((item) =>
-            item.toLowerCase() === source.toLowerCase() ? target : item,
-          ),
-        );
-        await persistRdpGroups(nextGroups);
-        setRdpProfiles((prev) =>
-          prev.map((item) => savedMap.get(item.id) ?? item),
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [persistRdpGroups, rdpGroups, rdpProfiles],
-  );
-
-  const removeRdpGroup = useCallback(
-    async (groupName: string) => {
-      const target = normalizeRdpGroupName(groupName);
-      if (!target) return false;
-      const targetKey = target.toLowerCase();
-      const exists = rdpGroups.some((item) => item.toLowerCase() === targetKey);
-      if (!exists) return false;
-      const affected = rdpProfiles.filter(
-        (item) =>
-          normalizeRdpGroupName(item.tags?.[0] ?? "").toLowerCase() ===
-          targetKey,
-      );
-      if (!affected.length) {
-        await persistRdpGroups(
-          rdpGroups.filter((item) => item.toLowerCase() !== targetKey),
-        );
-        return true;
-      }
-      try {
-        const savedProfiles = await Promise.all(
-          affected.map((item) =>
-            saveRdpProfile({
-              ...item,
-              tags: null,
-            }),
-          ),
-        );
-        const savedMap = new Map(
-          savedProfiles.map((item) => [item.id, item] as const),
-        );
-        await persistRdpGroups(
-          rdpGroups.filter((item) => item.toLowerCase() !== targetKey),
-        );
-        setRdpProfiles((prev) =>
-          prev.map((item) => savedMap.get(item.id) ?? item),
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [persistRdpGroups, rdpGroups, rdpProfiles],
-  );
-
-  const moveRdpProfileToGroup = useCallback(
-    async (profileId: string, targetGroup: string | null) => {
-      const profile = rdpProfiles.find((item) => item.id === profileId);
-      if (!profile) return false;
-      const nextGroup = normalizeRdpGroupName(targetGroup ?? "");
-      try {
-        const saved = await saveRdpProfile({
-          ...profile,
-          tags: nextGroup ? [nextGroup] : null,
-        });
-        if (nextGroup) {
-          const nextGroups = dedupeRdpGroups([...rdpGroups, nextGroup]);
-          await persistRdpGroups(nextGroups);
-        }
-        setRdpProfiles((prev) =>
-          prev.map((item) => (item.id === saved.id ? saved : item)),
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    [persistRdpGroups, rdpGroups, rdpProfiles],
   );
 
   async function handleSaveSessionBuffer(sessionId: string) {
@@ -3191,16 +2894,12 @@ export default function AppShell() {
     () =>
       buildWidgets({
         profiles,
-        rdpProfiles,
-        rdpGroups,
         serialProfiles: effectiveSerialProfiles,
         serialGroups: effectiveSerialGroups,
         connectingSerialProfileIds: effectiveConnectingSerialProfileIds,
         sshGroups,
         activeProfileId,
         sshConnectingProfiles: connectingSshProfiles,
-        activeRdpProfileId,
-        rdpConnectingProfiles: {},
         availableShells,
         activeSessionId: AiWidgetState.activeSessionId,
         broadcastActiveSessionId: isFloatingBroadcastWidget
@@ -3240,10 +2939,8 @@ export default function AppShell() {
         locale,
         t,
         pickProfile,
-        pickRdpProfile: setActiveRdpProfileId,
         onConnectProfile: handleConnectProfile,
         onCancelSshConnectProfile: handleCancelConnectProfile,
-        onConnectRdpProfile: handleConnectRdpProfile,
         onConnectSerialProfile: (profile) => {
           void connectSerialProfile(profile);
         },
@@ -3257,13 +2954,6 @@ export default function AppShell() {
         onRemoveSerialProfile: removeSerialProfile,
         onSaveSerialGroups: saveSerialGroups,
         onMoveSerialProfileToGroup: moveSerialProfileToGroup,
-        onOpenNewRdpProfile: openNewRdpProfileModal,
-        onOpenEditRdpProfile: openEditRdpProfileModal,
-        onRemoveRdpProfile: handleRemoveRdpProfile,
-        onAddRdpGroup: addRdpGroup,
-        onRenameRdpGroup: renameRdpGroup,
-        onRemoveRdpGroup: removeRdpGroup,
-        onMoveRdpProfileToGroup: moveRdpProfileToGroup,
         onOpenNewProfile: openNewProfile,
         onImportOpenSshConfig: () => {
           importOpenSshConfig()
@@ -3341,8 +3031,6 @@ export default function AppShell() {
       }),
     [
       profiles,
-      rdpProfiles,
-      rdpGroups,
       effectiveSerialProfiles,
       effectiveSerialGroups,
       effectiveConnectingSerialProfileIds,
@@ -3352,7 +3040,6 @@ export default function AppShell() {
       sshGroups,
       activeProfileId,
       connectingSshProfiles,
-      activeRdpProfileId,
       availableShells,
       sessionState.activeSessionId,
       sessionState.sessions,
@@ -3386,23 +3073,15 @@ export default function AppShell() {
       duplicateProfile,
       handleConnectProfile,
       handleCancelConnectProfile,
-      handleConnectRdpProfile,
       connectSerialProfile,
       cancelSerialProfileConnect,
       openNewSerialProfile,
       openEditSerialProfile,
       removeSerialProfile,
-      handleRemoveRdpProfile,
       handleBroadcastCommand,
       postFloatingBroadcastMessage,
       sessionActions,
-      addRdpGroup,
-      renameRdpGroup,
-      removeRdpGroup,
-      moveRdpProfileToGroup,
       openNewProfile,
-      openNewRdpProfileModal,
-      openEditRdpProfileModal,
       openLocalShellProfile,
       refreshAvailableShells,
       removeProfile,
@@ -3767,27 +3446,6 @@ export default function AppShell() {
             t={t}
           />
         ) : null}
-        {rdpProfileModalOpen ? (
-          <RdpProfileModal
-            open={rdpProfileModalOpen}
-            mode={rdpProfileModalMode}
-            initialProfile={
-              rdpProfileModalMode === "edit"
-                ? (rdpProfiles.find(
-                    (item) => item.id === rdpProfileModalProfileId,
-                  ) ?? null)
-                : null
-            }
-            defaultGroup={rdpProfileModalDefaultGroup}
-            groups={rdpGroups}
-            credentials={credentialsState.rdpCredentials}
-            credentialReuseDefault={credentialReuseDefault}
-            onCredentialSave={credentialsState.save}
-            onClose={closeRdpProfileModal}
-            onProfilesChange={() => refreshRdpProfiles().then(() => {})}
-            t={t}
-          />
-        ) : null}
         {serialProfileModalOpen ? (
           <SerialProfileModal
             open={serialProfileModalOpen}
@@ -3839,7 +3497,6 @@ export default function AppShell() {
             securityLoaded={securityLoaded}
             securityBusy={securityBusy}
             sshCredentials={credentialsState.sshCredentials}
-            rdpCredentials={credentialsState.rdpCredentials}
             credentialsBusy={credentialsState.busy}
             credentialReuseDefault={credentialReuseDefault}
             webLinksEnabled={webLinksEnabled}
@@ -3891,16 +3548,15 @@ export default function AppShell() {
                 if (!nextStatus.locked) {
                   await Promise.all([
                     reloadProfiles(),
-                    refreshRdpProfiles(),
                     credentialsState.reload(),
                   ]);
                 }
               })
             }
             onCredentialSave={credentialsState.save}
-            onCredentialDelete={async (credentialId, kind) => {
-              await credentialsState.remove(credentialId, kind);
-              await Promise.all([reloadProfiles(), refreshRdpProfiles()]);
+            onCredentialDelete={async (credentialId) => {
+              await credentialsState.remove(credentialId);
+              await reloadProfiles();
             }}
             onCredentialReuseDefaultChange={setCredentialReuseDefault}
             onSecurityLock={() =>

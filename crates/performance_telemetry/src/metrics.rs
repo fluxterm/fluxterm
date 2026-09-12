@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn histogram_uses_protocol_catalog_buckets_and_resets() {
-        let bounds = definition("fluxterm.rdp.renderer.frame_interval")
+        let bounds = definition("fluxterm.sftp.request.duration")
             .expect("registered metric")
             .histogram_bounds;
         let mut accumulator = HistogramAccumulator::new(bounds);
@@ -132,8 +132,8 @@ mod tests {
     #[test]
     fn constructors_create_protocol_metric_types() {
         let mut point = gauge_metric(
-            "fluxterm.rdp.renderer.fps",
-            MetricUnit::FramePerSecond,
+            "fluxterm.sftp.transfer.throughput",
+            MetricUnit::BytePerSecond,
             60.0,
         );
         assert!(validate_metric(&point).is_ok());

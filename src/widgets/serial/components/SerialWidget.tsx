@@ -60,7 +60,7 @@ function normalizeGroups(groups: string[]) {
   return result;
 }
 
-/** 渲染与 SSH/RDP 一致的串口配置树。 */
+/** 渲染与 SSH 一致的串口配置树。 */
 export default function SerialWidget({
   profiles,
   groups,
@@ -227,7 +227,7 @@ export default function SerialWidget({
   function profileMenu(profile: SerialProfile): ContextMenuItem[] {
     return [
       {
-        label: t("rdp.actions.connect"),
+        label: t("serial.actions.connect"),
         icon: <FiPlay />,
         disabled: connecting.has(profile.id),
         onClick: () => onConnect(profile),
@@ -405,7 +405,7 @@ export default function SerialWidget({
           </div>
         ) : null}
         {profiles.length && !filteredGroups.length && !rootProfiles.length ? (
-          <div className="serial-widget-empty">{t("rdp.noMatch")}</div>
+          <div className="serial-widget-empty">{t("serial.noMatch")}</div>
         ) : null}
         {error ? <div className="serial-widget-error">{error}</div> : null}
       </div>

@@ -50,11 +50,7 @@ import {
   MIN_BACKGROUND_IMAGE_SURFACE_ALPHA,
 } from "@/hooks/useAppSettings";
 import type { ThemeId } from "@/types";
-import type {
-  CredentialKind,
-  CredentialReuseMode,
-  CredentialSummary,
-} from "@/types";
+import type { CredentialReuseMode, CredentialSummary } from "@/types";
 import CredentialManagerSection from "@/features/credential/components/CredentialManagerSection";
 import type { CredentialSaveInput } from "@/features/credential/core/commands";
 import type { TranslationKey } from "@/i18n";
@@ -129,7 +125,6 @@ type ConfigModalProps = {
   securityLoaded?: boolean;
   securityBusy?: boolean;
   sshCredentials?: CredentialSummary[];
-  rdpCredentials?: CredentialSummary[];
   credentialsBusy?: boolean;
   credentialReuseDefault?: CredentialReuseMode;
   webLinksEnabled?: boolean;
@@ -192,10 +187,7 @@ type ConfigModalProps = {
   onAiProviderTest?: (providerId: string) => Promise<void> | void;
   onSecurityUnlock?: (password: string) => Promise<void> | void;
   onCredentialSave?: (input: CredentialSaveInput) => Promise<CredentialSummary>;
-  onCredentialDelete?: (
-    credentialId: string,
-    kind: CredentialKind,
-  ) => Promise<void>;
+  onCredentialDelete?: (credentialId: string) => Promise<void>;
   onCredentialReuseDefaultChange?: (value: CredentialReuseMode) => void;
   onSecurityLock?: () => Promise<void> | void;
   onSecurityEnableStrongProtection?: (password: string) => Promise<void> | void;
@@ -300,7 +292,6 @@ export default function ConfigModal({
   securityLoaded = false,
   securityBusy = false,
   sshCredentials = [],
-  rdpCredentials = [],
   credentialsBusy = false,
   credentialReuseDefault = "reference",
   webLinksEnabled = true,
@@ -1807,7 +1798,6 @@ export default function ConfigModal({
       return (
         <CredentialManagerSection
           sshCredentials={sshCredentials}
-          rdpCredentials={rdpCredentials}
           busy={credentialsBusy}
           locked={securityStatus.locked}
           defaultReuseMode={credentialReuseDefault}

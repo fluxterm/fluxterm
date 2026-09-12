@@ -4,7 +4,7 @@
 
 ![Preview](https://github.com/fluxterm/fluxterm/blob/main/docs/assets/preview.png)
 
-**FluxTerm** is a modern desktop terminal built with `Tauri + Rust + React`. It brings local shells, SSH, SFTP, RDP remote desktop sessions, and terminal AI assistance into one application.
+**FluxTerm** is a modern desktop terminal built with `Tauri + Rust + React`. It brings local shells, SSH, SFTP, serial sessions, and terminal AI assistance into one application.
 
 ## Design Inspiration
 
@@ -14,7 +14,7 @@ FluxTerm is not intended to clone an existing product. Its goal is to build a ma
 
 ## Acknowledgements
 
-FluxTerm is built on top of many open source projects that provide the foundations for desktop integration, terminal workflows, SSH/SFTP, RDP, and authentication. See [Acknowledgements](./docs/acknowledgements.md) for project credits.
+FluxTerm is built on top of many open source projects that provide the foundations for desktop integration, terminal workflows, SSH/SFTP, and authentication. See [Acknowledgements](./docs/acknowledgements.md) for project credits.
 
 ## Contributing
 
