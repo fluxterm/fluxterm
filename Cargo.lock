@@ -2181,7 +2181,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
@@ -2224,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-engine"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2246,7 +2246,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-logging"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "log",
  "serde_json",
@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-openai"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "fluxterm-logging",
  "log",
@@ -2266,7 +2266,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-performance-telemetry"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "fluxterm-pulse-protocol",
  "serde_json",
@@ -2286,7 +2286,7 @@ dependencies = [
 
 [[package]]
 name = "fluxterm-rdp-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "axum",
  "base64 0.22.1",

@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-09-12
+
 ### Changed
 
 - **SSH、SFTP 与 RDP 依赖升级**: SSH 协议库升级至 russh 0.63.2，SFTP 升级至 russh-sftp 3.0.0，RDP 升级至 IronRDP 0.17.0，并同步更新认证依赖链。
