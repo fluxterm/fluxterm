@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "App version (e.g. 0.1.0-rc.1)"
+        description: "App version (e.g. 0.1.0)"
         required: true
       release_name:
         description: "The name of the release."
