@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -266,6 +266,45 @@ export default function useMacAppMenu({
   onOpenAbout,
   t,
 }: UseMacAppMenuOptions) {
+  const callbacksRef = useRef({
+    onToggleCollapsed,
+    onToggleFooterPart,
+    onOpenConfigSection,
+    onLaunchSubApp,
+    onFocusSubApp,
+    onCloseSubApp,
+    onOpenAbout,
+  });
+
+  // 菜单动作读取最近一次提交的回调，函数引用变化不触发原生菜单重建。
+  useLayoutEffect(() => {
+    callbacksRef.current = {
+      onToggleCollapsed,
+      onToggleFooterPart,
+      onOpenConfigSection,
+      onLaunchSubApp,
+      onFocusSubApp,
+      onCloseSubApp,
+      onOpenAbout,
+    };
+  }, [
+    onToggleCollapsed,
+    onToggleFooterPart,
+    onOpenConfigSection,
+    onLaunchSubApp,
+    onFocusSubApp,
+    onCloseSubApp,
+    onOpenAbout,
+  ]);
+
+  const { left, right, bottom } = layoutCollapsed;
+  const { quickbar, statusbar } = footerVisibility;
+  const hasSubAppActions = Boolean(
+    onLaunchSubApp && onFocusSubApp && onCloseSubApp,
+  );
+  // 按菜单内容比较子应用列表，避免相同内容的新数组触发重建。
+  const subAppsSnapshot = JSON.stringify(subApps);
+
   useEffect(() => {
     if (!isMacOS() || !isTauri()) {
       return;
@@ -275,6 +314,7 @@ export default function useMacAppMenu({
     }
 
     let cancelled = false;
+    const openAbout = () => callbacksRef.current.onOpenAbout();
 
     const applyMenu = async () => {
       try {
@@ -287,7 +327,7 @@ export default function useMacAppMenu({
           : await createAppMenu({
               appName: t("app.name"),
               t,
-              onOpenAbout,
+              onOpenAbout: openAbout,
             });
         const windowMenu = await createWindowMenu(t("menu.window.title"));
         if (locked) {
@@ -304,28 +344,32 @@ export default function useMacAppMenu({
         }
         // macOS 原生菜单的“配置”入口必须与 Windows/Web 的 Menus.tsx 保持同步，
         // 后续新增或调整配置分组时，两处都要一起修改，避免某个平台缺入口。
-        const configMenu = await createConfigMenu(onOpenConfigSection, t);
-        const layoutMenu = await createLayoutMenu(
-          layoutCollapsed,
-          onToggleCollapsed,
-          footerVisibility,
-          onToggleFooterPart ?? (() => {}),
+        const configMenu = await createConfigMenu(
+          (section) => callbacksRef.current.onOpenConfigSection(section),
           t,
         );
-        const appsMenu =
-          onLaunchSubApp && onFocusSubApp && onCloseSubApp
-            ? await createSubAppMenu({
-                subApps,
-                onLaunchSubApp,
-                onFocusSubApp,
-                onCloseSubApp,
-                t,
-              })
-            : null;
+        const layoutMenu = await createLayoutMenu(
+          { left, right, bottom },
+          (side) => callbacksRef.current.onToggleCollapsed(side),
+          { quickbar, statusbar },
+          (part) => callbacksRef.current.onToggleFooterPart?.(part),
+          t,
+        );
+        const appsMenu = hasSubAppActions
+          ? await createSubAppMenu({
+              subApps: JSON.parse(subAppsSnapshot) as NonNullable<
+                UseMacAppMenuOptions["subApps"]
+              >,
+              onLaunchSubApp: (id) => callbacksRef.current.onLaunchSubApp?.(id),
+              onFocusSubApp: (id) => callbacksRef.current.onFocusSubApp?.(id),
+              onCloseSubApp: (id) => callbacksRef.current.onCloseSubApp?.(id),
+              t,
+            })
+          : null;
         const editMenu = await createEditMenu(t("menu.edit.title"));
         const helpMenu = await createHelpMenu(
           t("menu.help.title"),
-          onOpenAbout,
+          openAbout,
           t,
         );
 
@@ -370,16 +414,13 @@ export default function useMacAppMenu({
     };
   }, [
     locked,
-    layoutCollapsed,
-    onToggleCollapsed,
-    footerVisibility,
-    onToggleFooterPart,
-    onOpenConfigSection,
-    subApps,
-    onLaunchSubApp,
-    onFocusSubApp,
-    onCloseSubApp,
-    onOpenAbout,
+    left,
+    right,
+    bottom,
+    quickbar,
+    statusbar,
+    hasSubAppActions,
+    subAppsSnapshot,
     t,
   ]);
 }
