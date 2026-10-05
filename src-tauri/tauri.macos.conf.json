@@ -1,7 +1,13 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "identifier": "cc.vust.fluxterm",
-  "bundle": { "targets": ["app", "dmg"] },
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "macOS": {
+      "signingIdentity": "-",
+      "infoPlist": "Info.plist"
+    }
+  },
   "app": {
     "enableGTKAppId": false,
     "macOSPrivateApi": true,

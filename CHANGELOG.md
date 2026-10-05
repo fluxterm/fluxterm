@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS 本地网络访问**: 修复发布版独立启动后，本地终端访问局域网出现 `No route to host` 的问题。
+
 ## [0.11.0] - 2026-09-29
 
 ### Changed
