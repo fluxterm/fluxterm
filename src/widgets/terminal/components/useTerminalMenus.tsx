@@ -34,7 +34,7 @@ type TerminalContextMenuProps = {
   onSendSelectionToAi: (selectionText: string) => Promise<void>;
   aiSelectionEnabled: boolean;
   onPaste: () => Promise<boolean>;
-  onClear: () => boolean;
+  onClear: () => Promise<boolean>;
   onOpenSearch: () => void;
   onOpenLink: () => Promise<boolean>;
   onCopyLink: () => Promise<boolean>;
@@ -205,7 +205,7 @@ export default function useTerminalMenus({
                 icon: <FiSlash />,
                 disabled: !activeSessionId,
                 onClick: () => {
-                  onClear();
+                  onClear().catch(() => {});
                   closeMenu();
                 },
               },

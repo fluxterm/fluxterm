@@ -914,6 +914,8 @@ export default function AppShell() {
       );
     },
     isLocalSession: sessionActions.isLocalSession,
+    resolveLocalShellId: (sessionId) =>
+      sessionRefs.localSessionMetaRef.current[sessionId]?.shellId ?? null,
     isSerialSession: sessionActions.isSerialSession,
     reconnectSession: sessionActions.reconnectSession,
     reconnectLocalShell: sessionActions.reconnectLocalShell,

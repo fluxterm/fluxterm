@@ -68,6 +68,7 @@ import {
 } from "@/hooks/useSessionSettings";
 import { resolveTerminalHostKeyAction } from "@/hooks/terminalHostShortcuts";
 import { isMacOS } from "@/utils/platform";
+import { TERMINAL_CLEAR_SCREEN_INPUT } from "@/constants/terminalControl";
 import type { ResolvedTerminalTheme } from "@/main/theme/buildTerminalTheme";
 
 type UseTerminalRuntimeProps = {
@@ -109,6 +110,7 @@ type UseTerminalRuntimeProps = {
     status: TerminalCwdSupport,
   ) => void;
   isLocalSession: (sessionId: string | null) => boolean;
+  resolveLocalShellId?: (sessionId: string) => string | null;
   isSerialSession: (sessionId: string | null) => boolean;
   reconnectSession: (sessionId: string) => Promise<void>;
   reconnectLocalShell: (sessionId: string) => Promise<void>;
@@ -171,7 +173,7 @@ type TerminalRuntime = {
   copyActiveLink: () => Promise<boolean>;
   closeActiveLinkMenu: () => void;
   pasteToActiveTerminal: () => Promise<boolean>;
-  clearActiveTerminal: () => boolean;
+  clearActiveTerminal: () => Promise<boolean>;
   clearActiveSearchDecorations: () => void;
   searchActiveTerminalNext: (
     keyword: string,
@@ -511,6 +513,7 @@ export default function useTerminalRuntime({
   onWorkingDirectoryChange,
   onPathSyncSupportChange,
   isLocalSession,
+  resolveLocalShellId,
   isSerialSession,
   reconnectSession,
   reconnectLocalShell,
@@ -592,6 +595,7 @@ export default function useTerminalRuntime({
     onPathSyncSupportChange,
     resolveBellConfig,
     isLocalSession,
+    resolveLocalShellId,
     isSerialSession,
     reconnectSession,
     reconnectLocalShell,
@@ -710,6 +714,7 @@ export default function useTerminalRuntime({
       onPathSyncSupportChange,
       resolveBellConfig,
       isLocalSession,
+      resolveLocalShellId,
       isSerialSession,
       reconnectSession,
       reconnectLocalShell,
@@ -720,6 +725,7 @@ export default function useTerminalRuntime({
     };
   }, [
     isLocalSession,
+    resolveLocalShellId,
     isSerialSession,
     resolveBellConfig,
     reconnectLocalShell,
@@ -2652,13 +2658,38 @@ export default function useTerminalRuntime({
     }
   }
 
-  function clearActiveTerminal() {
+  /** 由 Shell 清屏并同步输入行位置，避免历史命令按旧坐标重绘。 */
+  async function clearActiveTerminal() {
     const sessionId = activeSessionIdRef.current;
     const bundle = getActiveBundle();
     if (!bundle || !sessionId) return false;
-    bundle.terminal.clear();
-    sessionBuffersRef.current[sessionId] = "";
-    return true;
+    // CMD 没有 Ctrl+L 清屏绑定；离线会话也只能清理本地显示。
+    if (
+      sessionStatesRef.current[sessionId] !== "connected" ||
+      handlersRef.current.resolveLocalShellId?.(sessionId) === "cmd"
+    ) {
+      bundle.terminal.clear();
+      sessionBuffersRef.current[sessionId] = "";
+      return true;
+    }
+    try {
+      suppressAutocompleteForCurrentInput(sessionId);
+      await handlersRef.current.sendSessionInput(sessionId, {
+        kind: "text",
+        data: TERMINAL_CLEAR_SCREEN_INPUT,
+      });
+      if (
+        terminalsRef.current[sessionId] === bundle &&
+        activeSessionIdRef.current === sessionId
+      ) {
+        restoreCursorAfterStreamingOutput(sessionId);
+        bundle.terminal.scrollToBottom();
+        bundle.terminal.focus();
+      }
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** 清理当前终端的搜索高亮与统计（关闭搜索栏或关闭高亮时调用）。 */
