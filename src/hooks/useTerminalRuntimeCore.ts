@@ -1,11 +1,24 @@
 /**
  * 终端运行时核心 Hook。
  * 职责：
- * 1. 管理 xterm 实例创建、挂载、重建与销毁。
- * 2. 串行排空终端输出，并为未挂载会话保留有界尾部缓存。
+ * 1. 按会话管理 xterm 实例，布局重挂载只迁移显示宿主。
+ * 2. 串行排空终端输出，并为尚未创建实例的会话保留有界尾部缓存。
  * 3. 提供搜索、复制、链接菜单和尺寸同步等终端能力。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  attachTerminalSurface,
+  createTerminalCreationGate,
+  isTerminalSurfaceVisible,
+  type TerminalSurface,
+} from "@/features/terminal/core/runtimeLifecycle";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { logWarn } from "@/shared/logging";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -201,14 +214,13 @@ type XtermModules = {
 
 type Disposable = { dispose: () => void };
 
-type TerminalBundle = {
+type TerminalBundle = TerminalSurface & {
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon | null;
   unicode11Addon: Unicode11Addon | null;
   webLinksAddon: WebLinksAddon | null;
   webglAddon: WebglAddon | null;
-  container: HTMLDivElement;
   host: HTMLDivElement;
   disposables: Disposable[];
   outputQueue: string[];
@@ -340,6 +352,7 @@ function shouldPreserveFocusedElement() {
 function safeFit(fitter: FitAddon, container?: HTMLElement | null) {
   if (
     !container ||
+    !container.isConnected ||
     container.clientWidth === 0 ||
     container.clientHeight === 0
   ) {
@@ -524,6 +537,11 @@ export default function useTerminalRuntime({
   autocompleteProvider = null,
 }: UseTerminalRuntimeProps): TerminalRuntime {
   const terminalsRef = useRef<Record<string, TerminalBundle>>({});
+  const creationGateRef = useRef(createTerminalCreationGate());
+  const liveSessionIdsRef = useRef(
+    new Set(sessions.map((item) => item.sessionId)),
+  );
+  const runtimeRunningRef = useRef(true);
   const containersRef = useRef<Record<string, HTMLDivElement | null>>({});
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const observedContainersRef = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -1283,7 +1301,7 @@ export default function useTerminalRuntime({
 
   function syncTerminalSize(sessionId: string) {
     const bundle = terminalsRef.current[sessionId];
-    if (!bundle) return;
+    if (!bundle || !isTerminalSurfaceVisible(bundle)) return;
     safeFit(bundle.fitAddon, bundle.host);
     const sizeKey = `${bundle.terminal.cols}x${bundle.terminal.rows}`;
     if (lastResizedSizeRef.current[sessionId] === sizeKey) {
@@ -1303,6 +1321,8 @@ export default function useTerminalRuntime({
             entry.target,
           );
           if (!sessionId) return;
+          if (observedContainersRef.current.get(sessionId) !== entry.target)
+            return;
           syncTerminalSize(sessionId);
         });
       });
@@ -1412,7 +1432,7 @@ export default function useTerminalRuntime({
     drainTerminalOutput(sessionId, bundle);
   }
 
-  /** 为尚未挂载的会话保留有界尾部输出。 */
+  /** 为尚未创建终端实例的会话保留有界尾部输出。 */
   function appendSessionBuffer(sessionId: string, data: string) {
     const buffer = sessionBuffersRef.current[sessionId] ?? "";
     const next = buffer + data;
@@ -1426,9 +1446,20 @@ export default function useTerminalRuntime({
    * xterm 首次 mount 后，宿主容器尺寸、字体测量和 pane 布局可能还没稳定。
    * 这里统一做延迟 fit/focus/resize，避免把同类补丁散落到多个 effect。
    */
-  function finalizeTerminalMount(sessionId: string, attempt = 0) {
+  function finalizeTerminalMount(
+    sessionId: string,
+    attempt = 0,
+    expectedBundle = terminalsRef.current[sessionId],
+    mountVersion = expectedBundle?.mountVersion,
+  ) {
     const latest = terminalsRef.current[sessionId];
-    if (!latest) return;
+    if (
+      !latest ||
+      latest !== expectedBundle ||
+      latest.mountVersion !== mountVersion
+    )
+      return;
+    if (!isTerminalSurfaceVisible(latest)) return;
     safeFit(latest.fitAddon, latest.host);
     const hostHeight = latest.host.clientHeight;
     const rows = latest.terminal.rows;
@@ -1437,7 +1468,7 @@ export default function useTerminalRuntime({
 
     if (!readyForUse && attempt < TERMINAL_MOUNT_RETRY_LIMIT) {
       window.requestAnimationFrame(() => {
-        finalizeTerminalMount(sessionId, attempt + 1);
+        finalizeTerminalMount(sessionId, attempt + 1, latest, mountVersion);
       });
       return;
     }
@@ -1448,6 +1479,7 @@ export default function useTerminalRuntime({
       }
     }
     syncTerminalSize(sessionId);
+    latest.terminal.refresh(0, latest.terminal.rows - 1);
   }
 
   function disposeFocusedLine(sessionId: string) {
@@ -1795,14 +1827,49 @@ export default function useTerminalRuntime({
 
     runtime.append(host);
     container.append(runtime);
-    return { host };
+    return { runtime, host };
   }
 
+  /** 优先迁移已有显示宿主；只有实例不存在时才发起一次异步创建。 */
   async function ensureTerminal(sessionId: string, container: HTMLDivElement) {
-    if (terminalsRef.current[sessionId]) return;
-    const modules = await loadXtermModules();
-    if (terminalsRef.current[sessionId]) return;
-    const { host } = buildTerminalLayout(container);
+    const existing = terminalsRef.current[sessionId];
+    if (existing) {
+      attachTerminalSurface(existing, container);
+      scheduleTerminalMount(sessionId, existing);
+      return;
+    }
+    await creationGateRef.current.ensure(
+      sessionId,
+      loadXtermModules,
+      () => containersRef.current[sessionId] ?? null,
+      () =>
+        runtimeRunningRef.current && liveSessionIdsRef.current.has(sessionId),
+      (modules, latestContainer) =>
+        createTerminal(sessionId, latestContainer, modules),
+    );
+  }
+
+  /** 将延迟布局任务绑定到实例及挂载代次，避免旧回调操作新宿主。 */
+  function scheduleTerminalMount(sessionId: string, bundle: TerminalBundle) {
+    const version = bundle.mountVersion;
+    window.requestAnimationFrame(() => {
+      if (
+        terminalsRef.current[sessionId] !== bundle ||
+        !isTerminalSurfaceVisible(bundle, version)
+      )
+        return;
+      finalizeTerminalMount(sessionId, 0, bundle, version);
+      scheduleCommandCaptureRefresh(sessionId);
+    });
+  }
+
+  /** 同步创建实例；模块加载和会话有效性检查由创建门控统一处理。 */
+  function createTerminal(
+    sessionId: string,
+    container: HTMLDivElement,
+    modules: XtermModules,
+  ) {
+    const { runtime, host } = buildTerminalLayout(container);
     const sessionWordSeparator = normalizeTerminalWordSeparators(
       resolveWordSeparatorsRef.current?.(sessionId),
     );
@@ -1896,6 +1963,8 @@ export default function useTerminalRuntime({
       webLinksAddon,
       webglAddon,
       container,
+      runtime,
+      mountVersion: 1,
       host,
       disposables: [],
       outputQueue: [],
@@ -2237,13 +2306,16 @@ export default function useTerminalRuntime({
 
     // 首次挂载时，pane/header 布局和字体测量可能还没稳定。
     // 这里补一轮延迟 fit/focus，避免首个默认会话进入“active ready 但无法正常交互”的状态。
-    window.requestAnimationFrame(() => {
-      finalizeTerminalMount(sessionId);
-      scheduleCommandCaptureRefresh(sessionId);
-    });
+    scheduleTerminalMount(sessionId, bundle);
   }
 
   function disposeTerminal(sessionId: string) {
+    creationGateRef.current.cancel(sessionId);
+    const observed = observedContainersRef.current.get(sessionId);
+    if (observed) resizeObserverRef.current?.unobserve(observed);
+    observedContainersRef.current.delete(sessionId);
+    delete containersRef.current[sessionId];
+    delete sessionBuffersRef.current[sessionId];
     const bundle = terminalsRef.current[sessionId];
     if (!bundle) return;
     const captureTimer = commandCaptureTimersRef.current[sessionId];
@@ -2266,6 +2338,7 @@ export default function useTerminalRuntime({
     bundle.outputQueuedChars = 0;
     bundle.disposables.forEach((disposable) => disposable.dispose());
     bundle.terminal.dispose();
+    bundle.runtime.remove();
     delete terminalsRef.current[sessionId];
     delete containersRef.current[sessionId];
     delete lastResizedSizeRef.current[sessionId];
@@ -2304,7 +2377,8 @@ export default function useTerminalRuntime({
           resizeObserverRef.current.unobserve(observedContainer);
         }
         observedContainersRef.current.delete(sessionId);
-        disposeTerminalRef.current(sessionId);
+        const bundle = terminalsRef.current[sessionId];
+        if (bundle) attachTerminalSurface(bundle, null);
       }
     },
     [],
@@ -2318,6 +2392,7 @@ export default function useTerminalRuntime({
     const registerListeners = async () => {
       const outputUnlisten = await registerTerminalOutputListener(
         ({ sessionId, data }) => {
+          if (!runtimeRunningRef.current) return;
           const bundle = terminalsRef.current[sessionId];
           if (bundle) {
             writeToBundleRef.current(sessionId, bundle, data);
@@ -2430,8 +2505,12 @@ export default function useTerminalRuntime({
     });
   }, [activeSession, activeSessionId, onSizeChange, terminalReadyBySession]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const activeIds = new Set(sessions.map((item) => item.sessionId));
+    liveSessionIdsRef.current = activeIds;
+    Object.keys(containersRef.current).forEach((sessionId) => {
+      if (!activeIds.has(sessionId)) disposeTerminalRef.current(sessionId);
+    });
     Object.keys(terminalsRef.current).forEach((sessionId) => {
       if (!activeIds.has(sessionId)) {
         disposeTerminalRef.current(sessionId);
@@ -2439,13 +2518,21 @@ export default function useTerminalRuntime({
     });
   }, [sessions]);
 
-  useEffect(
-    () => () => {
+  useLayoutEffect(() => {
+    runtimeRunningRef.current = true;
+    const creationGate = creationGateRef.current;
+    const bundles = terminalsRef.current;
+    const observedContainers = observedContainersRef.current;
+    return () => {
+      runtimeRunningRef.current = false;
+      creationGate.clear();
+      Object.keys(bundles).forEach((sessionId) =>
+        disposeTerminalRef.current(sessionId),
+      );
       resizeObserverRef.current?.disconnect();
-      observedContainersRef.current.clear();
-    },
-    [],
-  );
+      observedContainers.clear();
+    };
+  }, []);
 
   function isTerminalReady(sessionId: string) {
     return !!terminalReadyBySession[sessionId];

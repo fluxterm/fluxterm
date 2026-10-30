@@ -82,13 +82,13 @@ type SessionWorkspaceState = {
 
 入口：
 
-- `src/features/terminal/hooks/useTerminalRuntimeCore.ts`
+- `src/hooks/useTerminalRuntimeCore.ts`
 
 职责：
 
 1. 为每个 `sessionId` 管理一个 xterm 实例
 2. 处理终端输出、输入、搜索、复制与链接菜单
-3. 维护完整会话文本缓存，保证 split 后重挂载仍可恢复内容
+3. 将终端实例与布局容器生命周期分离，split 后迁移原实例的显示宿主并保留内容
 4. 监听每个终端容器尺寸变化并执行 `fit / resize`
 
 ### UI 编排层
@@ -222,30 +222,34 @@ type SessionWorkspaceState = {
    - `host / container`
    - `disposables`
 
-### 容器挂载与重建
+### 容器挂载与实例生命周期
 
 当 React 将某个 `sessionId` 容器挂载到 DOM 时：
 
 1. 调用 `registerTerminalContainer(sessionId, element)`
-2. 若尚不存在 bundle，则执行 `ensureTerminal()` 创建 xterm
-3. 创建后进入 `finalizeTerminalMount()`，统一处理首次 `fit / focus / resize`
+2. 若已有 bundle，将其 `.terminal-runtime` 节点移入新容器；不重复创建实例或执行 `open()`
+3. 若尚不存在 bundle，则合并异步创建请求；加载完成后检查会话有效性，并使用最新容器创建实例
+4. 在布局稳定后处理 `fit / focus / resize` 和刷新；旧实例或旧挂载代次的延迟任务失效
 
 容器卸载时：
 
 1. 取消对应尺寸观察
-2. 销毁该 xterm bundle
+2. 将终端显示宿主从 DOM 移除，保留 xterm、插件、缓冲区及输出队列
+3. 只有会话从 sessions 移除或整个终端运行时退出时才销毁 bundle；断线但保留标签不销毁
 
-### split 后内容恢复
+### split 后内容保留
 
-终端输出持续追加到 `sessionBuffersRef`，而非仅在挂载前临时缓存。
+拆分和区域收缩只改变显示宿主所在的容器，同一 `sessionId` 始终复用原 xterm 实例。
 
 因此：
 
-1. xterm 即使因重挂载被销毁
-2. 只要 session 仍然存在
-3. 重建时即可从完整缓存回放内容
+1. 历史输出、备用屏幕、插件状态及待排空输出保留在原实例中
+2. 暂时脱离 DOM 的实例继续接收串行输出，不回放历史、不主动滚动到底部
+3. `sessionBuffersRef` 只为尚未创建实例的会话保留有界尾部输出，首次创建后消费并清空
 
-这也是“保存会话”能够导出完整横幅与历史内容的基础。
+“保存会话”读取 xterm 当前保留的缓冲区；历史范围受回滚行数设置限制，不维护无限增长的原始输出副本。
+
+异步创建任务在会话关闭或运行时退出后失效。未连接到文档或尺寸为零的容器不发送 PTY resize；恢复显示后重新同步。尺寸观察回调必须匹配当前宿主，防止旧容器事件干扰新布局。
 
 ### 尺寸同步
 
@@ -346,8 +350,8 @@ type SessionWorkspaceState = {
 
 优先检查：
 
-1. `sessionBuffersRef` 是否持续累计完整输出
-2. xterm 重建时是否保持完整回放能力
+1. 导出是否读取当前 xterm 缓冲区，并遵守回滚行数设置
+2. 布局迁移是否复用同一实例，异步创建前的有界缓存是否仅消费一次
 
 ## 相关文件
 
