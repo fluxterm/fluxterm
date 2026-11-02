@@ -2745,18 +2745,18 @@ export default function useTerminalRuntime({
     }
   }
 
-  /** 由 Shell 清屏并同步输入行位置，避免历史命令按旧坐标重绘。 */
+  /** 先清除 xterm 回溯，再发送 Ctrl+L 同步 Shell 输入行位置。 */
   async function clearActiveTerminal() {
     const sessionId = activeSessionIdRef.current;
     const bundle = getActiveBundle();
     if (!bundle || !sessionId) return false;
+    bundle.terminal.clear();
+    sessionBuffersRef.current[sessionId] = "";
     // CMD 没有 Ctrl+L 清屏绑定；离线会话也只能清理本地显示。
     if (
       sessionStatesRef.current[sessionId] !== "connected" ||
       handlersRef.current.resolveLocalShellId?.(sessionId) === "cmd"
     ) {
-      bundle.terminal.clear();
-      sessionBuffersRef.current[sessionId] = "";
       return true;
     }
     try {
