@@ -24,7 +24,7 @@ tokio = { version = "1.50.0" }
 uuid = { version = "=1.23.2" }
 serde_json = { version = "1.0.149" }
 reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
-russh = { version = "0.63.2", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh = { version = "0.65.1", default-features = false, features = ["flate2", "ring", "rsa"] }
 russh-config = { version = "0.58.0" }
 russh-sftp = { version = "3.0.0" }
 
