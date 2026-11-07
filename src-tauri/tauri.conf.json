@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "FluxTerm",
   "version": "0.11.2",
-  "identifier": "cc.vust.fluxterm",
+  "identifier": "dev.vust.fluxterm",
   "build": {
     "beforeDevCommand": "pnpm web:dev",
     "devUrl": "http://localhost:1420",

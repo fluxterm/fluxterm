@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- 将应用程序标识符更新为 `dev.vust.fluxterm`。
+
 ## [0.11.2] - 2026-11-02
 
 ### Fixed

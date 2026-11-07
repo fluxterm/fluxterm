@@ -1,5 +1,5 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "identifier": "cc.vust.fluxterm",
+  "identifier": "dev.vust.fluxterm",
   "bundle": { "targets": ["deb", "rpm", "appimage"] }
 }
