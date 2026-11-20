@@ -33,6 +33,7 @@ pub fn ai_settings_save(
     app: AppHandle,
     settings: AiSettingsSaveInput,
 ) -> Result<AiSettingsView, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     save_ai_settings_input(&app, settings)
 }
 

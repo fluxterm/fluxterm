@@ -69,6 +69,7 @@ fn trust_host_key_path(
     key_algorithm: &str,
     public_key_base64: &str,
 ) -> Result<(), EngineError> {
+    let _transaction = crate::config_transaction::lock();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             EngineError::with_detail(
@@ -104,7 +105,7 @@ fn trust_host_key_path(
     }
 
     preserved.push(format!("{pattern} {key_algorithm} {public_key_base64}"));
-    fs::write(path, preserved.join("\n") + "\n").map_err(|err| {
+    crate::utils::write_atomic(path, &(preserved.join("\n") + "\n")).map_err(|err| {
         EngineError::with_detail(
             KNOWN_HOSTS_WRITE_FAILED_CODE,
             "Failed to write the known_hosts file",

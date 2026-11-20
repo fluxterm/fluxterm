@@ -86,6 +86,7 @@ pub fn credential_save(
     security: State<'_, SecurityState>,
     input: CredentialSaveInput,
 ) -> Result<CredentialSummary, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut store = read_credentials(&app)?;
     let name = required_trimmed(
         input.name,
@@ -187,6 +188,7 @@ pub fn credential_delete(
     security: State<'_, SecurityState>,
     input: CredentialDeleteInput,
 ) -> Result<bool, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     // 即使删除无需解密，也要求强保护已解锁，避免锁定状态下破坏敏感数据。
     let _crypto = crypto_service(&app, &security)?;
     let mut credential_store = read_credentials(&app)?;

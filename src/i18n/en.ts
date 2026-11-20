@@ -1,4 +1,67 @@
 export const enUsTranslations = {
+  "backup.error.webdavUrlRequired": "Enter the WebDAV server URL",
+  "backup.error.webdavUrlInvalid": "Enter a valid HTTP or HTTPS URL",
+  "backup.error.secretKeyMismatch":
+    "Credential key does not match the security configuration: {file} · {field}",
+  "backup.error.secretProviderMismatch":
+    "Credential encryption provider does not match: {file} · {field}",
+  "backup.error.secretNonceInvalid":
+    "Invalid credential encryption nonce: {file} · {field}",
+  "backup.error.secretCiphertextInvalid":
+    "Invalid credential ciphertext: {file} · {field}",
+  "backup.error.secretFormatInvalid":
+    "Invalid encrypted credential format: {file} · {field}",
+  "backup.error.securityKeyMismatch":
+    "Configuration key does not match the security configuration: {file} · {field}",
+  "backup.error.configInvalid":
+    "Invalid configuration document: {file} · {field}",
+  "backup.restoreConfirm": "Replace current settings and restart?",
+  "backup.url": "Server URL",
+  "backup.username": "Username",
+  "backup.password": "Password",
+  "backup.select": "Choose configuration file",
+  "backup.testSuccess": "Connected",
+  "backup.upload": "Back up now",
+  "backup.uploadSuccess": "WebDAV backup saved",
+  "backup.checked": "Configuration file validated",
+  "backup.pending": "Settings staged. Restart the app",
+  "backup.webdavConfig": "WebDAV settings",
+  "backup.clearSettings": "Clear settings",
+  "backup.settingsCleared": "WebDAV settings cleared",
+  "backup.passwordSaved": "Saved; leave blank to keep",
+  "backup.error.invalid":
+    "Invalid backup or input. Check the format, version, integrity and security settings.",
+  "backup.error.ioFailed":
+    "File operation failed. Check permissions and available space.",
+  "backup.error.securityUnavailable":
+    "Security storage is unavailable. Unlock before using a saved password.",
+  "backup.error.timeout": "WebDAV request timed out.",
+  "backup.error.networkFailed":
+    "WebDAV request failed. Check the address and connection.",
+  "backup.error.busy": "Another backup operation is running.",
+  "backup.error.cancelled":
+    "Operation cancelled. An interrupted upload may leave an incomplete remote file.",
+  "backup.error.authFailed":
+    "WebDAV authentication failed. Check the username and password.",
+  "backup.error.directoryUnwritable":
+    "WebDAV directory is inaccessible, unwritable or out of space.",
+  "backup.error.redirectRefused":
+    "WebDAV returned a redirect. Enter the final server URL.",
+  "backup.error.uploadFailed":
+    "WebDAV request failed. Backup completion was not confirmed.",
+  "backup.error.taskFailed": "Backup operation ended unexpectedly. Try again.",
+  "config.section.backup": "Backup and restore",
+  "backup.settingsSaved": "WebDAV settings saved",
+  "backup.import": "Import settings",
+  "backup.restoreRestart": "Restore and restart",
+  "backup.restart": "Restart now",
+  "backup.local": "Local backup",
+  "backup.export": "Back up locally",
+  "backup.localSuccess": "Local backup saved",
+  "backup.webdav": "WebDAV backup",
+  "backup.saveSettings": "Save settings",
+  "backup.test": "Test connection",
+  "backup.cancel": "Cancel",
   "app.name": "FluxTerm",
   "app.brandSub": "SSH · SFTP",
   "layout.left": "Left",

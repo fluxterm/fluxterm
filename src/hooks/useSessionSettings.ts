@@ -5,6 +5,10 @@
  * 2. 管理终端域全局配置（回滚行数、资源监控开关、Host Key 策略等）。
  * 3. 采用“内存态缓存 + 防抖异步落盘”模式，通过 JSON 脏检查避免重复 I/O。
  */
+import {
+  schedulePersistence,
+  cancelPersistence,
+} from "@/shared/config/persistence";
 import { useEffect, useRef, useState } from "react";
 import { logDebug, logWarn } from "@/shared/logging";
 import { extractErrorMessage } from "@/shared/errors/appError";
@@ -357,13 +361,13 @@ export default function useSessionSettings(): UseSessionSettingsResult {
     }
 
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
+      cancelPersistence(saveTimerRef.current);
     }
     setSaveState("saving");
     setSaveError(null);
 
-    saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+    saveTimerRef.current = schedulePersistence(() => {
+      return (async () => {
         try {
           await saveSessionSettings(currentConfig);
           lastSavedConfigRef.current = configStr;
@@ -379,13 +383,14 @@ export default function useSessionSettings(): UseSessionSettingsResult {
               detail: extractErrorMessage(error),
             },
           });
+          throw error;
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
+        cancelPersistence(saveTimerRef.current);
       }
     };
   }, [

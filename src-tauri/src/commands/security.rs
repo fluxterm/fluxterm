@@ -99,6 +99,7 @@ pub fn security_enable_strong_protection(
     security: State<'_, SecurityState>,
     input: SecurityPasswordInput,
 ) -> Result<SecurityStatus, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
@@ -118,6 +119,8 @@ pub fn security_enable_strong_protection(
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let (next_config, next_session) = CryptoService::build_user_password_config(&input.password)?;
     let next_crypto = CryptoService::new(Some(&next_config), Some(&next_session))?;
+    let webdav_password_update =
+        crate::backup::prepare_password_update(&app, &current_crypto, &next_crypto)?;
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &next_crypto)?;
     ssh_store.updated_at = now_epoch();
@@ -127,6 +130,7 @@ pub fn security_enable_strong_protection(
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
+    crate::backup::apply_password_update(&app, webdav_password_update)?;
     security.set_session(next_session);
     security_status(app, security)
 }
@@ -138,6 +142,7 @@ pub fn security_change_password(
     security: State<'_, SecurityState>,
     input: SecurityPasswordChangeInput,
 ) -> Result<SecurityStatus, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
@@ -164,6 +169,8 @@ pub fn security_change_password(
     let (next_config, next_session) =
         CryptoService::build_user_password_config(&input.next_password)?;
     let next_crypto = CryptoService::new(Some(&next_config), Some(&next_session))?;
+    let webdav_password_update =
+        crate::backup::prepare_password_update(&app, &current_crypto, &next_crypto)?;
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &next_crypto)?;
     ssh_store.updated_at = now_epoch();
@@ -173,6 +180,7 @@ pub fn security_change_password(
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &next_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &next_crypto)?)?;
+    crate::backup::apply_password_update(&app, webdav_password_update)?;
     security.set_session(next_session);
     security_status(app, security)
 }
@@ -183,6 +191,7 @@ pub fn security_enable_weak_protection(
     app: AppHandle,
     security: State<'_, SecurityState>,
 ) -> Result<SecurityStatus, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut ssh_store = read_ssh_profiles(&app)?;
     let mut credential_store = read_credentials(&app)?;
     let current_config = read_security_config(&app)?;
@@ -211,6 +220,8 @@ pub fn security_enable_weak_protection(
     let ai_plain = decrypt_ai_settings(&app, &current_crypto)?;
     let weak_crypto = CryptoService::load(&app, None, None)?;
     let weak_config = CryptoService::build_embedded_config(weak_crypto.key_id());
+    let webdav_password_update =
+        crate::backup::prepare_password_update(&app, &current_crypto, &weak_crypto)?;
 
     ssh_store.profiles = encrypt_ssh_profiles(ssh_profiles_plain, &weak_crypto)?;
     ssh_store.updated_at = now_epoch();
@@ -220,6 +231,7 @@ pub fn security_enable_weak_protection(
     write_credentials(&app, &credential_store)?;
     write_security_config(&app, &weak_config)?;
     write_ai_settings(&app, encrypt_ai_settings(ai_plain, &weak_crypto)?)?;
+    crate::backup::apply_password_update(&app, webdav_password_update)?;
     security.clear_session();
     security_status(app, security)
 }

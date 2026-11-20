@@ -22,6 +22,7 @@ use serde_json::json;
 /// 3. 执行 `sync_all` 确保数据真正落盘。
 /// 4. 通过 `rename` 覆盖目标文件，确保在磁盘满或进程崩溃时原文件不被损坏。
 pub fn write_atomic<P: AsRef<Path>>(path: P, content: &str) -> Result<(), EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let path = path.as_ref();
     let parent = path.parent().ok_or_else(|| {
         EngineError::new(

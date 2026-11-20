@@ -4,9 +4,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- 支持将配置、凭据与背景资源备份为本地 ZIP 或上传至 HTTP/HTTPS WebDAV，并从本地备份恢复配置。
+
 ### Changed
 
-- 将应用程序标识符更新为 `dev.vust.fluxterm`。
+- 将应用程序标识符更新为 `dev.vust.fluxterm`。使用自定义配置目录的用户需在新版中重新选择原目录。
 
 ## [0.11.2] - 2026-11-02
 

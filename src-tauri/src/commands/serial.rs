@@ -35,6 +35,7 @@ pub fn serial_profile_groups_save(
     app: AppHandle,
     groups: Vec<String>,
 ) -> Result<Vec<String>, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     write_serial_groups(&app, &groups)
 }
 
@@ -44,6 +45,7 @@ pub fn serial_profile_save(
     app: AppHandle,
     mut profile: SerialProfile,
 ) -> Result<SerialProfile, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     profile.name = profile.name.trim().to_string();
     profile.port_name = profile.port_name.trim().to_string();
     if profile.name.is_empty() {
@@ -71,6 +73,7 @@ pub fn serial_profile_save(
 /// 删除指定串口 Profile。
 #[tauri::command]
 pub fn serial_profile_remove(app: AppHandle, profile_id: String) -> Result<bool, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut store = read_serial_profiles(&app)?;
     let before = store.profiles.len();
     store.profiles.retain(|item| item.id != profile_id);

@@ -14,7 +14,8 @@ export type ConfigSectionKey =
   | "session-settings"
   | "session-window"
   | "session-shell"
-  | "app-directory";
+  | "app-directory"
+  | "backup";
 
 export type ConfigSectionItem = {
   key: ConfigSectionKey;
@@ -87,6 +88,7 @@ export function getScopedConfigNavEntries(
       "security",
       "credentials",
       "app-directory",
+      "backup",
     ].includes(entry.key),
   );
 }
@@ -107,6 +109,7 @@ export function buildConfigNavigation(t: Translate): ConfigNavigationModel {
     "session-window": t("config.section.sessionWindow"),
     "session-shell": t("config.section.sessionShell"),
     "app-directory": t("config.section.appDirectory"),
+    backup: t("config.section.backup"),
   };
 
   return {
@@ -129,6 +132,7 @@ export function buildConfigNavigation(t: Translate): ConfigNavigationModel {
       { key: "session-window", label: labels["session-window"] },
       { key: "session-shell", label: labels["session-shell"] },
       { key: "app-directory", label: labels["app-directory"] },
+      { key: "backup", label: labels.backup },
     ],
   };
 }

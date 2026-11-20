@@ -69,6 +69,7 @@ fn read_config_key_from_path(path: &Path) -> Result<Option<ConfigKey>, EngineErr
 }
 
 fn create_config_key_at_path(path: &Path) -> Result<ConfigKey, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     if path.exists() {
         return read_config_key_from_path(path)?.ok_or_else(|| {
             EngineError::new(

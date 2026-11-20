@@ -5,6 +5,10 @@
  * 2. 管理侧边栏/底部面板的折叠状态、槽位数量、组件挂载情况以及浮窗初始位置。
  * 3. 响应窗口调整（Resize）并持久化面板尺寸。
  */
+import {
+  schedulePersistence,
+  cancelPersistence,
+} from "@/shared/config/persistence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logDebug, logWarn } from "@/shared/logging";
 import {
@@ -363,10 +367,10 @@ export default function useLayoutState({
     const layoutStr = JSON.stringify(currentLayout);
     if (layoutStr === lastSavedConfigRef.current) return;
 
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+    if (saveTimerRef.current) cancelPersistence(saveTimerRef.current);
 
-    saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+    saveTimerRef.current = schedulePersistence(() => {
+      return (async () => {
         try {
           await saveLayoutConfig(currentLayout);
           lastSavedConfigRef.current = layoutStr;
@@ -379,12 +383,13 @@ export default function useLayoutState({
               detail: extractErrorMessage(error),
             },
           });
+          throw error;
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
 
     return () => {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) cancelPersistence(saveTimerRef.current);
     };
   }, [
     floatingWidgetKey,

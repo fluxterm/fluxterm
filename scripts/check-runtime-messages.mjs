@@ -207,6 +207,11 @@ function lineOf(source, index) {
 }
 
 function checkFixtures() {
+  for (const callee of ["BackupError::new", "BackupError::invalid", "Self::new", "Self::invalid"]) {
+    const sample = `${callee}("fixture", "不允许中文错误");`;
+    const block = findCallBlocks(sample, callee, false)[0];
+    if (!block || !hanPattern.test(block.text)) throw new Error("runtime message checker missed a custom backup error");
+  }
   const allowed = stripComments(`
     // EngineError::new("fixture", "允许中文注释");
     EngineError::new("fixture", "English runtime fallback");
@@ -269,6 +274,10 @@ function checkFile(path) {
         "EngineError::with_detail",
         "EngineError::localized",
         "RuntimeError::new",
+        "BackupError::(?:new|invalid)",
+        "(?:log::|tracing::)?(?:error|warn|info|debug|trace)!",
+        "(?:panic|unreachable|todo|unimplemented)!",
+        ...(relativePath === "src-tauri/src/backup/mod.rs" ? ["Self::(?:new|invalid)"] : []),
         "OpenAiError::[A-Za-z_]+",
       ]
     : ["new\\s+AppError", "logDebug", "logInfo", "logWarn", "logError"];

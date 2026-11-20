@@ -11,7 +11,7 @@ import "@/components/ui/notice-host.css";
  * 交互：Dialog 遮罩层特意避开了标题栏，以便在弹窗时依然可以关闭或最小化应用。
  */
 export default function NoticeHost() {
-  const { toasts, dialogs, closeDialog } = useNotices();
+  const { toasts, dialogs, closeDialog, closeToast } = useNotices();
   const activeDialog = dialogs[dialogs.length - 1] ?? null;
   const dialogOverlayClassName =
     `dialog-overlay ${isMacOS() ? "dialog-overlay--macos" : ""}`.trim();
@@ -20,9 +20,27 @@ export default function NoticeHost() {
     <>
       <div className="toast-layer" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast-item ${toast.level ?? "info"}`}>
+          <div
+            key={toast.id}
+            className={`toast-item ${toast.level ?? "info"} ${toast.durationMs === 0 ? "toast-item--dismissible" : ""}`}
+            role={toast.level === "error" ? "alert" : "status"}
+            data-ui="notice-toast"
+            data-slot={toast.level ?? "info"}
+          >
             {toast.title && <strong>{toast.title}</strong>}
             <span>{toast.message}</span>
+            {toast.durationMs === 0 && (
+              <button
+                type="button"
+                className="toast-close"
+                data-ui="notice-dismiss"
+                aria-label={toast.dismissLabel ?? "Close"}
+                title={toast.dismissLabel ?? "Close"}
+                onClick={() => closeToast(toast.id)}
+              >
+                ×
+              </button>
+            )}
           </div>
         ))}
       </div>

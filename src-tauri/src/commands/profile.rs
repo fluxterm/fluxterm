@@ -123,6 +123,7 @@ pub fn profile_groups_save(
     app: AppHandle,
     groups: Vec<String>,
 ) -> Result<Vec<String>, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let next = validate_and_dedupe_groups(groups)?;
     write_ssh_groups(&app, &next)?;
     Ok(next)
@@ -135,6 +136,7 @@ pub fn profile_save(
     security: State<'_, SecurityState>,
     mut profile: HostProfile,
 ) -> Result<HostProfile, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut store = read_ssh_profiles(&app)?;
     let security_config = read_security_config(&app)?;
     let session = security.current_session();
@@ -175,6 +177,7 @@ pub fn profile_save(
 #[tauri::command]
 /// 删除指定主机配置。
 pub fn profile_remove(app: AppHandle, profile_id: String) -> Result<bool, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let mut store = read_ssh_profiles(&app)?;
     let before = store.profiles.len();
     store.profiles.retain(|item| item.id != profile_id);
@@ -188,6 +191,7 @@ pub fn profile_remove(app: AppHandle, profile_id: String) -> Result<bool, Engine
 pub fn ssh_import_openssh_config(
     app: AppHandle,
 ) -> Result<crate::ssh_config_import::OpensshImportSummary, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     crate::ssh_config_import::import_openssh_config(&app)
 }
 

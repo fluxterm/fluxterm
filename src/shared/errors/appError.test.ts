@@ -10,6 +10,45 @@ import {
 const translate = ((key, vars) =>
   vars ? `${key}:${JSON.stringify(vars)}` : key) satisfies Translate;
 
+void test("备份拒绝保留独立错误码、翻译键与安全字段位置", () => {
+  const payload = {
+    code: "backup_secret_key_mismatch",
+    message: "The secret key identifier does not match the active security key",
+    messageKey: "backup.error.secretKeyMismatch",
+    messageVars: {
+      file: "connections/credentials.json",
+      field: "credentials[0].passwordRef",
+    },
+    details: "connections/credentials.json:credentials[0].passwordRef",
+  };
+  for (const raw of [payload, JSON.stringify(payload)]) {
+    const error = normalizeToAppError(raw, {
+      code: "tauri_invoke_error",
+      source: "tauri",
+    });
+    assert.equal(error.code, payload.code);
+    assert.equal(error.details, payload.details);
+    assert.equal(
+      translateAppError(error, translate),
+      `${payload.messageKey}:${JSON.stringify(payload.messageVars)}`,
+    );
+  }
+});
+
+void test("备份常规错误翻译键符合统一协议", () => {
+  for (const [code, key] of [
+    ["backup_io_failed", "backup.error.ioFailed"],
+    ["backup_auth_failed", "backup.error.authFailed"],
+    ["backup_network_failed", "backup.error.networkFailed"],
+  ]) {
+    const error = normalizeToAppError(
+      { code, message: "Backup failed", messageKey: key },
+      { code: "tauri_invoke_error", source: "tauri" },
+    );
+    assert.equal(translateAppError(error, translate), key);
+  }
+});
+
 void test("归一化标准后端错误载荷并隔离诊断上下文", () => {
   const error = normalizeToAppError(
     {

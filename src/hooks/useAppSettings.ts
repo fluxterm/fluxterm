@@ -6,6 +6,10 @@
  * 3. 负责本地 Shell 列表的初始拉取。
  * 4. 采用“内存态缓存 + 防抖异步落盘”模式。
  */
+import {
+  schedulePersistence,
+  cancelPersistence,
+} from "@/shared/config/persistence";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invokeTauriCommand } from "@/shared/tauri/commands";
 import { logDebug, logWarn } from "@/shared/logging";
@@ -415,13 +419,13 @@ export default function useAppSettings({
     }
 
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
+      cancelPersistence(saveTimerRef.current);
     }
     setSaveState("saving");
     setSaveError(null);
 
-    saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+    saveTimerRef.current = schedulePersistence(() => {
+      return (async () => {
         try {
           await saveSettings(currentSettings);
           lastSavedConfigRef.current = settingsStr;
@@ -437,13 +441,14 @@ export default function useAppSettings({
               detail: extractErrorMessage(error),
             },
           });
+          throw error;
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
+        cancelPersistence(saveTimerRef.current);
       }
     };
   }, [

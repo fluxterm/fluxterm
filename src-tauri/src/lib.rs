@@ -1,9 +1,11 @@
 //! Tauri 应用入口与命令注册。
 pub mod ai;
 pub mod ai_settings;
+pub mod backup;
 pub mod commands;
 pub mod config_key_store;
 pub mod config_paths;
+pub mod config_transaction;
 pub mod credential_store;
 pub mod events;
 pub mod local_fs;
@@ -143,6 +145,7 @@ pub fn run() {
         let config_directory_state =
             crate::config_paths::initialize_config_directory_state(app.handle())?;
         app.manage(config_directory_state);
+        crate::backup::restore::apply_pending(app.handle())?;
         crate::security_initialization::initialize_security_storage(app.handle())?;
         #[cfg(feature = "performance-telemetry")]
         {
@@ -179,6 +182,7 @@ pub fn run() {
         .manage(EngineState {
             engine: Arc::new(Engine::new()),
         })
+        .manage(crate::backup::BackupState::default())
         .manage(SecurityState::default())
         .manage(LockScreenState::default())
         .manage(SerialState {
@@ -288,6 +292,14 @@ pub fn run() {
             config_directory_status,
             config_directory_select_parent,
             config_directory_reset,
+            crate::backup::backup_settings_get,
+            crate::backup::backup_settings_save,
+            crate::backup::backup_test_webdav,
+            crate::backup::backup_export_local,
+            crate::backup::backup_upload_webdav,
+            crate::backup::backup_inspect_local,
+            crate::backup::backup_stage_restore,
+            crate::backup::backup_cancel,
             bootstrap_locale_set,
             get_system_info,
             open_devtools,

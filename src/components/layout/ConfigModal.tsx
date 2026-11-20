@@ -1,3 +1,4 @@
+import BackupSection from "@/features/backup/components/BackupSection";
 import { useEffect, useState, type CSSProperties } from "react";
 import { logWarn } from "@/shared/logging";
 import { open as openDialogFile } from "@tauri-apps/plugin-dialog";
@@ -1008,6 +1009,9 @@ export default function ConfigModal({
 
   // 按统一配置分区渲染内容，标题栏菜单与侧栏导航共用同一套 section key。
   function renderSectionContent() {
+    if (activeSection === "backup") {
+      return <BackupSection t={t} />;
+    }
     if (activeSection === "general") {
       const defaultEditorProgramName = getProgramNameFromPath(
         defaultEditorPathDraft,

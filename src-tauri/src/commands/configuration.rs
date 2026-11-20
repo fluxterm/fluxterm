@@ -76,6 +76,7 @@ pub fn config_write_text(
     document: ConfigDocument,
     content: String,
 ) -> Result<(), EngineError> {
+    let _transaction = crate::config_transaction::lock();
     serde_json::from_str::<serde_json::Value>(&content).map_err(|error| {
         EngineError::with_detail(
             "config_document_invalid",
@@ -90,6 +91,7 @@ pub fn config_write_text(
 /// 将用户选择的背景媒体复制到当前配置目录，并返回可持久化的相对资源标识。
 #[tauri::command]
 pub fn background_import(app: AppHandle, source_path: String) -> Result<String, EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let source = PathBuf::from(source_path);
     let extension = source
         .extension()
@@ -143,6 +145,7 @@ pub fn background_read(app: AppHandle, asset: String) -> Result<Vec<u8>, EngineE
 /// 删除配置目录中的背景媒体；文件不存在时视为成功。
 #[tauri::command]
 pub fn background_delete(app: AppHandle, asset: String) -> Result<(), EngineError> {
+    let _transaction = crate::config_transaction::lock();
     let path = resolve_background_asset_path(&app, &asset)?;
     match fs::remove_file(path) {
         Ok(()) => Ok(()),

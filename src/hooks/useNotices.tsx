@@ -7,7 +7,9 @@ export type ToastPayload = {
   title?: string;
   message: string;
   level?: ToastLevel;
+  /** 为 0 时保留到用户主动关闭。 */
   durationMs?: number;
+  dismissLabel?: string;
 };
 
 export type DialogPayload = {
@@ -37,6 +39,7 @@ export type NoticesContextValue = {
   pushToast: (payload: ToastPayload) => void;
   openDialog: (payload: DialogPayload) => void;
   closeDialog: (id: string) => void;
+  closeToast: (id: string) => void;
 };
 
 export const NoticesContext = createContext<NoticesContextValue | null>(null);

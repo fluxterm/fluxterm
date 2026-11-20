@@ -1,0 +1,64 @@
+.backup-section fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.backup-section .backup-card {
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+.backup-card h4 {
+  margin: 0;
+}
+.backup-card label {
+  display: grid;
+  gap: 6px;
+}
+.backup-card input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.backup-section [data-slot="backup-preview"] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.backup-section [data-slot="backup-preview"] > .ui-button {
+  flex-shrink: 0;
+}
+
+.backup-webdav-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.backup-webdav-toolbar .backup-config-toggle {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border-soft));
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.backup-webdav-toolbar .backup-config-toggle:hover,
+.backup-webdav-toolbar .backup-config-toggle[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.backup-webdav-config {
+  display: grid;
+  gap: 12px;
+}
+.backup-summary {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

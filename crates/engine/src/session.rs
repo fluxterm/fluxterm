@@ -1267,7 +1267,7 @@ pub(crate) async fn run_session_loop(request: SessionLoopRequest) -> Result<(), 
                         terminal_output.extend_from_slice(data.as_ref());
                     }
                     Some(_) => {}
-                    None => unreachable!("终端结束消息已在前置分支处理"),
+                    None => unreachable!("Terminal termination was handled by an earlier branch"),
                     }
                 }
             }

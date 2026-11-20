@@ -5,6 +5,10 @@
  * 2. 管理终端 AI 助手偏好与接入列表（快速接入 + 兼容接入）。
  * 3. 采用“内存态缓存 + 防抖异步落盘”模式。
  */
+import {
+  schedulePersistence,
+  cancelPersistence,
+} from "@/shared/config/persistence";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { logDebug, logWarn } from "@/shared/logging";
 import {
@@ -281,13 +285,13 @@ export default function useAiSettings(): UseAiSettingsResult {
     if (configStr === lastSavedConfigRef.current) return;
 
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
+      cancelPersistence(saveTimerRef.current);
     }
     setSaveState("saving");
     setSaveError(null);
 
-    saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+    saveTimerRef.current = schedulePersistence(() => {
+      return (async () => {
         try {
           const saved = await aiSettingsSave(nextSaveInput);
           lastLoadedViewRef.current = saved;
@@ -304,13 +308,14 @@ export default function useAiSettings(): UseAiSettingsResult {
               detail: extractErrorMessage(error),
             },
           });
+          throw error;
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
+        cancelPersistence(saveTimerRef.current);
       }
     };
   }, [
@@ -345,7 +350,7 @@ export default function useAiSettings(): UseAiSettingsResult {
   ) {
     savingSecretRef.current = true;
     try {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) cancelPersistence(saveTimerRef.current);
       setSaveState("saving");
       setSaveError(null);
       const nextSaveInput = buildSaveInput(
@@ -411,7 +416,7 @@ export default function useAiSettings(): UseAiSettingsResult {
     }
     savingSecretRef.current = true;
     try {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) cancelPersistence(saveTimerRef.current);
       setSaveState("saving");
       setSaveError(null);
       const nextProviders = [...providers, next];
@@ -464,7 +469,7 @@ export default function useAiSettings(): UseAiSettingsResult {
     }
     savingSecretRef.current = true;
     try {
-      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (saveTimerRef.current) cancelPersistence(saveTimerRef.current);
       setSaveState("saving");
       setSaveError(null);
       const nextProviders = [...providers, next];

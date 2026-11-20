@@ -6,6 +6,10 @@
  * 3. 管理具体的命令项（新增、更新、删除）。
  * 4. 提供当前活动会话可见的命令视图。
  */
+import {
+  schedulePersistence,
+  cancelPersistence,
+} from "@/shared/config/persistence";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logDebug, logWarn } from "@/shared/logging";
 import type { Translate, TranslationKey } from "@/i18n";
@@ -300,11 +304,11 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
     }
 
     if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
+      cancelPersistence(saveTimerRef.current);
     }
 
-    saveTimerRef.current = window.setTimeout(() => {
-      void (async () => {
+    saveTimerRef.current = schedulePersistence(() => {
+      return (async () => {
         try {
           await saveConfig(currentConfig);
           lastSavedConfigRef.current = configStr;
@@ -317,13 +321,14 @@ export default function useQuickBarState(t: Translate): UseQuickBarStateResult {
               detail: extractErrorMessage(error),
             },
           });
+          throw error;
         }
       })();
     }, PERSISTENCE_SAVE_DEBOUNCE_MS);
 
     return () => {
       if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
+        cancelPersistence(saveTimerRef.current);
       }
     };
   }, [showGroupTitle, groups, commands]);
